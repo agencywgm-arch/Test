@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  id         String     @id @default(cuid())
+  name       String
+  slug       String     @unique
+  password   String
+  logoEmoji  String     @default("🍔")
+  primaryColor String   @default("#ef4444")
+  createdAt  DateTime   @default(now())
+
+  categories Category[]
+  orders     Order[]
+}
+
+model Category {
+  id           String     @id @default(cuid())
+  name         String
+  position     Int        @default(0)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems    MenuItem[]
+}
+
+model MenuItem {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  available   Boolean     @default(true)
+  emoji       String      @default("🍽️")
+  categoryId  String
+  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  number       Int
+  customerName String
+  status       String      @default("PENDING")
+  total        Float
+  note         String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  quantity   Int
+  price      Float
+  name       String
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
