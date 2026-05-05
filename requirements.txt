@@ -1,0 +1,2 @@
+# Aucune dépendance externe requise — uniquement la bibliothèque standard Python 3.10+
+# urllib, json, csv, argparse sont tous inclus dans Python
