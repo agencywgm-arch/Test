@@ -1,1 +1,4 @@
 notebooklm-py==0.3.4
+moviepy==2.2.1
+numpy==2.4.4
+pillow==11.3.0
