@@ -19,6 +19,9 @@ prisma/dev.db-journal
 prisma/*.db
 prisma/*.db-journal
 
+# TypeScript
+tsconfig.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db
