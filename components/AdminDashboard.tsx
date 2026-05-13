@@ -11,6 +11,8 @@ import {
   deleteMenuItem,
   logoutAdmin,
   updateRestaurantSettings,
+  importMenuFromUrl,
+  type ScrapedMenuItem,
 } from "@/lib/actions";
 
 type MenuItem = { id: string; name: string; description: string; price: number; emoji: string; available: boolean };
@@ -57,6 +59,15 @@ export default function AdminDashboard({
   // Settings state
   const [settingsForm, setSettingsForm] = useState({ name: restaurant.name, logoEmoji: restaurant.logoEmoji, primaryColor: restaurant.primaryColor, password: "" });
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Firecrawl import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedItems, setImportedItems] = useState<ScrapedMenuItem[] | null>(null);
+  const [selectedImportItems, setSelectedImportItems] = useState<Set<number>>(new Set());
+  const [importTargetCategory, setImportTargetCategory] = useState<string>("");
 
   const color = restaurant.primaryColor;
 
@@ -125,6 +136,81 @@ export default function AdminDashboard({
   async function handleLogout() {
     await logoutAdmin(restaurant.slug);
     router.push(`/admin/${restaurant.slug}/login`);
+  }
+
+  function openImportModal() {
+    setShowImportModal(true);
+    setImportUrl("");
+    setImportError(null);
+    setImportedItems(null);
+    setSelectedImportItems(new Set());
+    setImportTargetCategory(categories[0]?.id ?? "");
+  }
+
+  async function handleScrape() {
+    if (!importUrl.trim()) return;
+    setImportLoading(true);
+    setImportError(null);
+    setImportedItems(null);
+    const result = await importMenuFromUrl(restaurant.slug, importUrl.trim());
+    setImportLoading(false);
+    if (result.error) {
+      setImportError(result.error);
+    } else {
+      const items = result.items ?? [];
+      setImportedItems(items);
+      setSelectedImportItems(new Set(items.map((_, i) => i)));
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!importedItems || selectedImportItems.size === 0) return;
+    const toImport = importedItems.filter((_, i) => selectedImportItems.has(i));
+    startTransition(async () => {
+      let targetCategoryId = importTargetCategory;
+
+      // Group by category name and create categories if needed
+      const byCategoryName = new Map<string, ScrapedMenuItem[]>();
+      for (const item of toImport) {
+        const list = byCategoryName.get(item.category) ?? [];
+        list.push(item);
+        byCategoryName.set(item.category, list);
+      }
+
+      const useAutoCategories = importTargetCategory === "__auto__";
+
+      for (const [categoryName, items] of Array.from(byCategoryName.entries())) {
+        if (useAutoCategories) {
+          const existing = categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase());
+          if (existing) {
+            targetCategoryId = existing.id;
+          } else {
+            const newCat = await createCategory(restaurant.slug, categoryName);
+            setCategories((prev) => [...prev, { ...newCat, menuItems: [] }]);
+            targetCategoryId = newCat.id;
+          }
+        }
+
+        for (const item of items) {
+          const created = await createMenuItem(restaurant.slug, {
+            name: item.name,
+            description: item.description || undefined,
+            price: item.price,
+            emoji: item.emoji,
+            categoryId: useAutoCategories ? targetCategoryId : importTargetCategory,
+          });
+          setCategories((prev) =>
+            prev.map((c) =>
+              c.id === (useAutoCategories ? targetCategoryId : importTargetCategory)
+                ? { ...c, menuItems: [...c.menuItems, { ...created, description: created.description ?? "" }] }
+                : c
+            )
+          );
+        }
+      }
+
+      setShowImportModal(false);
+    });
   }
 
   return (
@@ -220,7 +306,7 @@ export default function AdminDashboard({
         {/* ─── Menu tab ────────────────────────────────────────────── */}
         {tab === "menu" && (
           <div className="space-y-6">
-            {/* Add category */}
+            {/* Add category + import */}
             <div className="flex gap-3">
               <input
                 type="text"
@@ -237,6 +323,12 @@ export default function AdminDashboard({
                 className="px-5 py-2.5 text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity"
               >
                 + Catégorie
+              </button>
+              <button
+                onClick={openImportModal}
+                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                🔗 Importer depuis URL
               </button>
             </div>
 
@@ -338,6 +430,138 @@ export default function AdminDashboard({
           </div>
         )}
       </main>
+
+      {/* ─── Firecrawl Import Modal ───────────────────────────────────────── */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="font-bold text-gray-900 text-lg">🔗 Importer un menu depuis une URL</h2>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+              {/* URL input */}
+              {!importedItems && (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Collez l&apos;URL d&apos;une page de menu restaurant. Firecrawl va scraper et extraire automatiquement les articles.
+                  </p>
+                  <div className="flex gap-3">
+                    <input
+                      type="url"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && !importLoading && handleScrape()}
+                      placeholder="https://restaurant.com/menu"
+                      className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2"
+                    />
+                    <button
+                      onClick={handleScrape}
+                      disabled={importLoading || !importUrl.trim()}
+                      style={{ backgroundColor: color }}
+                      className="px-5 py-2.5 text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                    >
+                      {importLoading ? "Analyse…" : "Scraper"}
+                    </button>
+                  </div>
+                  {importLoading && (
+                    <p className="text-sm text-gray-400 text-center py-4">Analyse de la page en cours, cela peut prendre quelques secondes…</p>
+                  )}
+                  {importError && (
+                    <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">{importError}</div>
+                  )}
+                </>
+              )}
+
+              {/* Results */}
+              {importedItems && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">
+                      {importedItems.length} article{importedItems.length !== 1 ? "s" : ""} trouvé{importedItems.length !== 1 ? "s" : ""}
+                      {" — "}
+                      <button onClick={() => setImportedItems(null)} className="text-blue-500 hover:underline">modifier l&apos;URL</button>
+                    </p>
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedImportItems.size === importedItems.length}
+                        onChange={(e) =>
+                          setSelectedImportItems(
+                            e.target.checked ? new Set(importedItems.map((_, i) => i)) : new Set()
+                          )
+                        }
+                      />
+                      Tout sélectionner
+                    </label>
+                  </div>
+
+                  {/* Category target */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Importer dans</label>
+                    <select
+                      value={importTargetCategory}
+                      onChange={(e) => setImportTargetCategory(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                    >
+                      <option value="__auto__">Créer les catégories automatiquement</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    {importedItems.map((item, i) => (
+                      <label
+                        key={i}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                          selectedImportItems.has(i) ? "border-blue-200 bg-blue-50" : "border-gray-100 bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedImportItems.has(i)}
+                          onChange={(e) => {
+                            const next = new Set(selectedImportItems);
+                            e.target.checked ? next.add(i) : next.delete(i);
+                            setSelectedImportItems(next);
+                          }}
+                          className="w-4 h-4 flex-shrink-0"
+                        />
+                        <span className="text-2xl">{item.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-gray-900">{item.name}</p>
+                          {item.description && <p className="text-xs text-gray-400 truncate">{item.description}</p>}
+                          <p className="text-xs text-gray-400">{item.category}</p>
+                        </div>
+                        <span className="font-bold text-sm" style={{ color }}>{item.price.toFixed(2)} €</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {importedItems && (
+              <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => setShowImportModal(false)} className="px-5 py-2.5 bg-gray-100 rounded-xl text-sm text-gray-600 hover:bg-gray-200">
+                  Annuler
+                </button>
+                <button
+                  onClick={handleConfirmImport}
+                  disabled={selectedImportItems.size === 0}
+                  style={{ backgroundColor: color }}
+                  className="px-5 py-2.5 text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  Importer {selectedImportItems.size} article{selectedImportItems.size !== 1 ? "s" : ""}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

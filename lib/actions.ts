@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { createAdminToken, verifyAdminToken } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import FirecrawlApp from "@mendable/firecrawl-js";
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,80 @@ export async function updateOrderStatus(
   revalidatePath(`/kitchen/${slug}`);
   revalidatePath(`/${slug}/order/${orderId}`);
   return order;
+}
+
+// ─── Firecrawl Menu Import ────────────────────────────────────────────────────
+
+export type ScrapedMenuItem = {
+  name: string;
+  description: string;
+  price: number;
+  emoji: string;
+  category: string;
+};
+
+export async function importMenuFromUrl(
+  slug: string,
+  url: string
+): Promise<{ items?: ScrapedMenuItem[]; error?: string }> {
+  await requireAdmin(slug);
+
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey || apiKey === "fc-your-api-key-here") {
+    return { error: "Clé API Firecrawl manquante. Ajoutez FIRECRAWL_API_KEY dans votre fichier .env.local." };
+  }
+
+  try {
+    const firecrawl = new FirecrawlApp({ apiKey });
+
+    const result = await firecrawl.scrape(url, {
+      formats: [
+        {
+          type: "json",
+          prompt:
+            "Extract all menu items from this restaurant page. For each item return: name (string), description (string, empty if none), price (number in euros, 0 if not found), emoji (one relevant food emoji), category (the section/category name this item belongs to, e.g. 'Burgers', 'Boissons', 'Desserts').",
+          schema: {
+            type: "object",
+            properties: {
+              items: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    description: { type: "string" },
+                    price: { type: "number" },
+                    emoji: { type: "string" },
+                    category: { type: "string" },
+                  },
+                  required: ["name", "price", "emoji", "category"],
+                },
+              },
+            },
+            required: ["items"],
+          },
+        },
+      ],
+    });
+
+    const extracted = (result.json as { items?: ScrapedMenuItem[] } | null);
+    const items: ScrapedMenuItem[] = (extracted?.items ?? []).map((item) => ({
+      name: item.name ?? "",
+      description: item.description ?? "",
+      price: typeof item.price === "number" ? item.price : 0,
+      emoji: item.emoji ?? "🍽️",
+      category: item.category ?? "Divers",
+    }));
+
+    if (items.length === 0) {
+      return { error: "Aucun article de menu trouvé sur cette page." };
+    }
+
+    return { items };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erreur inconnue";
+    return { error: `Erreur lors du scraping : ${message}` };
+  }
 }
 
 export async function updateRestaurantSettings(
