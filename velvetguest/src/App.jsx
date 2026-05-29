@@ -1,33 +1,1134 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import AuthPage from './pages/AuthPage'
-import RestaurantsPage from './pages/RestaurantsPage'
-import AuthGuard from './components/AuthGuard'
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { supabase } from "./lib/supabase";
 
-export default function App() {
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL STORE — demo orders + real Supabase restaurants
+// ─────────────────────────────────────────────────────────────────────────────
+const StoreCtx = createContext(null);
+
+const makeOrder = (id, table, items, note = "") => ({
+  id, table, note, elapsed: 0,
+  status: "new",
+  items: items.map((it, i) => ({ ...it, id: id * 100 + i, done: false })),
+  createdAt: Date.now(),
+});
+
+const INITIAL_ORDERS = [
+  makeOrder(1001, 4, [
+    { name: "Entrecôte 300g", detail: "Saignant × 1 / À point × 1", qty: 2, cat: "Plats" },
+    { name: "Frites maison", detail: "", qty: 2, cat: "Accompagnements" },
+    { name: "Salade César", detail: "Sans anchois", qty: 1, cat: "Entrées" },
+  ], "Allergie noix de cajou"),
+  makeOrder(1002, 7, [
+    { name: "Saumon en croûte", detail: "", qty: 2, cat: "Poissons" },
+    { name: "Purée truffée", detail: "", qty: 2, cat: "Accompagnements" },
+  ]),
+  makeOrder(1003, 2, [
+    { name: "Burger Black Angus", detail: "Rosé × 1 / Bien cuit × 1", qty: 2, cat: "Burgers" },
+    { name: "Frites maison", detail: "", qty: 3, cat: "Accompagnements" },
+  ], "1 portion enfant"),
+  makeOrder(1004, 11, [
+    { name: "Côte de veau", detail: "À point", qty: 2, cat: "Plats" },
+    { name: "Gratin dauphinois", detail: "", qty: 2, cat: "Accompagnements" },
+  ]),
+];
+INITIAL_ORDERS[1].status = "cooking";
+INITIAL_ORDERS[1].elapsed = 8;
+INITIAL_ORDERS[1].items[1].done = true;
+INITIAL_ORDERS[2].status = "cooking";
+INITIAL_ORDERS[2].elapsed = 16;
+INITIAL_ORDERS[2].items[0].done = true;
+INITIAL_ORDERS[3].status = "ready";
+INITIAL_ORDERS[3].elapsed = 22;
+INITIAL_ORDERS[3].items.forEach(i => i.done = true);
+
+const MENU = [
+  { id: 1, cat: "Entrées", name: "Soupe du jour", desc: "Velouté de saison, croûtons", price: 8, emoji: "🍲", popular: false },
+  { id: 2, cat: "Entrées", name: "Salade César", desc: "Romaine, parmesan, sauce maison", price: 14, emoji: "🥗", popular: true },
+  { id: 3, cat: "Plats", name: "Entrecôte 300g", desc: "Black Angus, sauce au poivre vert", price: 28, emoji: "🥩", popular: true },
+  { id: 4, cat: "Poissons", name: "Saumon en croûte", desc: "Feuilletage, épinards, citron", price: 24, emoji: "🐟", popular: false },
+  { id: 5, cat: "Burgers", name: "Burger Black Angus", desc: "180g, cheddar, oignons confits", price: 18, emoji: "🍔", popular: true },
+  { id: 6, cat: "Desserts", name: "Tiramisu maison", desc: "Mascarpone, café, Savoiardi", price: 9, emoji: "🍮", popular: true },
+  { id: 7, cat: "Desserts", name: "Crème brûlée", desc: "Vanille de Madagascar", price: 8, emoji: "🍯", popular: false },
+  { id: 8, cat: "Boissons", name: "Verre de vin", desc: "Sélection du jour — Rouge / Blanc / Rosé", price: 7, emoji: "🍷", popular: false },
+];
+
+function useStore() {
+  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [servedOrders, setServedOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOrders(prev => prev.map(o =>
+        !["ready", "served"].includes(o.status) ? { ...o, elapsed: o.elapsed + 0.5 } : o
+      ));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const pushNotif = useCallback((msg, type = "info") => {
+    const n = { id: Date.now(), msg, type };
+    setNotifications(p => [n, ...p.slice(0, 4)]);
+    setTimeout(() => setNotifications(p => p.filter(x => x.id !== n.id)), 5000);
+  }, []);
+
+  const advanceOrder = useCallback((id) => {
+    setOrders(prev => prev.map(o => {
+      if (o.id !== id) return o;
+      const next = { new: "accepted", accepted: "cooking", cooking: "ready", ready: "served" }[o.status];
+      if (!next) return o;
+      if (next === "served") {
+        setServedOrders(s => [{ ...o, status: "served" }, ...s.slice(0, 9)]);
+        pushNotif(`Table ${o.table} — Commande servie ✓`, "success");
+        return null;
+      }
+      const labels = { accepted: "acceptée", cooking: "en cuisine", ready: "prête à servir" };
+      pushNotif(`Table ${o.table} — Commande ${labels[next]}`, next === "ready" ? "warning" : "info");
+      return { ...o, status: next };
+    }).filter(Boolean));
+  }, [pushNotif]);
+
+  const toggleItem = useCallback((orderId, itemId) => {
+    setOrders(prev => prev.map(o =>
+      o.id === orderId ? { ...o, items: o.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) } : o
+    ));
+  }, []);
+
+  const addOrder = useCallback((table, items, note) => {
+    const id = Date.now();
+    const order = makeOrder(id, table, items, note);
+    setOrders(prev => [order, ...prev]);
+    pushNotif(`Nouvelle commande — Table ${table}`, "new");
+    return order;
+  }, [pushNotif]);
+
+  const revenue = [...orders, ...servedOrders].reduce((s, o) => {
+    const total = o.items.reduce((a, i) => {
+      const item = MENU.find(m => m.name === i.name);
+      return a + (item ? item.price * i.qty : 0);
+    }, 0);
+    return s + total;
+  }, 3840);
+
+  return { orders, servedOrders, notifications, advanceOrder, toggleItem, addOrder, revenue, pushNotif, menu: MENU };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DESIGN SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  bg: "#F5F5F7", surface: "#FFFFFF", surfaceAlt: "#FAFAFA",
+  border: "rgba(0,0,0,0.08)", borderStrong: "rgba(0,0,0,0.14)",
+  text: "#1D1D1F", textSecondary: "#6E6E73", textTertiary: "#AEAEB2",
+  accent: "#FF375F", accentBlue: "#0071E3", accentGreen: "#34C759",
+  accentOrange: "#FF9F0A", accentPurple: "#BF5AF2", dark: "#1D1D1F", white: "#FFFFFF",
+};
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body { font-family: 'Figtree', -apple-system, sans-serif; background: ${C.bg}; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  input, button, textarea { font-family: inherit; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  @keyframes ring { 0%,100% { transform:scale(1); } 50% { transform:scale(1.06); } }
+  .btn-press:active { transform: scale(0.97); opacity: 0.9; }
+  .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  .slide-up { animation: slideUp 0.3s ease; }
+`;
+const FF = { fontFamily: "'Figtree', -apple-system, sans-serif" };
+
+function Surface({ children, style: s = {}, onClick, className = "", id }) {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/restaurants" replace />} />
-        <Route path="/auth" element={<AuthPage />} />
-        <Route
-          path="/restaurants"
-          element={
-            <AuthGuard>
-              <RestaurantsPage />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/restaurants/:id"
-          element={
-            <AuthGuard>
-              <div className="flex items-center justify-center min-h-screen text-apple-gray text-sm">
-                Dashboard restaurant (à venir)
+    <div id={id} onClick={onClick} className={className}
+      style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, ...s }}>
+      {children}
+    </div>
+  );
+}
+
+function Tag({ children, color = C.accentBlue }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: color + "15", color, fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, letterSpacing: "0.01em" }}>
+      {children}
+    </span>
+  );
+}
+
+function Btn({ children, onClick, variant = "primary", size = "md", full, disabled, style: s = {} }) {
+  const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", transition: "all 0.15s ease", ...FF, opacity: disabled ? 0.4 : 1 };
+  const sizes = { xs: { padding: "6px 12px", fontSize: 12, borderRadius: 8 }, sm: { padding: "8px 16px", fontSize: 13, borderRadius: 10 }, md: { padding: "11px 20px", fontSize: 15, borderRadius: 12 }, lg: { padding: "14px 28px", fontSize: 16, borderRadius: 14 } };
+  const variants = {
+    primary: { background: C.dark, color: C.white },
+    blue: { background: C.accentBlue, color: C.white },
+    red: { background: C.accent, color: C.white },
+    green: { background: C.accentGreen, color: C.white },
+    ghost: { background: "transparent", color: C.text, border: `1px solid ${C.borderStrong}` },
+    subtle: { background: C.bg, color: C.text },
+  };
+  return (
+    <button onClick={!disabled ? onClick : undefined} className="btn-press"
+      style={{ ...base, ...sizes[size], ...variants[variant], width: full ? "100%" : "auto", ...s }}>
+      {children}
+    </button>
+  );
+}
+
+function InputField({ label, type = "text", placeholder, value, onChange, autoFocus, hint }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {label && <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>}
+      <input type={type} placeholder={placeholder} value={value} onChange={onChange} autoFocus={autoFocus}
+        style={{ width: "100%", background: focused ? C.white : C.bg, border: `1.5px solid ${focused ? C.dark : "transparent"}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontSize: 15, outline: "none", transition: "all 0.15s", ...FF }}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
+      {hint && <p style={{ color: C.textTertiary, fontSize: 12, marginTop: 4 }}>{hint}</p>}
+    </div>
+  );
+}
+
+function Logo({ dark = true, size = 18 }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: size + 10, height: size + 10, background: dark ? C.dark : C.white, borderRadius: (size + 10) * 0.28, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: size * 0.7 }}>🍽</span>
+      </div>
+      <span style={{ fontSize: size, fontWeight: 800, color: dark ? C.dark : C.white, letterSpacing: "-0.03em", ...FF }}>
+        Velvet<span style={{ color: C.accent }}>Guest</span>
+      </span>
+    </div>
+  );
+}
+
+function Dot({ color = C.accentGreen, pulse = false }) {
+  return <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0, animation: pulse ? "pulse 1.8s ease-in-out infinite" : "none" }} />;
+}
+
+function Avatar({ name, size = 32 }) {
+  const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontWeight: 700, fontSize: size * 0.38, flexShrink: 0 }}>
+      {initials}
+    </div>
+  );
+}
+
+function Toasts({ notifs }) {
+  const colors = { info: C.accentBlue, success: C.accentGreen, warning: C.accentOrange, new: C.accent };
+  const icons = { info: "↑", success: "✓", warning: "!", new: "+" };
+  return (
+    <div style={{ position: "fixed", top: 20, right: 20, zIndex: 9999, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
+      {notifs.map(n => (
+        <div key={n.id} style={{ background: C.dark, color: C.white, padding: "12px 16px", borderRadius: 12, display: "flex", alignItems: "center", gap: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.24)", animation: "slideDown 0.3s ease", minWidth: 260, maxWidth: 340, ...FF }}>
+          <div style={{ width: 24, height: 24, borderRadius: 8, background: colors[n.type] || C.accentBlue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{icons[n.type]}</div>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>{n.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR CODE (pure canvas)
+// ─────────────────────────────────────────────────────────────────────────────
+function QRCanvas({ text, size = 160, fg = "#000", bg = "#fff" }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const n = 25; const cell = size / n;
+    const m = Array.from({ length: n }, () => Array(n).fill(0));
+    const finder = (r, c) => { for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) if (r+i<n&&c+j<n) m[r+i][c+j]=(i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4))?1:0; };
+    finder(0,0); finder(0,18); finder(18,0);
+    for (let i = 8; i < 17; i++) { m[6][i]=i%2===0?1:0; m[i][6]=i%2===0?1:0; }
+    let h = 0; for (let i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+    const res = (r,c) => (r<9&&c<9)||(r<9&&c>15)||(r>15&&c<9)||r===6||c===6;
+    let s = Math.abs(h);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) { if (!res(r,c)) { s=(s*1664525+1013904223)&0xffffffff; m[r][c]=Math.abs(s)%3!==0?1:0; } }
+    ctx.fillStyle = bg; ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = fg;
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (m[r][c]) {
+        const x=c*cell, y=r*cell, rad=cell*0.2;
+        ctx.beginPath(); ctx.moveTo(x+rad,y); ctx.lineTo(x+cell-rad,y); ctx.quadraticCurveTo(x+cell,y,x+cell,y+rad); ctx.lineTo(x+cell,y+cell-rad); ctx.quadraticCurveTo(x+cell,y+cell,x+cell-rad,y+cell); ctx.lineTo(x+rad,y+cell); ctx.quadraticCurveTo(x,y+cell,x,y+cell-rad); ctx.lineTo(x,y+rad); ctx.quadraticCurveTo(x,y,x+rad,y); ctx.closePath(); ctx.fill();
+      }
+    }
+    const cx=size/2, cy=size/2, rad=size*0.12;
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,rad+3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=C.accent; ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fill();
+    ctx.font=`bold ${rad*1.2}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#fff"; ctx.fillText("🍽",cx,cy+1);
+  }, [text, size, fg, bg]);
+  return <canvas ref={ref} width={size} height={size} style={{ display: "block", borderRadius: 10 }} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH PAGE — wired to Supabase
+// ─────────────────────────────────────────────────────────────────────────────
+function SignupPage({ onDone }) {
+  const [mode, setMode] = useState("signup");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  const ok = mode === "login" ? form.email && form.password : form.name && form.email && form.password.length >= 8;
+
+  async function submit() {
+    setError(""); setLoading(true);
+    try {
+      if (mode === "signup") {
+        const { error: err } = await supabase.auth.signUp({
+          email: form.email, password: form.password,
+          options: { data: { name: form.name } },
+        });
+        if (err) throw err;
+        setSent(true);
+      } else {
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+        if (err) throw err;
+        onDone({ name: data.user.user_metadata?.name || form.email.split("@")[0], email: data.user.email, id: data.user.id });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (sent) return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>
+      <style>{css}</style>
+      <Surface style={{ padding: 40, maxWidth: 380, width: "100%", margin: "0 24px", textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📬</div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 8 }}>Vérifiez vos emails</h2>
+        <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6 }}>Un lien de confirmation a été envoyé à <strong>{form.email}</strong>. Cliquez dessus pour activer votre compte.</p>
+        <Btn variant="ghost" size="sm" onClick={() => setSent(false)} style={{ marginTop: 20 }}>← Retour</Btn>
+      </Surface>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>
+      <style>{css}</style>
+      <div style={{ width: "100%", maxWidth: 400, padding: 24 }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <Logo size={22} />
+          <p style={{ color: C.textSecondary, fontSize: 15, marginTop: 10 }}>Gérez vos restaurants, simplement.</p>
+        </div>
+        <Surface style={{ padding: 32 }}>
+          <div style={{ display: "flex", background: C.bg, borderRadius: 10, padding: 3, marginBottom: 28 }}>
+            {[["signup", "Créer un compte"], ["login", "Se connecter"]].map(([m, l]) => (
+              <button key={m} onClick={() => { setMode(m); setError(""); }} style={{ flex: 1, border: "none", borderRadius: 8, padding: "9px 0", background: mode === m ? C.white : "transparent", color: mode === m ? C.dark : C.textSecondary, fontWeight: mode === m ? 600 : 400, fontSize: 14, cursor: "pointer", transition: "all 0.2s", boxShadow: mode === m ? "0 1px 4px rgba(0,0,0,0.1)" : "none", ...FF }}>{l}</button>
+            ))}
+          </div>
+          {mode === "signup" && <InputField label="Nom complet" placeholder="Jean Dupont" value={form.name} onChange={f("name")} autoFocus />}
+          <InputField label="Adresse email" type="email" placeholder="jean@restaurant.fr" value={form.email} onChange={f("email")} />
+          <InputField label="Mot de passe" type="password" placeholder="8 caractères minimum" value={form.password} onChange={f("password")} />
+          {error && <p style={{ color: C.accent, fontSize: 13, background: C.accent + "10", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>{error}</p>}
+          <Btn variant="primary" size="lg" full disabled={!ok || loading} onClick={submit} style={{ marginTop: 8 }}>
+            {loading ? "..." : mode === "signup" ? "Créer mon compte →" : "Se connecter →"}
+          </Btn>
+        </Surface>
+        <div style={{ display: "flex", justifyContent: "center", gap: 24, marginTop: 24 }}>
+          {["30 jours gratuits", "Sans carte bancaire", "Support 7j/7"].map(t => (
+            <span key={t} style={{ color: C.textTertiary, fontSize: 12 }}>✓ {t}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESTAURANTS PAGE — wired to Supabase
+// ─────────────────────────────────────────────────────────────────────────────
+function RestaurantsPage({ user, onSelect, onLogout }) {
+  const first = (user.name || user.email).split(" ")[0];
+  const h = new Date().getHours();
+  const greet = h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : "Bonsoir";
+  const [restaurants, setRestaurants] = useState([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
+      .then(({ data }) => { setRestaurants(data ?? []); setLoadingList(false); });
+  }, [user.id]);
+
+  function slugify(name) {
+    return name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+
+  async function createRestaurant(e) {
+    e.preventDefault(); setCreating(true); setCreateError("");
+    const slug = `${slugify(form.name)}-${Math.random().toString(36).slice(2, 6)}`;
+    const { data, error: err } = await supabase.from("restaurants")
+      .insert({ ...form, owner_id: user.id, slug, tables_count: Number(form.tables_count) })
+      .select().single();
+    if (err) { setCreateError(err.message); setCreating(false); return; }
+    setRestaurants(p => [data, ...p]);
+    setShowCreate(false);
+    setForm({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
+    setCreating(false);
+  }
+
+  const mapRestaurant = r => ({
+    id: r.id, name: r.name, address: r.address, tables: r.tables_count,
+    status: "active", emoji: r.logo_emoji, scans: 0, revenue: 3840, rating: null, orders: 0,
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
+      <style>{css}</style>
+      <nav style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", position: "sticky", top: 0, zIndex: 100 }}>
+        <Logo size={17} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={onLogout}>
+          <span style={{ color: C.textSecondary, fontSize: 14 }}>{user.email}</span>
+          <Avatar name={user.name || user.email} size={30} />
+        </div>
+      </nav>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
+          <div>
+            <p style={{ color: C.textSecondary, fontSize: 15, marginBottom: 4 }}>{greet}, <strong style={{ color: C.dark }}>{first}</strong> 👋</p>
+            <h1 style={{ fontSize: 34, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>Mes restaurants</h1>
+          </div>
+          <Btn variant="primary" onClick={() => setShowCreate(true)}>+ Nouveau restaurant</Btn>
+        </div>
+
+        {loadingList ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
+            <div style={{ width: 24, height: 24, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+            {restaurants.map(r => {
+              const mapped = mapRestaurant(r);
+              return (
+                <Surface key={r.id} className="hover-lift" onClick={() => onSelect(mapped)} style={{ padding: 24, cursor: "pointer", transition: "all 0.2s" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>{r.logo_emoji}</div>
+                    <Tag color={C.accentGreen}><Dot color={C.accentGreen} />Actif</Tag>
+                  </div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, color: C.dark, marginBottom: 4, letterSpacing: "-0.02em" }}>{r.name}</h3>
+                  <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>{r.address || "—"}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+                    {[["Tables", r.tables_count], ["Scans", 0], ["Commandes", 0]].map(([l, v]) => (
+                      <div key={l} style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: C.dark }}>{v}</div>
+                        <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Surface>
+              );
+            })}
+            <div onClick={() => setShowCreate(true)} style={{ border: `2px dashed ${C.border}`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, gap: 8, transition: "all 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.textSecondary }}>+</div>
+              <span style={{ color: C.textSecondary, fontSize: 14, fontWeight: 500 }}>Ajouter un restaurant</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showCreate && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24 }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 440 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 24 }}>Nouveau restaurant</h2>
+            <form onSubmit={createRestaurant}>
+              <div style={{ display: "flex", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
+                  <input value={form.logo_emoji} onChange={fv("logo_emoji")} style={{ width: 60, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <InputField label="Nom du restaurant" placeholder="Le Petit Bistro" value={form.name} onChange={fv("name")} autoFocus />
+                </div>
               </div>
-            </AuthGuard>
-          }
-        />
-      </Routes>
-    </BrowserRouter>
-  )
+              <InputField label="Adresse" placeholder="12 rue de la Paix, Paris" value={form.address} onChange={fv("address")} />
+              <InputField label="Nombre de tables" type="number" value={form.tables_count} onChange={fv("tables_count")} />
+              {createError && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{createError}</p>}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <Btn variant="ghost" full onClick={() => setShowCreate(false)}>Annuler</Btn>
+                <Btn variant="primary" full disabled={!form.name || creating}>{creating ? "..." : "Créer"}</Btn>
+              </div>
+            </form>
+          </Surface>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
+  const store = useContext(StoreCtx);
+  const [tab, setTab] = useState("overview");
+  const first = (user.name || user.email).split(" ")[0];
+  const active = store.orders.filter(o => o.status !== "served");
+  const ready = store.orders.filter(o => o.status === "ready");
+  const TABS = [
+    { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
+    { id: "qrcode", label: "QR Codes" }, { id: "reviews", label: "Avis" }, { id: "menu", label: "Carte" },
+  ];
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
+      <style>{css}</style>
+      <Toasts notifs={store.notifications} />
+      <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+        <div style={{ padding: "20px 16px 16px" }}>
+          <Logo size={16} />
+          <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
+            <div style={{ fontSize: 22 }}>{restaurant.emoji}</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{restaurant.name}</div>
+              <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Changer</div>
+            </div>
+          </div>
+        </div>
+        <nav style={{ flex: 1, padding: "4px 10px" }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: tab === t.id ? C.bg : "transparent", color: tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
+              {t.label}
+              {t.id === "orders" && active.length > 0 && <span style={{ marginLeft: "auto", background: C.dark, color: C.white, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{active.length}</span>}
+            </button>
+          ))}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+            <button onClick={onCuisine} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: ready.length > 0 ? C.accentGreen + "15" : C.bg, color: ready.length > 0 ? C.accentGreen : C.textSecondary, fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 4, ...FF }}>
+              <Dot color={C.accentGreen} pulse={ready.length > 0} />Vue cuisine
+              {ready.length > 0 && <span style={{ marginLeft: "auto", background: C.accentGreen, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{ready.length} prête{ready.length > 1 ? "s" : ""}</span>}
+            </button>
+            <button onClick={onClient} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.bg, color: C.textSecondary, fontWeight: 500, fontSize: 14, cursor: "pointer", ...FF }}>
+              <span style={{ fontSize: 14 }}>📱</span> Vue client
+            </button>
+          </div>
+        </nav>
+        <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Avatar name={user.name || user.email} size={30} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
+              <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <main style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
+        <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: C.dark, letterSpacing: "-0.02em" }}>{TABS.find(t => t.id === tab)?.label}</h2>
+            <p style={{ fontSize: 12, color: C.textTertiary }}>Bienvenue, {first} · {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 Cuisine{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
+            <Btn variant="primary" size="sm" onClick={onClient}>📱 Vue client</Btn>
+          </div>
+        </header>
+        <div style={{ padding: "28px 32px" }}>
+          {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
+          {tab === "orders" && <OrdersTab store={store} />}
+          {tab === "qrcode" && <QRTab restaurant={restaurant} />}
+          {tab === "reviews" && <ReviewsTab />}
+          {tab === "menu" && <MenuTabDash />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function KPICard({ label, value, sub, delta }) {
+  return (
+    <Surface style={{ padding: "20px 22px" }}>
+      <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 10, fontWeight: 500 }}>{label}</p>
+      <p style={{ fontSize: 30, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", lineHeight: 1 }}>{value}</p>
+      {sub && <p style={{ fontSize: 12, color: delta > 0 ? C.accentGreen : C.textTertiary, marginTop: 8, fontWeight: 500 }}>{delta > 0 ? `↑ +${delta}%` : ""} {sub}</p>}
+    </Surface>
+  );
+}
+
+function OverviewTab({ store, restaurant, onCuisine, onClient }) {
+  const active = store.orders.filter(o => o.status !== "served");
+  const ready = store.orders.filter(o => o.status === "ready");
+  const rev = store.revenue;
+  const WEEKLY = [1840, 2430, 2100, 3200, 4800, 5900, rev].map((v, i) => ({ day: ["L","M","M","J","V","S","D"][i], v }));
+  const max = Math.max(...WEEKLY.map(w => w.v));
+  return (
+    <div className="fade-in">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        <KPICard label="Commandes actives" value={active.length} sub="en ce moment" delta={0} />
+        <KPICard label="CA aujourd'hui" value={`${rev.toLocaleString("fr")} €`} sub="vs hier" delta={9} />
+        <KPICard label="Tables servies" value={store.servedOrders.length + 4} sub="depuis l'ouverture" delta={0} />
+        <KPICard label="Scans QR" value={restaurant.scans || 0} sub="vs hier" delta={18} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+        <Surface onClick={onCuisine} style={{ padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} className="hover-lift">
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>🍳</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 3 }}>Vue cuisine</div>
+            <div style={{ fontSize: 13, color: C.textSecondary }}>{active.length} en cours · {ready.length} prête{ready.length > 1 ? "s" : ""}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Dot color={C.accentGreen} pulse /><span style={{ color: C.accentGreen, fontSize: 12, fontWeight: 600 }}>LIVE</span>
+          </div>
+        </Surface>
+        <Surface onClick={onClient} style={{ padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} className="hover-lift">
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.accentBlue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📱</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 3 }}>Vue client</div>
+            <div style={{ fontSize: 13, color: C.textSecondary }}>Simulation expérience QR</div>
+          </div>
+          <Tag color={C.accentBlue}>Preview</Tag>
+        </Surface>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12 }}>
+        <Surface style={{ padding: "22px 24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+            <div>
+              <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>Revenus hebdomadaires</p>
+              <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>{(rev + 20270).toLocaleString("fr")} €</p>
+            </div>
+            <Tag color={C.accentGreen}>↑ +9%</Tag>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
+            {WEEKLY.map((d, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <div style={{ width: "100%", background: i === 6 ? C.dark : C.bg, borderRadius: "6px 6px 0 0", height: `${(d.v / max) * 100}%`, minHeight: 4 }} />
+                <span style={{ fontSize: 10, color: i === 6 ? C.dark : C.textTertiary, fontWeight: i === 6 ? 700 : 400 }}>{d.day}</span>
+              </div>
+            ))}
+          </div>
+        </Surface>
+        <Surface style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Commandes en direct</p>
+          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 16 }}>Démo temps réel</p>
+          {store.orders.slice(0, 4).map(o => {
+            const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen }[o.status] || C.textTertiary;
+            const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "En cuisine", ready: "Prête" }[o.status];
+            return (
+              <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>#{o.id}</div>
+                  <div style={{ fontSize: 11, color: C.textTertiary }}>{Math.round(o.elapsed)} min</div>
+                </div>
+                <Tag color={sc}>{sl}</Tag>
+              </div>
+            );
+          })}
+        </Surface>
+      </div>
+    </div>
+  );
+}
+
+function OrdersTab({ store }) {
+  const byStatus = s => store.orders.filter(o => o.status === s);
+  const all = [...store.orders, ...store.servedOrders.slice(0, 4)];
+  return (
+    <div className="fade-in">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        {[["Nouvelles", "new", C.accentBlue], ["En cuisine", "cooking", C.accentOrange], ["Prêtes", "ready", C.accentGreen], ["Servies", "served", C.textTertiary]].map(([l, s, c]) => (
+          <Surface key={s} style={{ padding: "16px 18px" }}>
+            <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 8, fontWeight: 500 }}>{l}</p>
+            <p style={{ fontSize: 28, fontWeight: 800, color: c }}>{s === "served" ? store.servedOrders.length : byStatus(s).length}</p>
+          </Surface>
+        ))}
+      </div>
+      <Surface style={{ overflow: "hidden" }}>
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Toutes les commandes</p>
+        </div>
+        {all.map((o, i) => {
+          const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen, served: C.textTertiary }[o.status];
+          const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "En cuisine", ready: "Prête", served: "Servie" }[o.status];
+          return (
+            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Cmd #{o.id}</p>
+                <p style={{ fontSize: 12, color: C.textSecondary }}>{o.items.map(i => i.name).join(", ").slice(0, 50)}</p>
+              </div>
+              <p style={{ fontSize: 13, color: C.textSecondary }}>{Math.round(o.elapsed)} min</p>
+              <Tag color={sc}>{sl}</Tag>
+            </div>
+          );
+        })}
+      </Surface>
+    </div>
+  );
+}
+
+function QRTab({ restaurant }) {
+  const [sel, setSel] = useState(1);
+  const [fg, setFg] = useState("#1D1D1F");
+  const [bg, setBg] = useState("#FFFFFF");
+  const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
+  const url = `https://velvetguest.app/r/${restaurant.id}/t/${sel}`;
+  const download = () => {
+    const canvas = document.querySelector("#qr-dl canvas");
+    if (!canvas) return;
+    const a = document.createElement("a"); a.download = `vg-table-${sel}.png`; a.href = canvas.toDataURL("image/png"); a.click();
+  };
+  return (
+    <div className="fade-in" style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
+      <div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
+          {[["Tables", restaurant.tables || 8], ["QR actifs", restaurant.tables || 8], ["Scans totaux", 0]].map(([l, v]) => (
+            <Surface key={l} style={{ padding: "16px 18px" }}>
+              <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 500 }}>{l}</p>
+              <p style={{ fontSize: 24, fontWeight: 800, color: C.dark }}>{v}</p>
+            </Surface>
+          ))}
+        </div>
+        <Surface style={{ overflow: "hidden" }}>
+          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}><p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Tables</p></div>
+          <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 8 }}>
+            {tables.map(t => (
+              <div key={t} onClick={() => setSel(t)} style={{ padding: "12px 8px", borderRadius: 12, border: `1.5px solid ${sel === t ? C.dark : C.border}`, background: sel === t ? C.dark : C.surface, textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
+                <p style={{ fontSize: 10, color: sel === t ? "rgba(255,255,255,0.5)" : C.textTertiary, marginBottom: 4 }}>TABLE</p>
+                <p style={{ fontSize: 20, fontWeight: 800, color: sel === t ? C.white : C.dark }}>{t}</p>
+              </div>
+            ))}
+          </div>
+        </Surface>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Surface style={{ padding: "18px 20px" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 14 }}>Apparence</p>
+          <div style={{ display: "flex", gap: 12 }}>
+            {[["Couleur QR", fg, setFg], ["Fond", bg, setBg]].map(([l, v, set]) => (
+              <div key={l} style={{ flex: 1 }}>
+                <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6 }}>{l}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="color" value={v} onChange={e => set(e.target.value)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", cursor: "pointer", padding: 0 }} />
+                  <span style={{ fontSize: 11, color: C.textTertiary }}>{v}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Surface>
+        <Surface id="qr-dl" style={{ padding: "18px 20px", textAlign: "center" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Table {sel}</p>
+          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{restaurant.name}</p>
+          <div style={{ display: "inline-block", padding: 14, background: bg, borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
+            <QRCanvas text={url} size={160} fg={fg} bg={bg} />
+          </div>
+          <p style={{ fontSize: 10, color: C.textTertiary, marginTop: 10, wordBreak: "break-all", padding: "0 4px" }}>{url}</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <Btn variant="primary" size="sm" full onClick={download}>📥 Télécharger</Btn>
+            <Btn variant="ghost" size="sm" full>🖨</Btn>
+          </div>
+        </Surface>
+      </div>
+    </div>
+  );
+}
+
+function ReviewsTab() {
+  const reviews = [
+    { name: "Marie T.", rating: 5, text: "Super rapide, j'adore commander depuis mon téléphone !", time: "Il y a 2h" },
+    { name: "Lucas B.", rating: 4, text: "Très pratique, la carte est bien faite.", time: "Il y a 4h" },
+    { name: "Sophie M.", rating: 5, text: "Le paiement en ligne est top, on n'attend plus !", time: "Hier" },
+    { name: "Pierre D.", rating: 5, text: "Excellent service, commande reçue rapidement.", time: "Hier" },
+  ];
+  return (
+    <div className="fade-in">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
+        <KPICard label="Note globale" value="⭐ 4.7" sub="sur 32 avis" />
+        <KPICard label="Avis ce mois" value="32" sub="vs mois dernier" delta={8} />
+        <KPICard label="Taux de réponse" value="94%" sub="Excellent" delta={0} />
+      </div>
+      <Surface style={{ overflow: "hidden" }}>
+        {reviews.map((r, i) => (
+          <div key={i} style={{ padding: "18px 22px", borderBottom: i < reviews.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Avatar name={r.name} size={30} />
+                <div><p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</p><p style={{ fontSize: 11, color: C.textTertiary }}>{r.time}</p></div>
+              </div>
+              <div style={{ color: "#FF9F0A" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
+            </div>
+            <p style={{ fontSize: 14, color: C.textSecondary, lineHeight: 1.5 }}>{r.text}</p>
+          </div>
+        ))}
+      </Surface>
+    </div>
+  );
+}
+
+function MenuTabDash() {
+  return (
+    <div className="fade-in">
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}><Btn variant="primary">+ Ajouter un plat</Btn></div>
+      <Surface style={{ overflow: "hidden" }}>
+        {MENU.map((item, i) => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", borderBottom: i < MENU.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{item.emoji}</div>
+            <div style={{ flex: 1 }}><p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p><p style={{ fontSize: 12, color: C.textSecondary }}>{item.cat} · {item.desc}</p></div>
+            <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{item.price} €</p>
+            <Btn variant="ghost" size="xs">Modifier</Btn>
+          </div>
+        ))}
+      </Surface>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUISINE VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function CuisineView({ restaurant, onBack }) {
+  const store = useContext(StoreCtx);
+  const [clock, setClock] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+  const COLS = [
+    { key: "new", label: "Nouvelles", color: "#0071E3", orders: store.orders.filter(o => o.status === "new") },
+    { key: "cooking", label: "En cuisine", color: "#FF9F0A", orders: store.orders.filter(o => ["accepted","cooking"].includes(o.status)) },
+    { key: "ready", label: "Prêtes ✓", color: "#34C759", orders: store.orders.filter(o => o.status === "ready") },
+  ];
+  const btn = { new: "Accepter", accepted: "Démarrer", cooking: "Prête ✓", ready: "Servie ✓" };
+  return (
+    <div style={{ background: "#F5F5F7", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "'Figtree', -apple-system, sans-serif" }}>
+      <style>{css}</style>
+      <Toasts notifs={store.notifications} />
+      <header style={{ background: C.dark, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: "7px 14px", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, fontWeight: 500, ...FF }}>← Dashboard</button>
+          <Logo size={16} dark={false} />
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>{restaurant.emoji} {restaurant.name}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(52,199,89,0.2)", border: "1px solid rgba(52,199,89,0.3)", padding: "4px 10px", borderRadius: 20 }}>
+            <Dot color={C.accentGreen} pulse /><span style={{ color: C.accentGreen, fontSize: 11, fontWeight: 600 }}>EN DIRECT</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 32, alignItems: "center" }}>
+          {COLS.map(c => (
+            <div key={c.key} style={{ textAlign: "center" }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: c.orders.length > 0 ? c.color : "rgba(255,255,255,0.2)", lineHeight: 1 }}>{c.orders.length}</p>
+              <p style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 3, letterSpacing: "0.05em" }}>{c.label.toUpperCase()}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "0.02em", lineHeight: 1 }}>{clock.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 3 }}>{clock.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}</p>
+        </div>
+      </header>
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: 12, overflow: "auto" }}>
+        {COLS.map(col => (
+          <div key={col.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.white, borderRadius: 12, border: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{col.label}</span>
+              </div>
+              <span style={{ background: col.color + "15", color: col.color, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20 }}>{col.orders.length}</span>
+            </div>
+            {col.orders.length === 0 && <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: 28, textAlign: "center", color: C.textTertiary, fontSize: 13 }}>Aucune commande</div>}
+            {col.orders.sort((a, b) => b.elapsed - a.elapsed).map(order => {
+              const doneCount = order.items.filter(i => i.done).length;
+              const allDone = doneCount === order.items.length;
+              const isLate = order.elapsed >= 20 && order.status !== "ready";
+              const canAdvance = !["cooking"].includes(order.status) || allDone;
+              return (
+                <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
+                  <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
+                      <div><p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p><p style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>#{order.id}</p></div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ fontSize: 22, fontWeight: 800, color: C.white, lineHeight: 1 }}>{Math.round(order.elapsed)}<span style={{ fontSize: 12, opacity: 0.6 }}>min</span></p>
+                      {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
+                    </div>
+                  </div>
+                  {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
+                  <div style={{ padding: "10px 12px" }}>
+                    {order.items.map(item => (
+                      <div key={item.id} onClick={() => !["new"].includes(order.status) && store.toggleItem(order.id, item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, marginBottom: 4, background: item.done ? C.accentGreen + "10" : C.bg, cursor: !["new"].includes(order.status) ? "pointer" : "default", border: `1px solid ${item.done ? C.accentGreen + "30" : C.border}`, transition: "all 0.15s" }}>
+                        {!["new"].includes(order.status) && (
+                          <div style={{ width: 22, height: 22, borderRadius: 6, background: item.done ? C.accentGreen : C.white, border: `1.5px solid ${item.done ? C.accentGreen : C.borderStrong}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {item.done && <span style={{ color: C.white, fontSize: 12, fontWeight: 900 }}>✓</span>}
+                          </div>
+                        )}
+                        <div style={{ width: 26, height: 26, borderRadius: 7, background: item.done ? C.accentGreen + "20" : C.dark, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <span style={{ color: item.done ? C.accentGreen : C.white, fontWeight: 800, fontSize: 12 }}>×{item.qty}</span>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: item.done ? C.textTertiary : C.dark, textDecoration: item.done ? "line-through" : "none" }}>{item.name}</p>
+                          {item.detail && <p style={{ fontSize: 11, color: C.accentOrange, fontWeight: 600 }}>{item.detail}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {["cooking", "accepted"].includes(order.status) && (
+                    <div style={{ padding: "0 12px 8px" }}>
+                      <div style={{ height: 4, background: C.bg, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", borderRadius: 2, background: allDone ? C.accentGreen : C.accentOrange, width: `${(doneCount / order.items.length) * 100}%`, transition: "width 0.4s ease" }} />
+                      </div>
+                      <p style={{ textAlign: "right", fontSize: 10, color: C.textTertiary, marginTop: 3, fontWeight: 600 }}>{doneCount}/{order.items.length} prêts</p>
+                    </div>
+                  )}
+                  <div style={{ padding: "6px 12px 12px" }}>
+                    <button onClick={() => canAdvance && store.advanceOrder(order.id)} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
+                      {!canAdvance ? `${order.items.length - doneCount} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {store.servedOrders.length > 0 && (
+        <div style={{ background: C.dark, borderTop: "1px solid rgba(255,255,255,0.08)", padding: "10px 20px", display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+          <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em" }}>SERVIES</span>
+          {store.servedOrders.slice(0, 6).map((o, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "5px 10px" }}>
+              <span style={{ color: C.accentGreen, fontWeight: 700, fontSize: 13 }}>T{o.table}</span>
+              <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>#{o.id}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function ClientView({ restaurant, onBack }) {
+  const store = useContext(StoreCtx);
+  const [step, setStep] = useState("scan");
+  const [cart, setCart] = useState([]);
+  const [activeCat, setActiveCat] = useState("Tous");
+  const [note, setNote] = useState("");
+  const [rating, setRating] = useState(0);
+  const tableNum = 5;
+  const cats = ["Tous", ...Array.from(new Set(MENU.map(i => i.cat)))];
+  const filtered = activeCat === "Tous" ? MENU : MENU.filter(i => i.cat === activeCat);
+  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const count = cart.reduce((s, i) => s + i.qty, 0);
+  const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
+  const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
+  const confirm = () => { store.addOrder(tableNum, cart.map(i => ({ name: i.name, detail: "", qty: i.qty, cat: i.cat })), note); setStep("done"); };
+
+  const Frame = ({ children }) => (
+    <div style={{ background: "#0A0A0B", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", ...FF }}>
+      <style>{css + `@keyframes fadeup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{ width: "100%", maxWidth: 430, padding: "16px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 20, padding: "7px 16px", color: "rgba(255,255,255,0.6)", cursor: "pointer", fontSize: 13, ...FF }}>← Dashboard</button>
+        <div style={{ background: "rgba(255,59,95,0.15)", border: "1px solid rgba(255,59,95,0.3)", borderRadius: 20, padding: "5px 12px" }}>
+          <span style={{ color: C.accent, fontSize: 11, fontWeight: 600 }}>📱 PREVIEW CLIENT</span>
+        </div>
+      </div>
+      <div style={{ width: "100%", maxWidth: 375, margin: "14px auto 24px", background: "#1C1C1E", borderRadius: 44, padding: 8, boxShadow: "0 40px 100px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.08)" }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", width: 80, height: 20, background: "#1C1C1E", borderRadius: 20, zIndex: 10 }} />
+          <div style={{ background: "#fff", borderRadius: 36, overflow: "hidden", minHeight: 680 }}>{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step === "scan") return (
+    <Frame>
+      <div style={{ background: C.dark, padding: "52px 24px 28px", textAlign: "center" }}>
+        <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginBottom: 6 }}>{restaurant.name}</p>
+        <p style={{ fontSize: 32, fontWeight: 900, color: C.white, letterSpacing: "-0.04em" }}>Table {tableNum}</p>
+      </div>
+      <div style={{ padding: "28px 24px", textAlign: "center" }}>
+        <div style={{ display: "inline-block", padding: 16, background: "#f5f5f7", borderRadius: 20, marginBottom: 20 }}>
+          <QRCanvas text={`https://velvetguest.app/r/${restaurant.id}/t/${tableNum}`} size={180} fg="#1D1D1F" bg="#f5f5f7" />
+        </div>
+        <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>Scannez pour accéder à la carte, ou simulez l'expérience ci-dessous.</p>
+        <button onClick={() => setStep("menu")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Voir la carte →</button>
+      </div>
+    </Frame>
+  );
+
+  if (step === "menu") return (
+    <Frame>
+      <div style={{ background: C.dark, padding: "48px 20px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div><p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 4 }}>{restaurant.name}</p><p style={{ fontSize: 22, fontWeight: 800, color: C.white }}>Table {tableNum}</p></div>
+          {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "9px 16px", color: C.white, fontWeight: 700, fontSize: 13, cursor: "pointer", ...FF }}>🛒 {count} · {total}€</button>}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
+        {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
+      </div>
+      <div style={{ overflowY: "auto", maxHeight: 440 }}>
+        {filtered.map(item => {
+          const inCart = cart.find(i => i.id === item.id);
+          return (
+            <div key={item.id} style={{ display: "flex", gap: 12, padding: "14px 16px", borderBottom: `1px solid ${C.border}`, animation: "fadeup 0.2s ease" }}>
+              <div style={{ width: 56, height: 56, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{item.emoji}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{item.name}</p>
+                    {item.popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, display: "inline-block", marginTop: 2 }}>⭐ Populaire</span>}
+                  </div>
+                  <p style={{ fontWeight: 800, fontSize: 15, color: C.dark, flexShrink: 0 }}>{item.price}€</p>
+                </div>
+                <p style={{ color: C.textSecondary, fontSize: 12, margin: "4px 0 8px", lineHeight: 1.4 }}>{item.desc}</p>
+                {inCart ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button onClick={() => rem(item.id)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
+                    <span style={{ fontWeight: 800, fontSize: 15 }}>{inCart.qty}</span>
+                    <button onClick={() => add(item)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
+                  </div>
+                ) : (
+                  <button onClick={() => add(item)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>Ajouter</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {count > 0 && (
+        <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, background: C.white }}>
+          <button onClick={() => setStep("cart")} style={{ width: "100%", padding: 14, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", ...FF }}>
+            <span>🛒 Voir le panier ({count})</span><span>{total}€</span>
+          </button>
+        </div>
+      )}
+    </Frame>
+  );
+
+  if (step === "cart") return (
+    <Frame>
+      <div style={{ padding: "48px 20px 0" }}>
+        <button onClick={() => setStep("menu")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Continuer</button>
+        <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 20 }}>Mon panier</p>
+        {cart.map(item => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 22 }}>{item.emoji}</div>
+            <div style={{ flex: 1 }}><p style={{ fontWeight: 600, fontSize: 14, color: C.dark }}>{item.name}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{item.price}€/u</p></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={() => rem(item.id)} style={{ width: 26, height: 26, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 14, ...FF }}>−</button>
+              <span style={{ fontWeight: 800, fontSize: 14, minWidth: 16, textAlign: "center" }}>{item.qty}</span>
+              <button onClick={() => add(item)} style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 14, ...FF }}>+</button>
+            </div>
+            <p style={{ fontWeight: 800, color: C.dark, minWidth: 40, textAlign: "right" }}>{item.price * item.qty}€</p>
+          </div>
+        ))}
+        <div style={{ marginTop: 14 }}>
+          <label style={{ color: C.textSecondary, fontSize: 12, fontWeight: 500, display: "block", marginBottom: 6 }}>Note pour la cuisine</label>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Allergie, cuisson, sans gluten…" style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", fontSize: 13, color: C.dark, resize: "none", height: 64, outline: "none", ...FF }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0" }}>
+          <span style={{ fontWeight: 700, fontSize: 17, color: C.dark }}>Total</span>
+          <span style={{ fontWeight: 900, fontSize: 22, color: C.dark }}>{total}€</span>
+        </div>
+        <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+      </div>
+    </Frame>
+  );
+
+  if (step === "payment") return (
+    <Frame>
+      <div style={{ padding: "48px 20px 0" }}>
+        <button onClick={() => setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Retour</button>
+        <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 4 }}>Paiement</p>
+        <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>Table {tableNum} · {restaurant.name}</p>
+        <div style={{ background: C.bg, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+          {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{i.price * i.qty}€</span></div>)}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
+            <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span><span style={{ fontWeight: 900, fontSize: 20 }}>{total}€</span>
+          </div>
+        </div>
+        {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay", s: "Paiement instantané" }, { icon: "💵", l: "Espèces", s: "Le serveur viendra" }].map(m => (
+          <div key={m.l} onClick={confirm} style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, border: `1.5px solid ${C.border}`, borderRadius: 14, marginBottom: 10, cursor: "pointer", transition: "border-color 0.15s" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+            <div style={{ fontSize: 24 }}>{m.icon}</div>
+            <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{m.s}</p></div>
+            <span style={{ color: C.textTertiary, fontSize: 18 }}>›</span>
+          </div>
+        ))}
+      </div>
+    </Frame>
+  );
+
+  return (
+    <Frame>
+      <div style={{ padding: "52px 24px", textAlign: "center" }}>
+        <div style={{ width: 72, height: 72, borderRadius: "50%", background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 32 }}>✅</div>
+        <p style={{ fontSize: 26, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", marginBottom: 8 }}>Commande envoyée !</p>
+        <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6, marginBottom: 28 }}>En cuisine. Vous serez servi très bientôt.</p>
+        <div style={{ background: C.bg, borderRadius: 16, padding: 16, marginBottom: 24, textAlign: "left" }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: C.textTertiary, letterSpacing: "0.05em", marginBottom: 10 }}>RÉCAPITULATIF</p>
+          {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.dark, marginBottom: 6 }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{i.price * i.qty}€</span></div>)}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total payé</span><span style={{ fontWeight: 900 }}>{total}€</span></div>
+        </div>
+        <p style={{ fontWeight: 600, fontSize: 14, color: C.dark, marginBottom: 12 }}>Notez votre expérience</p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 24 }}>
+          {[1,2,3,4,5].map(s => <button key={s} onClick={() => setRating(s)} style={{ fontSize: 28, background: "none", border: "none", cursor: "pointer", transform: rating >= s ? "scale(1.15)" : "scale(1)", transition: "transform 0.15s", filter: rating >= s ? "none" : "grayscale(1)" }}>⭐</button>)}
+        </div>
+        {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 14, marginBottom: 16 }}>Merci pour votre avis ! 🙏</p>}
+        <button onClick={() => { setStep("menu"); setCart([]); setRating(0); setNote(""); }} style={{ width: "100%", padding: 14, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander à nouveau</button>
+      </div>
+    </Frame>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APP ROOT — Supabase session restore
+// ─────────────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [page, setPage] = useState("loading");
+  const [user, setUser] = useState(null);
+  const [restaurant, setRestaurant] = useState(null);
+  const store = useStore();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) {
+        const u = data.session.user;
+        setUser({ id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email });
+        setPage("restaurants");
+      } else {
+        setPage("signup");
+      }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (!session) { setUser(null); setPage("signup"); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setUser(null); setRestaurant(null); setPage("signup");
+  }
+
+  if (page === "loading") return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <style>{css}</style>
+      <Logo size={20} />
+    </div>
+  );
+
+  return (
+    <StoreCtx.Provider value={store}>
+      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} />}
+      {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
+      {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
+    </StoreCtx.Provider>
+  );
 }
