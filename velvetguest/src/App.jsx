@@ -375,6 +375,12 @@ function RestaurantsPage({ user, onSelect, onLogout }) {
       .insert({ ...form, owner_id: user.id, slug, tables_count: Number(form.tables_count) })
       .select().single();
     if (err) { setCreateError(err.message); setCreating(false); return; }
+    // Create table records
+    const tableRows = Array.from({ length: Number(form.tables_count) }, (_, i) => ({
+      restaurant_id: data.id, number: i + 1,
+      qr_url: `${window.location.origin}/r/${slug}/t/${i + 1}`,
+    }));
+    await supabase.from("tables").insert(tableRows);
     setRestaurants(p => [data, ...p]);
     setShowCreate(false);
     setForm({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
@@ -541,7 +547,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "orders" && <OrdersTab store={store} />}
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
           {tab === "reviews" && <ReviewsTab />}
-          {tab === "menu" && <MenuTabDash />}
+          {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
       </main>
     </div>
@@ -675,7 +681,7 @@ function QRTab({ restaurant }) {
   const [fg, setFg] = useState("#1D1D1F");
   const [bg, setBg] = useState("#FFFFFF");
   const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
-  const url = `https://velvetguest.app/r/${restaurant.id}/t/${sel}`;
+  const url = `${window.location.origin}/r/${restaurant.slug}/t/${sel}`;
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
@@ -768,20 +774,143 @@ function ReviewsTab() {
   );
 }
 
-function MenuTabDash() {
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", is_popular: false, available: true };
+const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
+
+function MenuTabDash({ restaurant }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null); // null | { mode: 'add'|'edit', item }
+  const [form, setForm] = useState(EMPTY_ITEM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).order("category").order("name")
+      .then(({ data }) => { setItems(data ?? []); setLoading(false); });
+  }, [restaurant.id]);
+
+  function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, is_popular: item.is_popular, available: item.available }); setError(""); setModal({ mode: "edit", item }); }
+
+  async function save() {
+    if (!form.name || !form.price) { setError("Nom et prix requis."); return; }
+    setSaving(true); setError("");
+    const payload = { ...form, price: parseFloat(form.price), restaurant_id: restaurant.id };
+    if (modal.mode === "add") {
+      const { data, error: err } = await supabase.from("menu_items").insert(payload).select().single();
+      if (err) { setError(err.message); setSaving(false); return; }
+      setItems(p => [...p, data]);
+    } else {
+      const { data, error: err } = await supabase.from("menu_items").update(payload).eq("id", modal.item.id).select().single();
+      if (err) { setError(err.message); setSaving(false); return; }
+      setItems(p => p.map(i => i.id === data.id ? data : i));
+    }
+    setSaving(false); setModal(null);
+  }
+
+  async function toggleAvailable(item) {
+    await supabase.from("menu_items").update({ available: !item.available }).eq("id", item.id);
+    setItems(p => p.map(i => i.id === item.id ? { ...i, available: !i.available } : i));
+  }
+
+  async function deleteItem(item) {
+    if (!confirm(`Supprimer "${item.name}" ?`)) return;
+    await supabase.from("menu_items").delete().eq("id", item.id);
+    setItems(p => p.filter(i => i.id !== item.id));
+  }
+
+  const byCategory = items.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
+
   return (
     <div className="fade-in">
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}><Btn variant="primary">+ Ajouter un plat</Btn></div>
-      <Surface style={{ overflow: "hidden" }}>
-        {MENU.map((item, i) => (
-          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", borderBottom: i < MENU.length - 1 ? `1px solid ${C.border}` : "none" }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{item.emoji}</div>
-            <div style={{ flex: 1 }}><p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p><p style={{ fontSize: 12, color: C.textSecondary }}>{item.cat} · {item.desc}</p></div>
-            <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{item.price} €</p>
-            <Btn variant="ghost" size="xs">Modifier</Btn>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
+        <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
+      </div>
+
+      {loading ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+          <div style={{ width: 20, height: 20, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+        </div>
+      ) : items.length === 0 ? (
+        <Surface style={{ padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🍽️</div>
+          <p style={{ fontWeight: 600, color: C.dark, marginBottom: 6 }}>Carte vide</p>
+          <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>Ajoutez vos premiers plats</p>
+          <Btn variant="primary" onClick={openAdd}>+ Premier plat</Btn>
+        </Surface>
+      ) : (
+        Object.entries(byCategory).map(([cat, catItems]) => (
+          <div key={cat} style={{ marginBottom: 20 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8, paddingLeft: 4 }}>{cat.toUpperCase()}</p>
+            <Surface style={{ overflow: "hidden" }}>
+              {catItems.map((item, i) => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", borderBottom: i < catItems.length - 1 ? `1px solid ${C.border}` : "none", opacity: item.available ? 1 : 0.5 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{item.emoji}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p>
+                      {item.is_popular && <Tag color={C.accent}>⭐ Populaire</Tag>}
+                      {!item.available && <Tag color={C.textTertiary}>Indisponible</Tag>}
+                    </div>
+                    <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{item.description}</p>
+                  </div>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: C.dark, minWidth: 56, textAlign: "right" }}>{Number(item.price).toFixed(2)} €</p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => toggleAvailable(item)} title={item.available ? "Désactiver" : "Activer"} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 13 }}>{item.available ? "👁" : "🚫"}</button>
+                    <Btn variant="ghost" size="xs" onClick={() => openEdit(item)}>Modifier</Btn>
+                    <button onClick={() => deleteItem(item)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 8px", cursor: "pointer", color: C.accent, fontSize: 13 }}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </Surface>
           </div>
-        ))}
-      </Surface>
+        ))
+      )}
+
+      {modal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 24 }}>{modal.mode === "add" ? "Nouveau plat" : "Modifier le plat"}</h2>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
+                <input value={form.emoji} onChange={fv("emoji")} style={{ width: 60, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <InputField label="Nom du plat" placeholder="Entrecôte 300g" value={form.name} onChange={fv("name")} autoFocus />
+              </div>
+            </div>
+            <InputField label="Description" placeholder="Black Angus, sauce au poivre vert" value={form.description} onChange={fv("description")} />
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <InputField label="Prix (€)" type="number" placeholder="18.90" value={form.price} onChange={fv("price")} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Catégorie</label>
+                <select value={form.category} onChange={fv("category")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF, marginBottom: 16 }}>
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+              {[["is_popular", "⭐ Populaire"], ["available", "✅ Disponible"]].map(([k, l]) => (
+                <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={form[k]} onChange={e => setForm(p => ({ ...p, [k]: e.target.checked }))} style={{ width: 16, height: 16 }} />
+                  <span style={{ fontSize: 14, color: C.dark }}>{l}</span>
+                </label>
+              ))}
+            </div>
+            {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
+              <Btn variant="primary" full disabled={saving} onClick={save}>{saving ? "..." : modal.mode === "add" ? "Ajouter" : "Enregistrer"}</Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
     </div>
   );
 }
@@ -1086,9 +1215,214 @@ function ClientView({ restaurant, onBack }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER PAGE — public, no auth, opened by scanning QR code
+// ─────────────────────────────────────────────────────────────────────────────
+function CustomerPage({ slug, tableNum }) {
+  const [step, setStep] = useState("loading"); // loading | menu | cart | payment | done | error
+  const [restaurant, setRestaurant] = useState(null);
+  const [tableId, setTableId] = useState(null);
+  const [menuItems, setMenuItems] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [activeCat, setActiveCat] = useState("Tous");
+  const [note, setNote] = useState("");
+  const [rating, setRating] = useState(0);
+  const [orderId, setOrderId] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      const { data: resto } = await supabase.from("restaurants").select("*").eq("slug", slug).single();
+      if (!resto) { setStep("error"); return; }
+      setRestaurant(resto);
+      const { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", resto.id).eq("number", tableNum).single();
+      setTableId(tbl?.id ?? null);
+      const { data: items } = await supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name");
+      setMenuItems(items ?? []);
+      setStep("menu");
+    }
+    load();
+  }, [slug, tableNum]);
+
+  const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
+  const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const count = cart.reduce((s, i) => s + i.qty, 0);
+
+  const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
+  const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
+
+  async function confirm() {
+    const { data: order, error } = await supabase.from("orders")
+      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING" })
+      .select().single();
+    if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
+    const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
+    await supabase.from("order_items").insert(orderItems);
+    setOrderId(order.id);
+    setStep("done");
+  }
+
+  const bg = step === "loading" || step === "error" ? C.bg : "#fff";
+
+  return (
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: "'Figtree', -apple-system, sans-serif", maxWidth: 480, margin: "0 auto" }}>
+      <style>{css}</style>
+
+      {step === "loading" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 16 }}>
+          <Logo size={20} />
+          <div style={{ width: 20, height: 20, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+        </div>
+      )}
+
+      {step === "error" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", padding: 32, textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>😕</div>
+          <p style={{ fontSize: 20, fontWeight: 700, color: C.dark, marginBottom: 8 }}>Restaurant introuvable</p>
+          <p style={{ color: C.textSecondary, fontSize: 14 }}>Ce QR code n'est plus valide.</p>
+        </div>
+      )}
+
+      {step === "menu" && (
+        <>
+          <div style={{ background: C.dark, padding: "52px 20px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 22 }}>{restaurant.logo_emoji}</span>
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{restaurant.name}</p>
+                </div>
+                <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
+              </div>
+              {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "10px 18px", color: C.white, fontWeight: 700, fontSize: 14, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
+            {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
+          </div>
+          <div>
+            {filtered.map(item => {
+              const inCart = cart.find(i => i.id === item.id);
+              return (
+                <div key={item.id} style={{ display: "flex", gap: 12, padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ width: 60, height: 60, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>{item.emoji}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{item.name}</p>
+                        {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block", marginTop: 3 }}>⭐ Populaire</span>}
+                      </div>
+                      <p style={{ fontWeight: 800, fontSize: 16, color: C.dark, flexShrink: 0, marginLeft: 8 }}>{Number(item.price).toFixed(2)}€</p>
+                    </div>
+                    {item.description && <p style={{ color: C.textSecondary, fontSize: 13, margin: "5px 0 10px", lineHeight: 1.4 }}>{item.description}</p>}
+                    {inCart ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <button onClick={() => rem(item.id)} style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>−</button>
+                        <span style={{ fontWeight: 800, fontSize: 16 }}>{inCart.qty}</span>
+                        <button onClick={() => add(item)} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>+</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => add(item)} style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", ...FF }}>Ajouter</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {count > 0 && (
+            <div style={{ position: "sticky", bottom: 0, padding: "12px 16px", background: C.white, borderTop: `1px solid ${C.border}` }}>
+              <button onClick={() => setStep("cart")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", ...FF }}>
+                <span>🛒 Voir le panier ({count})</span><span>{total.toFixed(2)}€</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {step === "cart" && (
+        <div style={{ padding: "40px 20px 24px" }}>
+          <button onClick={() => setStep("menu")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Continuer mes achats</button>
+          <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 24 }}>Mon panier</p>
+          {cart.map(item => (
+            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 26 }}>{item.emoji}</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: 600, fontSize: 15, color: C.dark }}>{item.name}</p>
+                <p style={{ color: C.textSecondary, fontSize: 13 }}>{Number(item.price).toFixed(2)}€/u</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button onClick={() => rem(item.id)} style={{ width: 30, height: 30, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
+                <span style={{ fontWeight: 800, fontSize: 16, minWidth: 20, textAlign: "center" }}>{item.qty}</span>
+                <button onClick={() => add(item)} style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
+              </div>
+              <p style={{ fontWeight: 800, color: C.dark, minWidth: 52, textAlign: "right" }}>{(Number(item.price) * item.qty).toFixed(2)}€</p>
+            </div>
+          ))}
+          <div style={{ marginTop: 16 }}>
+            <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>Note pour la cuisine (allergies, cuisson…)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ex: sans gluten, viande bien cuite…" rows={3} style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", fontSize: 14, color: C.dark, resize: "none", outline: "none", ...FF }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0" }}>
+            <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>Total</span>
+            <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
+          </div>
+          <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+        </div>
+      )}
+
+      {step === "payment" && (
+        <div style={{ padding: "40px 20px 24px" }}>
+          <button onClick={() => setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
+          <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
+          <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 24 }}>Table {tableNum} · {restaurant?.name}</p>
+          <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
+            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
+              <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
+            </div>
+          </div>
+          {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay", s: "Paiement instantané" }, { icon: "💵", l: "Espèces", s: "Le serveur passera à votre table" }].map(m => (
+            <div key={m.l} onClick={confirm} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+              <div style={{ fontSize: 26 }}>{m.icon}</div>
+              <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{m.s}</p></div>
+              <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {step === "done" && (
+        <div style={{ padding: "60px 24px 40px", textAlign: "center" }}>
+          <div style={{ width: 80, height: 80, borderRadius: "50%", background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✅</div>
+          <p style={{ fontSize: 28, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", marginBottom: 10 }}>Commande envoyée !</p>
+          <p style={{ color: C.textSecondary, fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>Votre commande est en cuisine.<br />Nous vous apportons ça très bientôt !</p>
+          <div style={{ background: C.bg, borderRadius: 18, padding: 20, marginBottom: 28, textAlign: "left" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 12 }}>VOTRE COMMANDE</p>
+            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: C.dark, marginBottom: 8 }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}><span style={{ fontWeight: 700 }}>Total payé</span><span style={{ fontWeight: 900 }}>{total.toFixed(2)}€</span></div>
+          </div>
+          <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 14 }}>Comment s'est passée votre expérience ?</p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 28 }}>
+            {[1,2,3,4,5].map(s => <button key={s} onClick={() => setRating(s)} style={{ fontSize: 32, background: "none", border: "none", cursor: "pointer", transform: rating >= s ? "scale(1.2)" : "scale(1)", transition: "transform 0.15s", filter: rating >= s ? "none" : "grayscale(1)" }}>⭐</button>)}
+          </div>
+          {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 15, marginBottom: 20 }}>Merci pour votre avis ! 🙏</p>}
+          <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); }} style={{ width: "100%", padding: 16, background: C.bg, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // APP ROOT — Supabase session restore
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
+  // Route public customer pages before any auth check
+  const customerMatch = window.location.pathname.match(/^\/r\/([^/]+)\/t\/(\d+)/);
+  if (customerMatch) {
+    return <CustomerPage slug={customerMatch[1]} tableNum={Number(customerMatch[2])} />;
+  }
   const [page, setPage] = useState("loading");
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
