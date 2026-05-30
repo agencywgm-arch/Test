@@ -918,16 +918,137 @@ function MenuTabDash({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CUISINE VIEW
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CUISINE VIEW — Supabase Realtime
+// ─────────────────────────────────────────────────────────────────────────────
+function useLiveOrders(restaurantId, pushNotif) {
+  const [orders, setOrders] = useState([]);
+  const [served, setServed] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Format a raw DB order (with order_items + tables join) into UI shape
+  const fmt = useCallback((o) => ({
+    id: o.id,
+    table: o.tables?.number ?? "?",
+    note: o.note || "",
+    status: o.status === "PENDING" ? "new" : o.status === "PREPARING" ? "cooking" : o.status === "READY" ? "ready" : "served",
+    elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
+    items: (o.order_items || []).map(oi => ({
+      id: oi.id,
+      name: oi.menu_items?.name ?? "Plat",
+      emoji: oi.menu_items?.emoji ?? "🍽",
+      qty: oi.quantity,
+      detail: oi.detail || "",
+      cat: oi.menu_items?.category ?? "",
+      done: false,
+    })),
+    createdAt: o.created_at,
+  }), []);
+
+  async function fetchOrders() {
+    const { data } = await supabase
+      .from("orders")
+      .select("*, tables(number), order_items(*, menu_items(name, emoji, category))")
+      .eq("restaurant_id", restaurantId)
+      .neq("status", "DONE")
+      .order("created_at", { ascending: true });
+    setOrders((data ?? []).map(fmt));
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    fetchOrders();
+
+    // Keep item done-state across realtime merges
+    const doneSets = {};
+
+    const channel = supabase
+      .channel(`kitchen-${restaurantId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        async (payload) => {
+          // Fetch full order with joins
+          const { data } = await supabase
+            .from("orders")
+            .select("*, tables(number), order_items(*, menu_items(name, emoji, category))")
+            .eq("id", payload.new.id)
+            .single();
+          if (!data) return;
+          const order = fmt(data);
+          setOrders(prev => [order, ...prev]);
+          pushNotif(`Nouvelle commande — Table ${order.table}`, "new");
+        }
+      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        async (payload) => {
+          if (payload.new.status === "DONE") {
+            setOrders(prev => {
+              const found = prev.find(o => o.id === payload.new.id);
+              if (found) setServed(s => [{ ...found, status: "served" }, ...s.slice(0, 9)]);
+              return prev.filter(o => o.id !== payload.new.id);
+            });
+            return;
+          }
+          const { data } = await supabase
+            .from("orders")
+            .select("*, tables(number), order_items(*, menu_items(name, emoji, category))")
+            .eq("id", payload.new.id)
+            .single();
+          if (!data) return;
+          const updated = fmt(data);
+          setOrders(prev => prev.map(o => {
+            if (o.id !== updated.id) return o;
+            // Preserve item done-state
+            const doneIds = doneSets[o.id] || new Set(o.items.filter(i => i.done).map(i => i.id));
+            doneSets[o.id] = doneIds;
+            return { ...updated, items: updated.items.map(i => ({ ...i, done: doneIds.has(i.id) })) };
+          }));
+          const labels = { cooking: "en cuisine", ready: "prête à servir" };
+          if (labels[updated.status]) pushNotif(`Table ${updated.table} — Commande ${labels[updated.status]}`, updated.status === "ready" ? "warning" : "info");
+        }
+      )
+      .subscribe();
+
+    // Tick elapsed time every minute
+    const tick = setInterval(() => {
+      setOrders(prev => prev.map(o => ({ ...o, elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000)) })));
+    }, 60000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(tick); };
+  }, [restaurantId]);
+
+  const advanceOrder = useCallback(async (id) => {
+    const next = { new: "PREPARING", cooking: "READY", ready: "DONE" };
+    setOrders(prev => {
+      const o = prev.find(x => x.id === id);
+      if (!o || !next[o.status]) return prev;
+      supabase.from("orders").update({ status: next[o.status] }).eq("id", id).then(() => {});
+      return prev; // realtime update will handle the state change
+    });
+  }, []);
+
+  const toggleItem = useCallback((orderId, itemId) => {
+    setOrders(prev => prev.map(o =>
+      o.id === orderId ? { ...o, items: o.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) } : o
+    ));
+  }, []);
+
+  return { orders, served, loading, advanceOrder, toggleItem };
+}
+
 function CuisineView({ restaurant, onBack }) {
   const store = useContext(StoreCtx);
+  const { orders, served, loading, advanceOrder, toggleItem } = useLiveOrders(restaurant.id, store.pushNotif);
   const [clock, setClock] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+
   const COLS = [
-    { key: "new", label: "Nouvelles", color: "#0071E3", orders: store.orders.filter(o => o.status === "new") },
-    { key: "cooking", label: "En cuisine", color: "#FF9F0A", orders: store.orders.filter(o => ["accepted","cooking"].includes(o.status)) },
-    { key: "ready", label: "Prêtes ✓", color: "#34C759", orders: store.orders.filter(o => o.status === "ready") },
+    { key: "new", label: "Nouvelles", color: "#0071E3", orders: orders.filter(o => o.status === "new") },
+    { key: "cooking", label: "En cuisine", color: "#FF9F0A", orders: orders.filter(o => o.status === "cooking") },
+    { key: "ready", label: "Prêtes ✓", color: "#34C759", orders: orders.filter(o => o.status === "ready") },
   ];
-  const btn = { new: "Accepter", accepted: "Démarrer", cooking: "Prête ✓", ready: "Servie ✓" };
+  const btn = { new: "Accepter →", cooking: "Prête ✓", ready: "Servie ✓" };
+
   return (
     <div style={{ background: "#F5F5F7", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "'Figtree', -apple-system, sans-serif" }}>
       <style>{css}</style>
@@ -954,79 +1075,87 @@ function CuisineView({ restaurant, onBack }) {
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 3 }}>{clock.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}</p>
         </div>
       </header>
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: 12, overflow: "auto" }}>
-        {COLS.map(col => (
-          <div key={col.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.white, borderRadius: 12, border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{col.label}</span>
-              </div>
-              <span style={{ background: col.color + "15", color: col.color, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20 }}>{col.orders.length}</span>
-            </div>
-            {col.orders.length === 0 && <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: 28, textAlign: "center", color: C.textTertiary, fontSize: 13 }}>Aucune commande</div>}
-            {col.orders.sort((a, b) => b.elapsed - a.elapsed).map(order => {
-              const doneCount = order.items.filter(i => i.done).length;
-              const allDone = doneCount === order.items.length;
-              const isLate = order.elapsed >= 20 && order.status !== "ready";
-              const canAdvance = !["cooking"].includes(order.status) || allDone;
-              return (
-                <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
-                  <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
-                      <div><p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p><p style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>#{order.id}</p></div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 22, fontWeight: 800, color: C.white, lineHeight: 1 }}>{Math.round(order.elapsed)}<span style={{ fontSize: 12, opacity: 0.6 }}>min</span></p>
-                      {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
-                    </div>
-                  </div>
-                  {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
-                  <div style={{ padding: "10px 12px" }}>
-                    {order.items.map(item => (
-                      <div key={item.id} onClick={() => !["new"].includes(order.status) && store.toggleItem(order.id, item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, marginBottom: 4, background: item.done ? C.accentGreen + "10" : C.bg, cursor: !["new"].includes(order.status) ? "pointer" : "default", border: `1px solid ${item.done ? C.accentGreen + "30" : C.border}`, transition: "all 0.15s" }}>
-                        {!["new"].includes(order.status) && (
-                          <div style={{ width: 22, height: 22, borderRadius: 6, background: item.done ? C.accentGreen : C.white, border: `1.5px solid ${item.done ? C.accentGreen : C.borderStrong}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            {item.done && <span style={{ color: C.white, fontSize: 12, fontWeight: 900 }}>✓</span>}
-                          </div>
-                        )}
-                        <div style={{ width: 26, height: 26, borderRadius: 7, background: item.done ? C.accentGreen + "20" : C.dark, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          <span style={{ color: item.done ? C.accentGreen : C.white, fontWeight: 800, fontSize: 12 }}>×{item.qty}</span>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 14, fontWeight: 600, color: item.done ? C.textTertiary : C.dark, textDecoration: item.done ? "line-through" : "none" }}>{item.name}</p>
-                          {item.detail && <p style={{ fontSize: 11, color: C.accentOrange, fontWeight: 600 }}>{item.detail}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {["cooking", "accepted"].includes(order.status) && (
-                    <div style={{ padding: "0 12px 8px" }}>
-                      <div style={{ height: 4, background: C.bg, borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ height: "100%", borderRadius: 2, background: allDone ? C.accentGreen : C.accentOrange, width: `${(doneCount / order.items.length) * 100}%`, transition: "width 0.4s ease" }} />
-                      </div>
-                      <p style={{ textAlign: "right", fontSize: 10, color: C.textTertiary, marginTop: 3, fontWeight: 600 }}>{doneCount}/{order.items.length} prêts</p>
-                    </div>
-                  )}
-                  <div style={{ padding: "6px 12px 12px" }}>
-                    <button onClick={() => canAdvance && store.advanceOrder(order.id)} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
-                      {!canAdvance ? `${order.items.length - doneCount} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
-                    </button>
-                  </div>
+
+      {loading ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <div style={{ width: 20, height: 20, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: C.white, borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+          <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Chargement des commandes…</span>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: 12, overflow: "auto" }}>
+          {COLS.map(col => (
+            <div key={col.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.white, borderRadius: 12, border: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{col.label}</span>
                 </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      {store.servedOrders.length > 0 && (
+                <span style={{ background: col.color + "15", color: col.color, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20 }}>{col.orders.length}</span>
+              </div>
+              {col.orders.length === 0 && <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: 28, textAlign: "center", color: C.textTertiary, fontSize: 13 }}>Aucune commande</div>}
+              {col.orders.sort((a, b) => b.elapsed - a.elapsed).map(order => {
+                const doneCount = order.items.filter(i => i.done).length;
+                const allDone = doneCount === order.items.length;
+                const isLate = order.elapsed >= 20 && order.status !== "ready";
+                const canAdvance = order.status !== "cooking" || allDone;
+                return (
+                  <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
+                    <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
+                        <div><p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p><p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p></div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <p style={{ fontSize: 22, fontWeight: 800, color: C.white, lineHeight: 1 }}>{order.elapsed}<span style={{ fontSize: 12, opacity: 0.6 }}>min</span></p>
+                        {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
+                      </div>
+                    </div>
+                    {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
+                    <div style={{ padding: "10px 12px" }}>
+                      {order.items.map(item => (
+                        <div key={item.id} onClick={() => order.status !== "new" && toggleItem(order.id, item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, marginBottom: 4, background: item.done ? C.accentGreen + "10" : C.bg, cursor: order.status !== "new" ? "pointer" : "default", border: `1px solid ${item.done ? C.accentGreen + "30" : C.border}`, transition: "all 0.15s" }}>
+                          {order.status !== "new" && (
+                            <div style={{ width: 22, height: 22, borderRadius: 6, background: item.done ? C.accentGreen : C.white, border: `1.5px solid ${item.done ? C.accentGreen : C.borderStrong}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              {item.done && <span style={{ color: C.white, fontSize: 12, fontWeight: 900 }}>✓</span>}
+                            </div>
+                          )}
+                          <div style={{ width: 26, height: 26, borderRadius: 7, background: item.done ? C.accentGreen + "20" : C.dark, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <span style={{ color: item.done ? C.accentGreen : C.white, fontWeight: 800, fontSize: 12 }}>×{item.qty}</span>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 14, fontWeight: 600, color: item.done ? C.textTertiary : C.dark, textDecoration: item.done ? "line-through" : "none" }}>{item.emoji} {item.name}</p>
+                            {item.detail && <p style={{ fontSize: 11, color: C.accentOrange, fontWeight: 600 }}>{item.detail}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {order.status === "cooking" && (
+                      <div style={{ padding: "0 12px 8px" }}>
+                        <div style={{ height: 4, background: C.bg, borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 2, background: allDone ? C.accentGreen : C.accentOrange, width: `${order.items.length ? (doneCount / order.items.length) * 100 : 0}%`, transition: "width 0.4s ease" }} />
+                        </div>
+                        <p style={{ textAlign: "right", fontSize: 10, color: C.textTertiary, marginTop: 3, fontWeight: 600 }}>{doneCount}/{order.items.length} prêts</p>
+                      </div>
+                    )}
+                    <div style={{ padding: "6px 12px 12px" }}>
+                      <button onClick={() => canAdvance && advanceOrder(order.id)} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
+                        {!canAdvance ? `${order.items.length - doneCount} élément${order.items.length - doneCount > 1 ? "s" : ""} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {served.length > 0 && (
         <div style={{ background: C.dark, borderTop: "1px solid rgba(255,255,255,0.08)", padding: "10px 20px", display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em" }}>SERVIES</span>
-          {store.servedOrders.slice(0, 6).map((o, i) => (
+          {served.slice(0, 6).map((o, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "5px 10px" }}>
               <span style={{ color: C.accentGreen, fontWeight: 700, fontSize: 13 }}>T{o.table}</span>
-              <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>#{o.id}</span>
             </div>
           ))}
         </div>
