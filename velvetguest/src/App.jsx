@@ -826,7 +826,7 @@ function ReviewsTab() {
   );
 }
 
-const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", is_popular: false, available: true, stock: "" };
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "" };
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
@@ -844,7 +844,7 @@ function MenuTabDash({ restaurant }) {
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
-  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock) }); setError(""); setModal({ mode: "edit", item }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock) }); setError(""); setModal({ mode: "edit", item }); }
 
   async function updateStock(item, delta) {
     const cur = item.stock == null ? null : item.stock;
@@ -853,6 +853,15 @@ function MenuTabDash({ restaurant }) {
     const available = next > 0;
     await supabase.from("menu_items").update({ stock: next, available }).eq("id", item.id);
     setItems(p => p.map(i => i.id === item.id ? { ...i, stock: next, available } : i));
+  }
+
+  async function uploadPhoto(file) {
+    const ext = file.name.split(".").pop();
+    const path = `${restaurant.id}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("menu-images").upload(path, file, { upsert: true });
+    if (error) { setError("Erreur upload : " + error.message); return; }
+    const { data: { publicUrl } } = supabase.storage.from("menu-images").getPublicUrl(path);
+    setForm(p => ({ ...p, photo_url: publicUrl }));
   }
 
   async function save() {
@@ -911,7 +920,9 @@ function MenuTabDash({ restaurant }) {
             <Surface style={{ overflow: "hidden" }}>
               {catItems.map((item, i) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", borderBottom: i < catItems.length - 1 ? `1px solid ${C.border}` : "none", opacity: item.available ? 1 : 0.5 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{item.emoji}</div>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, overflow: "hidden", flexShrink: 0 }}>
+                    {item.photo_url ? <img src={item.photo_url} alt="" style={{ width: 44, height: 44, objectFit: "cover" }} /> : item.emoji}
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p>
@@ -949,11 +960,28 @@ function MenuTabDash({ restaurant }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}>
           <Surface style={{ padding: 32, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 24 }}>{modal.mode === "add" ? "Nouveau plat" : "Modifier le plat"}</h2>
-            <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, marginBottom: 4 }}>
+              {/* Emoji fallback */}
               <div>
                 <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
                 <input value={form.emoji} onChange={fv("emoji")} style={{ width: 60, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
               </div>
+              {/* Photo upload */}
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Photo</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 60, height: 52, borderRadius: 12, background: form.photo_url ? "transparent" : C.bg, border: form.photo_url ? "none" : `2px dashed ${C.border}`, cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                  {form.photo_url
+                    ? <img src={form.photo_url} alt="" style={{ width: 60, height: 52, objectFit: "cover", borderRadius: 12 }} />
+                    : <span style={{ fontSize: 20 }}>📷</span>
+                  }
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => e.target.files[0] && uploadPhoto(e.target.files[0])} />
+                </label>
+              </div>
+              {form.photo_url && (
+                <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+                  <button onClick={() => setForm(p => ({ ...p, photo_url: "" }))} style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: C.textSecondary, cursor: "pointer" }}>✕ Retirer</button>
+                </div>
+              )}
               <div style={{ flex: 1 }}>
                 <InputField label="Nom du plat" placeholder="Entrecôte 300g" value={form.name} onChange={fv("name")} autoFocus />
               </div>
@@ -1958,7 +1986,9 @@ function CustomerPage({ slug, tableNum }) {
               const inCart = cart.find(i => i.id === item.id);
               return (
                 <div key={item.id} style={{ display: "flex", gap: 12, padding: "16px", borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ width: 60, height: 60, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>{item.emoji}</div>
+                  <div style={{ width: 60, height: 60, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0, overflow: "hidden" }}>
+                    {item.photo_url ? <img src={item.photo_url} alt={item.name} style={{ width: 60, height: 60, objectFit: "cover" }} /> : item.emoji}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div>

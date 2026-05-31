@@ -76,6 +76,7 @@ create table if not exists menu_items (
   price         numeric(10,2) not null,
   category      text    not null default 'Plats',
   emoji         text    not null default '🍴',
+  photo_url     text,
   is_popular    boolean not null default false,
   available     boolean not null default true,
   created_at    timestamptz not null default now()
