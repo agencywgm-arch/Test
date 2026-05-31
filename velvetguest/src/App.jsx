@@ -1686,7 +1686,30 @@ function ClientView({ restaurant, onBack }) {
   const [payMode, setPayMode] = useState(null);
   const [orderError, setOrderError] = useState("");
   const [ordering, setOrdering] = useState(false);
+  const [cvChatOpen, setCvChatOpen] = useState(false);
+  const [cvChatMsgs, setCvChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Des questions sur les allergènes ou les ingrédients ? Je suis là !" }]);
+  const [cvChatInput, setCvChatInput] = useState("");
+  const [cvChatLoading, setCvChatLoading] = useState(false);
   const tableNum = 1;
+
+  async function sendCvChat() {
+    if (!cvChatInput.trim() || cvChatLoading) return;
+    const userMsg = { role: "user", content: cvChatInput.trim() };
+    const next = [...cvChatMsgs, userMsg];
+    setCvChatMsgs(next); setCvChatInput(""); setCvChatLoading(true);
+    try {
+      const menuSummary = menuItems.map(i => `${i.emoji} ${i.name} (${i.category}) — ${i.description || "sans description"}`).join("\n");
+      const ctx = `Restaurant : ${restaurant?.name}\nTable : ${tableNum}\n\nMenu disponible :\n${menuSummary}`;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ messages: next, context: ctx, mode: "customer" }),
+      });
+      const { content } = await res.json();
+      setCvChatMsgs(p => [...p, { role: "assistant", content: content || "Désolé, je n'ai pas pu répondre." }]);
+    } catch { setCvChatMsgs(p => [...p, { role: "assistant", content: "Désolé, une erreur est survenue." }]); }
+    setCvChatLoading(false);
+  }
 
   useEffect(() => {
     supabase.from("menu_items").select("*")
@@ -1814,6 +1837,7 @@ function ClientView({ restaurant, onBack }) {
           </button>
         </div>
       )}
+      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
     </Frame>
   );
 
@@ -1844,6 +1868,7 @@ function ClientView({ restaurant, onBack }) {
         </div>
         <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginBottom: 16, ...FF }}>Paiement →</button>
       </div>
+      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
     </Frame>
   );
 
@@ -1884,6 +1909,7 @@ function ClientView({ restaurant, onBack }) {
           <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} />
         )}
       </div>
+      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
     </Frame>
   );
 
@@ -1910,6 +1936,85 @@ function ClientView({ restaurant, onBack }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CLIENT VIEW CHAT WIDGET — allergen assistant in admin preview
+// ─────────────────────────────────────────────────────────────────────────────
+function ClientViewChat({ menuItems, restaurant, tableNum }) {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Des questions sur les allergènes ou les ingrédients ? Je suis là !" }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => { if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
+
+  async function send() {
+    if (!input.trim() || loading) return;
+    const userMsg = { role: "user", content: input.trim() };
+    const next = [...msgs, userMsg];
+    setMsgs(next); setInput(""); setLoading(true);
+    try {
+      const menuSummary = menuItems.map(i => `${i.emoji} ${i.name} (${i.category}) — ${i.description || "sans description"}`).join("\n");
+      const ctx = `Restaurant : ${restaurant?.name}\nTable : ${tableNum}\n\nMenu disponible :\n${menuSummary}`;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ messages: next, context: ctx, mode: "customer" }),
+      });
+      const { content } = await res.json();
+      setMsgs(p => [...p, { role: "assistant", content: content || "Désolé, je n'ai pas pu répondre." }]);
+    } catch { setMsgs(p => [...p, { role: "assistant", content: "Désolé, une erreur est survenue." }]); }
+    setLoading(false);
+  }
+
+  return (
+    <>
+      <button onClick={() => setOpen(p => !p)}
+        style={{ position: "fixed", bottom: 100, right: 32, width: 48, height: 48, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 200, ...FF }}
+        title="Aide & allergènes">💬</button>
+      {open && (
+        <div style={{ position: "fixed", bottom: 162, right: 20, left: 20, maxWidth: 380, margin: "0 auto", background: C.white, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", zIndex: 200, display: "flex", flexDirection: "column", maxHeight: 400, ...FF }}>
+          <div style={{ background: C.dark, borderRadius: "20px 20px 0 0", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span style={{ fontSize: 18 }}>🤖</span>
+              <div>
+                <p style={{ color: C.white, fontWeight: 700, fontSize: 13, margin: 0 }}>Assistant Velvet</p>
+                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, margin: 0 }}>Allergènes & ingrédients</p>
+              </div>
+            </div>
+            <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, width: 26, height: 26, color: C.white, cursor: "pointer", fontSize: 13, ...FF }}>✕</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {msgs.map((m, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{ maxWidth: "82%", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "9px 12px", fontSize: 12, lineHeight: 1.5 }}>{m.content}</div>
+              </div>
+            ))}
+            {loading && <div style={{ display: "flex" }}><div style={{ background: C.bg, borderRadius: "16px 16px 16px 4px", padding: "9px 14px", fontSize: 12, color: C.textTertiary }}>···</div></div>}
+            {msgs.length === 1 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4 }}>
+                {["Plats sans gluten ?", "Végétarien ?", "Allergènes ?"].map(q => (
+                  <button key={q} onClick={() => setInput(q)} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, padding: "5px 10px", fontSize: 11, color: C.dark, cursor: "pointer", ...FF }}>{q}</button>
+                ))}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div style={{ padding: "8px 12px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 7 }}>
+            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
+              placeholder="Poser une question…"
+              style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "8px 11px", fontSize: 12, color: C.dark, outline: "none", ...FF }} />
+            <button onClick={send} disabled={!input.trim() || loading}
+              style={{ width: 34, height: 34, borderRadius: 10, background: input.trim() && !loading ? C.dark : C.bg, border: "none", cursor: input.trim() && !loading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>
+              <span style={{ color: input.trim() && !loading ? C.white : C.textTertiary, fontSize: 14 }}>↑</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AGENT CHAT — floating AI assistant
 // ─────────────────────────────────────────────────────────────────────────────
 const QUICK_SUGGESTIONS = [
@@ -1922,11 +2027,13 @@ const QUICK_SUGGESTIONS = [
 
 function AgentChat({ restaurant, store }) {
   const [open, setOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(true);
   const [messages, setMessages] = useState([
     { role: "assistant", content: `Bonjour ! Je suis Velvet, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de VelvetGuest et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lowStockItems, setLowStockItems] = useState([]);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -1938,7 +2045,40 @@ function AgentChat({ restaurant, store }) {
     if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
-  const lowStockCount = (store.orders || []).length;
+  // Fetch low-stock items
+  useEffect(() => {
+    if (!restaurant?.id || restaurant.id === "demo") {
+      // Demo: simulate low stock on Frites Maison
+      setLowStockItems([{ id: "dm12", name: "Frites Maison", emoji: "🍟", stock: 3 }]);
+      return;
+    }
+    supabase.from("menu_items").select("id, name, emoji, stock")
+      .eq("restaurant_id", restaurant.id).eq("available", true)
+      .not("stock", "is", null).lte("stock", 5).gt("stock", 0)
+      .then(({ data }) => setLowStockItems(data ?? []));
+  }, [restaurant?.id]);
+
+  // Refresh low stock every 2 minutes
+  useEffect(() => {
+    if (!restaurant?.id || restaurant.id === "demo") return;
+    const t = setInterval(() => {
+      supabase.from("menu_items").select("id, name, emoji, stock")
+        .eq("restaurant_id", restaurant.id).eq("available", true)
+        .not("stock", "is", null).lte("stock", 5).gt("stock", 0)
+        .then(({ data }) => setLowStockItems(data ?? []));
+    }, 120000);
+    return () => clearInterval(t);
+  }, [restaurant?.id]);
+
+  const urgentOrders = (store.orders || []).filter(o => o.elapsed >= 20 && o.status !== "served");
+  const newOrders = (store.orders || []).filter(o => o.status === "new");
+
+  const alerts = [
+    ...urgentOrders.map(o => ({ id: `urg-${o.id}`, type: "urgent", icon: "🔴", text: `Table ${o.table} — commande en attente depuis ${o.elapsed} min` })),
+    ...newOrders.map(o => ({ id: `new-${o.id}`, type: "new", icon: "🟡", text: `Nouvelle commande — Table ${o.table} · ${o.total.toFixed(2)}€` })),
+    ...lowStockItems.map(i => ({ id: `stk-${i.id}`, type: "stock", icon: "🟠", text: `Stock bas — ${i.emoji} ${i.name} (${i.stock} restants)` })),
+  ];
+
   const context = [
     `Restaurant: ${restaurant.name}`,
     `Commandes actives en ce moment: ${store.orders?.length ?? 0}`,
@@ -1988,9 +2128,9 @@ function AgentChat({ restaurant, store }) {
         <span style={{ transition: "transform 0.2s ease", display: "block", transform: open ? "rotate(45deg)" : "none" }}>
           {open ? "✕" : "✨"}
         </span>
-        {!open && store.orders?.length > 0 && (
-          <span style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, background: C.accent, borderRadius: "50%", border: "2px solid #fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-            {store.orders.length}
+        {!open && alerts.length > 0 && (
+          <span style={{ position: "absolute", top: 2, right: 2, width: 18, height: 18, background: alerts.some(a => a.type === "urgent") ? C.accent : C.accentOrange, borderRadius: "50%", border: "2px solid #fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+            {alerts.length}
           </span>
         )}
       </button>
@@ -2013,6 +2153,29 @@ function AgentChat({ restaurant, store }) {
               Effacer
             </button>
           </div>
+
+          {/* Alerts panel */}
+          {alerts.length > 0 && (
+            <div style={{ borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+              <button onClick={() => setAlertsOpen(p => !p)}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: alerts.some(a => a.type === "urgent") ? "#FFF0F3" : "#FFF8EC", border: "none", cursor: "pointer", ...FF }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: alerts.some(a => a.type === "urgent") ? C.accent : C.accentOrange }}>
+                  ⚠️ {alerts.length} alerte{alerts.length > 1 ? "s" : ""} en cours
+                </span>
+                <span style={{ fontSize: 11, color: C.textTertiary }}>{alertsOpen ? "▲" : "▼"}</span>
+              </button>
+              {alertsOpen && (
+                <div style={{ maxHeight: 140, overflowY: "auto", padding: "4px 0" }}>
+                  {alerts.map(a => (
+                    <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 14px", borderTop: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>{a.icon}</span>
+                      <p style={{ fontSize: 12, color: C.dark, lineHeight: 1.4, flex: 1 }}>{a.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2452,7 +2615,7 @@ function CustomerPage({ slug, tableNum }) {
       })()}
 
       {/* Allergen chat — visible on menu and cart steps */}
-      {(step === "menu" || step === "cart") && (
+      {(step === "menu" || step === "cart" || step === "payment") && (
         <>
           {/* Floating button */}
           <button
