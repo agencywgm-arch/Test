@@ -65,6 +65,26 @@ const DEMO_DONE_ORDERS = [
 ];
 const DEMO_WEEKLY_REV = [142, 0, 89, 210, 175, 88, 0];
 
+const DEMO_INGREDIENTS = [
+  { id: "ing1", restaurant_id: "demo", name: "Bœuf haché", unit: "kg", emoji: "🥩", stock: 4.5, alert_threshold: 2 },
+  { id: "ing2", restaurant_id: "demo", name: "Pain brioche", unit: "pcs", emoji: "🍞", stock: 24, alert_threshold: 10 },
+  { id: "ing3", restaurant_id: "demo", name: "Cheddar", unit: "kg", emoji: "🧀", stock: 1.2, alert_threshold: 0.5 },
+  { id: "ing4", restaurant_id: "demo", name: "Salade verte", unit: "kg", emoji: "🥬", stock: 0.8, alert_threshold: 0.5 },
+  { id: "ing5", restaurant_id: "demo", name: "Pommes de terre", unit: "kg", emoji: "🥔", stock: 8.0, alert_threshold: 3 },
+  { id: "ing6", restaurant_id: "demo", name: "Poulet fermier", unit: "kg", emoji: "🍗", stock: 3.2, alert_threshold: 2 },
+  { id: "ing7", restaurant_id: "demo", name: "Crème fraîche", unit: "L", emoji: "🥛", stock: 2.0, alert_threshold: 1 },
+  { id: "ing8", restaurant_id: "demo", name: "Chocolat noir", unit: "kg", emoji: "🍫", stock: 0.4, alert_threshold: 0.3 },
+];
+// recipes: { menu_item_id → [{ ingredient_id, qty_per_portion }] }
+const DEMO_RECIPES = {
+  dm3: [{ ingredient_id: "ing1", qty_per_portion: 0.25 }, { ingredient_id: "ing5", qty_per_portion: 0.30 }],
+  dm4: [{ ingredient_id: "ing6", qty_per_portion: 0.40 }],
+  dm5: [{ ingredient_id: "ing1", qty_per_portion: 0.18 }, { ingredient_id: "ing2", qty_per_portion: 1 }, { ingredient_id: "ing3", qty_per_portion: 0.05 }, { ingredient_id: "ing4", qty_per_portion: 0.02 }],
+  dm6: [{ ingredient_id: "ing7", qty_per_portion: 0.10 }],
+  dm8: [{ ingredient_id: "ing8", qty_per_portion: 0.08 }],
+  dm2: [{ ingredient_id: "ing4", qty_per_portion: 0.15 }],
+};
+
 function fmtStatus(s) {
   return s === "PENDING" ? "new" : s === "PREPARING" ? "cooking" : s === "READY" ? "ready" : "served";
 }
@@ -536,7 +556,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const TABS = [
     { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
     { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
-    { id: "reviews", label: "Avis" }, { id: "menu", label: "Carte" },
+    { id: "inventory", label: "Inventaire" }, { id: "menu", label: "Carte" },
   ];
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
@@ -604,7 +624,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "orders" && <OrdersTab store={store} />}
           {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
-          {tab === "reviews" && <ReviewsTab />}
+          {tab === "inventory" && <InventoryTab restaurant={restaurant} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
       </main>
@@ -889,34 +909,339 @@ function QRTab({ restaurant }) {
   );
 }
 
-function ReviewsTab() {
-  const reviews = [
-    { name: "Marie T.", rating: 5, text: "Super rapide, j'adore commander depuis mon téléphone !", time: "Il y a 2h" },
-    { name: "Lucas B.", rating: 4, text: "Très pratique, la carte est bien faite.", time: "Il y a 4h" },
-    { name: "Sophie M.", rating: 5, text: "Le paiement en ligne est top, on n'attend plus !", time: "Hier" },
-    { name: "Pierre D.", rating: 5, text: "Excellent service, commande reçue rapidement.", time: "Hier" },
-  ];
+const UNITS = ["kg", "g", "L", "mL", "pcs", "boîtes", "sachets"];
+const EMPTY_ING = { name: "", unit: "kg", emoji: "📦", stock: "", alert_threshold: "" };
+
+function InventoryTab({ restaurant }) {
+  const [subTab, setSubTab] = useState("stocks"); // stocks | recipes
+  const [ingredients, setIngredients] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [recipes, setRecipes] = useState({}); // { menu_item_id: [{ id, ingredient_id, qty_per_portion }] }
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null); // null | { mode: 'add'|'edit', ing }
+  const [form, setForm] = useState(EMPTY_ING);
+  const [saving, setSaving] = useState(false);
+  const [selectedDish, setSelectedDish] = useState("");
+  const [recipeModal, setRecipeModal] = useState(null); // { menu_item_id, ingredient_id?, qty }
+  const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    if (restaurant.id === "demo") {
+      setIngredients(DEMO_INGREDIENTS);
+      setMenuItems(DEMO_MENU);
+      // Build recipes map from DEMO_RECIPES
+      const rm = {};
+      for (const [mid, lines] of Object.entries(DEMO_RECIPES)) {
+        rm[mid] = lines.map((l, i) => ({ id: `r_${mid}_${i}`, menu_item_id: mid, ...l }));
+      }
+      setRecipes(rm);
+      setLoading(false);
+      return;
+    }
+    // Sequential load (need menu item IDs before fetching recipe_items)
+    async function load() {
+      const { data: ings } = await supabase.from("ingredients").select("*").eq("restaurant_id", restaurant.id).order("name");
+      const { data: items } = await supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).order("category").order("name");
+      setIngredients(ings ?? []);
+      setMenuItems(items ?? []);
+      if (items?.length) {
+        const ids = items.map(i => i.id);
+        const { data: ri } = await supabase.from("recipe_items").select("*").in("menu_item_id", ids);
+        const rm = {};
+        for (const r of ri ?? []) {
+          if (!rm[r.menu_item_id]) rm[r.menu_item_id] = [];
+          rm[r.menu_item_id].push(r);
+        }
+        setRecipes(rm);
+      }
+      setLoading(false);
+    }
+    load();
+  }, [restaurant.id]);
+
+  // ── Ingredients CRUD ─────────────────────────────────────────────────────
+  function openAdd() { setForm(EMPTY_ING); setModal({ mode: "add" }); }
+  function openEdit(ing) {
+    setForm({ name: ing.name, unit: ing.unit, emoji: ing.emoji, stock: String(ing.stock), alert_threshold: ing.alert_threshold == null ? "" : String(ing.alert_threshold) });
+    setModal({ mode: "edit", ing });
+  }
+
+  async function saveIng() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = { name: form.name.trim(), unit: form.unit, emoji: form.emoji || "📦", stock: parseFloat(form.stock) || 0, alert_threshold: form.alert_threshold !== "" ? parseFloat(form.alert_threshold) : null };
+    if (restaurant.id === "demo") {
+      if (modal.mode === "add") setIngredients(p => [...p, { ...payload, id: "ing_" + Date.now(), restaurant_id: "demo" }]);
+      else setIngredients(p => p.map(i => i.id === modal.ing.id ? { ...i, ...payload } : i));
+      setSaving(false); setModal(null); return;
+    }
+    if (modal.mode === "add") {
+      const { data } = await supabase.from("ingredients").insert({ ...payload, restaurant_id: restaurant.id }).select().single();
+      if (data) setIngredients(p => [...p, data]);
+    } else {
+      await supabase.from("ingredients").update(payload).eq("id", modal.ing.id);
+      setIngredients(p => p.map(i => i.id === modal.ing.id ? { ...i, ...payload } : i));
+    }
+    setSaving(false); setModal(null);
+  }
+
+  async function deleteIng(ing) {
+    if (!confirm(`Supprimer "${ing.name}" ? Les recettes liées seront aussi supprimées.`)) return;
+    setIngredients(p => p.filter(i => i.id !== ing.id));
+    setRecipes(p => { const n = { ...p }; for (const mid of Object.keys(n)) n[mid] = n[mid].filter(r => r.ingredient_id !== ing.id); return n; });
+    if (restaurant.id !== "demo") await supabase.from("ingredients").delete().eq("id", ing.id);
+  }
+
+  async function adjustStock(ing, delta) {
+    const next = Math.max(0, +(ing.stock + delta).toFixed(3));
+    setIngredients(p => p.map(i => i.id === ing.id ? { ...i, stock: next } : i));
+    if (restaurant.id !== "demo") await supabase.from("ingredients").update({ stock: next }).eq("id", ing.id);
+  }
+
+  // ── Recipe CRUD ──────────────────────────────────────────────────────────
+  async function saveRecipeLine(menuItemId, ingredientId, qty) {
+    const qtyNum = parseFloat(qty);
+    if (!qtyNum || qtyNum <= 0) return;
+    const existing = (recipes[menuItemId] || []).find(r => r.ingredient_id === ingredientId);
+    if (restaurant.id === "demo") {
+      setRecipes(p => {
+        const lines = p[menuItemId] || [];
+        if (existing) return { ...p, [menuItemId]: lines.map(r => r.ingredient_id === ingredientId ? { ...r, qty_per_portion: qtyNum } : r) };
+        return { ...p, [menuItemId]: [...lines, { id: `r_${Date.now()}`, menu_item_id: menuItemId, ingredient_id: ingredientId, qty_per_portion: qtyNum }] };
+      });
+      setRecipeModal(null); return;
+    }
+    if (existing) {
+      await supabase.from("recipe_items").update({ qty_per_portion: qtyNum }).eq("id", existing.id);
+      setRecipes(p => ({ ...p, [menuItemId]: (p[menuItemId] || []).map(r => r.id === existing.id ? { ...r, qty_per_portion: qtyNum } : r) }));
+    } else {
+      const { data } = await supabase.from("recipe_items").insert({ menu_item_id: menuItemId, ingredient_id: ingredientId, qty_per_portion: qtyNum }).select().single();
+      if (data) setRecipes(p => ({ ...p, [menuItemId]: [...(p[menuItemId] || []), data] }));
+    }
+    setRecipeModal(null);
+  }
+
+  async function deleteRecipeLine(menuItemId, lineId) {
+    setRecipes(p => ({ ...p, [menuItemId]: (p[menuItemId] || []).filter(r => r.id !== lineId) }));
+    if (restaurant.id !== "demo") await supabase.from("recipe_items").delete().eq("id", lineId);
+  }
+
+  const lowCount = ingredients.filter(i => i.alert_threshold != null && i.stock <= i.alert_threshold && i.stock > 0).length;
+  const emptyCount = ingredients.filter(i => i.stock <= 0).length;
+  const dishLines = selectedDish ? (recipes[selectedDish] || []) : [];
+  const usedIngIds = new Set(dishLines.map(r => r.ingredient_id));
+
+  if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: 48 }}><div style={{ width: 24, height: 24, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} /></div>;
+
   return (
     <div className="fade-in">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
-        <KPICard label="Note globale" value="⭐ 4.7" sub="sur 32 avis" />
-        <KPICard label="Avis ce mois" value="32" sub="vs mois dernier" delta={8} />
-        <KPICard label="Taux de réponse" value="94%" sub="Excellent" delta={0} />
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
+        <KPICard label="Ingrédients" value={ingredients.length} sub="en stock" />
+        <KPICard label="Stock bas" value={lowCount} sub="≤ seuil d'alerte" delta={lowCount > 0 ? -1 : 0} />
+        <KPICard label="Épuisés" value={emptyCount} sub="à réapprovisionner" delta={emptyCount > 0 ? -1 : 0} />
       </div>
-      <Surface style={{ overflow: "hidden" }}>
-        {reviews.map((r, i) => (
-          <div key={i} style={{ padding: "18px 22px", borderBottom: i < reviews.length - 1 ? `1px solid ${C.border}` : "none" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Avatar name={r.name} size={30} />
-                <div><p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</p><p style={{ fontSize: 11, color: C.textTertiary }}>{r.time}</p></div>
-              </div>
-              <div style={{ color: "#FF9F0A" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
-            </div>
-            <p style={{ fontSize: 14, color: C.textSecondary, lineHeight: 1.5 }}>{r.text}</p>
-          </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.bg, borderRadius: 12, padding: 4, width: "fit-content" }}>
+        {[{ id: "stocks", label: "📦 Stocks" }, { id: "recipes", label: "📋 Recettes" }].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)}
+            style={{ padding: "8px 18px", borderRadius: 10, border: "none", background: subTab === t.id ? C.white : "transparent", color: subTab === t.id ? C.dark : C.textSecondary, fontWeight: subTab === t.id ? 700 : 500, fontSize: 13, cursor: "pointer", boxShadow: subTab === t.id ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all 0.15s", ...FF }}>
+            {t.label}
+          </button>
         ))}
-      </Surface>
+      </div>
+
+      {/* ── STOCKS ── */}
+      {subTab === "stocks" && (
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+            <Btn variant="primary" size="sm" onClick={openAdd}>+ Ajouter un ingrédient</Btn>
+          </div>
+          {ingredients.length === 0 ? (
+            <Surface style={{ padding: 48, textAlign: "center" }}>
+              <p style={{ fontSize: 32, marginBottom: 12 }}>📦</p>
+              <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 6 }}>Aucun ingrédient</p>
+              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 20 }}>Ajoutez vos ingrédients pour suivre vos stocks en temps réel.</p>
+              <Btn variant="primary" onClick={openAdd}>+ Ajouter un ingrédient</Btn>
+            </Surface>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+              {ingredients.map(ing => {
+                const pct = ing.alert_threshold ? Math.min(100, (ing.stock / (ing.alert_threshold * 3)) * 100) : null;
+                const color = ing.stock <= 0 ? C.accent : (ing.alert_threshold != null && ing.stock <= ing.alert_threshold) ? C.accentOrange : C.accentGreen;
+                return (
+                  <Surface key={ing.id} style={{ padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ fontSize: 26 }}>{ing.emoji}</span>
+                        <div>
+                          <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{ing.name}</p>
+                          <span style={{ display: "inline-block", background: color + "18", color, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6 }}>
+                            {ing.stock <= 0 ? "Épuisé" : ing.alert_threshold != null && ing.stock <= ing.alert_threshold ? "⚠️ Stock bas" : "✓ OK"}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => openEdit(ing)} style={{ background: C.bg, border: "none", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 13 }}>✏️</button>
+                        <button onClick={() => deleteIng(ing)} style={{ background: C.bg, border: "none", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 13 }}>🗑️</button>
+                      </div>
+                    </div>
+                    {pct != null && (
+                      <div style={{ height: 4, borderRadius: 4, background: C.border, marginBottom: 10, overflow: "hidden" }}>
+                        <div style={{ height: "100%", borderRadius: 4, background: color, width: `${Math.max(2, pct)}%`, transition: "width 0.3s ease" }} />
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button onClick={() => adjustStock(ing, -0.1)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 15, ...FF }}>−</button>
+                        <span style={{ fontWeight: 800, fontSize: 16, color: C.dark, minWidth: 60, textAlign: "center" }}>{+ing.stock.toFixed(2)} {ing.unit}</span>
+                        <button onClick={() => adjustStock(ing, 0.1)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 15, ...FF }}>+</button>
+                      </div>
+                      {ing.alert_threshold != null && <p style={{ fontSize: 11, color: C.textTertiary }}>Alerte ≤ {ing.alert_threshold} {ing.unit}</p>}
+                    </div>
+                  </Surface>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── RECETTES ── */}
+      {subTab === "recipes" && (
+        <>
+          <Surface style={{ padding: 20, marginBottom: 16 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 10 }}>Sélectionnez un plat</p>
+            <select value={selectedDish} onChange={e => setSelectedDish(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 14, color: C.dark, background: C.bg, outline: "none", ...FF }}>
+              <option value="">— Choisir un plat —</option>
+              {menuItems.map(item => (
+                <option key={item.id} value={item.id}>{item.emoji} {item.name} ({item.category})</option>
+              ))}
+            </select>
+          </Surface>
+          {selectedDish && (
+            <Surface style={{ overflow: "hidden" }}>
+              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>
+                    {menuItems.find(m => m.id === selectedDish)?.emoji} {menuItems.find(m => m.id === selectedDish)?.name}
+                  </p>
+                  <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 2 }}>{dishLines.length} ingrédient{dishLines.length !== 1 ? "s" : ""} dans la recette</p>
+                </div>
+                <Btn variant="primary" size="sm" onClick={() => setRecipeModal({ menu_item_id: selectedDish, ingredient_id: "", qty: "" })}>+ Ajouter</Btn>
+              </div>
+              {dishLines.length === 0 ? (
+                <div style={{ padding: "32px 20px", textAlign: "center" }}>
+                  <p style={{ color: C.textTertiary, fontSize: 14 }}>Aucun ingrédient défini — cliquez sur "+ Ajouter" pour configurer la recette.</p>
+                </div>
+              ) : dishLines.map(line => {
+                const ing = ingredients.find(i => i.id === line.ingredient_id);
+                if (!ing) return null;
+                return (
+                  <div key={line.id} style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 22 }}>{ing.emoji}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontWeight: 600, fontSize: 14, color: C.dark }}>{ing.name}</p>
+                      <p style={{ fontSize: 12, color: C.textSecondary }}>{line.qty_per_portion} {ing.unit} / portion</p>
+                    </div>
+                    <p style={{ fontSize: 12, color: ing.stock > 0 ? C.accentGreen : C.accent, fontWeight: 600 }}>Stock : {+ing.stock.toFixed(2)} {ing.unit}</p>
+                    <button onClick={() => setRecipeModal({ menu_item_id: selectedDish, ingredient_id: line.ingredient_id, qty: String(line.qty_per_portion) })}
+                      style={{ background: C.bg, border: "none", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 12 }}>✏️</button>
+                    <button onClick={() => deleteRecipeLine(selectedDish, line.id)}
+                      style={{ background: C.bg, border: "none", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 12 }}>🗑️</button>
+                  </div>
+                );
+              })}
+            </Surface>
+          )}
+          {!selectedDish && ingredients.length > 0 && (
+            <div style={{ textAlign: "center", padding: 32, color: C.textTertiary, fontSize: 14 }}>Sélectionnez un plat ci-dessus pour définir ou modifier sa recette.</div>
+          )}
+        </>
+      )}
+
+      {/* ── MODAL: Add / Edit Ingredient ── */}
+      {modal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
+          <div style={{ background: C.white, borderRadius: 20, padding: 28, width: "100%", maxWidth: 440, ...FF }}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>{modal.mode === "add" ? "Ajouter un ingrédient" : "Modifier l'ingrédient"}</p>
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              <div style={{ flex: "0 0 64px" }}>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Émoji</label>
+                <input value={form.emoji} onChange={fv("emoji")} maxLength={2}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 8px", fontSize: 22, textAlign: "center", outline: "none", ...FF }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Nom *</label>
+                <input value={form.name} onChange={fv("name")} placeholder="ex: Bœuf haché"
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Unité</label>
+                <select value={form.unit} onChange={fv("unit")}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 10px", fontSize: 13, color: C.dark, background: C.white, outline: "none", ...FF }}>
+                  {UNITS.map(u => <option key={u}>{u}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Stock actuel</label>
+                <input type="number" min="0" step="0.01" value={form.stock} onChange={fv("stock")} placeholder="0"
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 10px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Seuil alerte</label>
+                <input type="number" min="0" step="0.01" value={form.alert_threshold} onChange={fv("alert_threshold")} placeholder="vide = aucun"
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 10px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
+              <Btn variant="primary" full onClick={saveIng} disabled={saving || !form.name.trim()}>{saving ? "…" : "Enregistrer"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Add / Edit Recipe Line ── */}
+      {recipeModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => { if (e.target === e.currentTarget) setRecipeModal(null); }}>
+          <div style={{ background: C.white, borderRadius: 20, padding: 28, width: "100%", maxWidth: 400, ...FF }}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>{recipeModal.ingredient_id ? "Modifier la quantité" : "Ajouter un ingrédient"}</p>
+            {!recipeModal.ingredient_id && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>Ingrédient</label>
+                <select value={recipeModal.ingredient_id} onChange={e => setRecipeModal(p => ({ ...p, ingredient_id: e.target.value }))}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, background: C.white, outline: "none", ...FF }}>
+                  <option value="">— Choisir —</option>
+                  {ingredients.filter(i => !usedIngIds.has(i.id)).map(i => (
+                    <option key={i.id} value={i.id}>{i.emoji} {i.name} ({i.unit})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {recipeModal.ingredient_id && (
+              <p style={{ fontSize: 14, color: C.textSecondary, marginBottom: 14 }}>
+                {ingredients.find(i => i.id === recipeModal.ingredient_id)?.emoji} {ingredients.find(i => i.id === recipeModal.ingredient_id)?.name}
+              </p>
+            )}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, color: C.textSecondary, fontWeight: 500, display: "block", marginBottom: 6 }}>
+                Quantité par portion ({ingredients.find(i => i.id === recipeModal.ingredient_id)?.unit || "unité"})
+              </label>
+              <input type="number" min="0" step="0.001" value={recipeModal.qty} onChange={e => setRecipeModal(p => ({ ...p, qty: e.target.value }))} placeholder="ex: 0.250"
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 15, color: C.dark, outline: "none", ...FF }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => setRecipeModal(null)}>Annuler</Btn>
+              <Btn variant="primary" full onClick={() => saveRecipeLine(recipeModal.menu_item_id, recipeModal.ingredient_id, recipeModal.qty)} disabled={!recipeModal.ingredient_id || !recipeModal.qty}>Enregistrer</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2320,6 +2645,24 @@ function CustomerPage({ slug, tableNum }) {
           await supabase.from("menu_items").update({ stock: newStock, available: newStock > 0 }).eq("id", item.id);
         }
       }
+      // Decrement ingredient stocks via recipes
+      try {
+        const itemIds = cart.map(i => i.id);
+        const { data: recipeLines } = await supabase.from("recipe_items").select("ingredient_id, qty_per_portion, menu_item_id").in("menu_item_id", itemIds);
+        if (recipeLines?.length) {
+          const deltas = {};
+          for (const r of recipeLines) {
+            const cartItem = cart.find(ci => ci.id === r.menu_item_id);
+            if (cartItem) deltas[r.ingredient_id] = (deltas[r.ingredient_id] || 0) + r.qty_per_portion * cartItem.qty;
+          }
+          const ingIds = Object.keys(deltas);
+          const { data: ings } = await supabase.from("ingredients").select("id, stock").in("id", ingIds);
+          for (const ing of ings ?? []) {
+            const newStock = Math.max(0, +(ing.stock - deltas[ing.id]).toFixed(3));
+            await supabase.from("ingredients").update({ stock: newStock }).eq("id", ing.id);
+          }
+        }
+      } catch {}
       setOrderId(order.id);
       setStep("done");
     } catch (e) {
