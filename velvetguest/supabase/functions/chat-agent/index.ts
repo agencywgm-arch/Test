@@ -47,7 +47,10 @@ const SYSTEM = `Tu es l'assistant IA intégré à VelvetGuest, un SaaS de comman
 - Espèces → enregistrement direct, le serveur encaisse
 - Pour activer Stripe : ajouter VITE_STRIPE_PUBLISHABLE_KEY + déployer l'edge function
 
-**Avis (onglet "Avis")** : notation étoiles par le client après la commande
+**Inventaire (onglet "Inventaire")**
+- Stocks d'ingrédients en kg/L/pcs avec seuils d'alerte
+- Recettes par plat : chaque commande décrémente les ingrédients automatiquement
+- Setup rapide via l'onglet "⚡ Setup" : import carte + génération inventaire par IA
 
 ## Tes conseils types
 
@@ -74,11 +77,79 @@ const SYSTEM = `Tu es l'assistant IA intégré à VelvetGuest, un SaaS de comman
 
 Réponds en français. Sois concis, utilise des listes à puces et des emojis. Maximum 200 mots par réponse sauf si on te demande un développement.`;
 
+const MENU_PARSER_SYSTEM = `Tu es un expert en extraction de données de menus de restaurant.
+Le texte fourni est un menu de restaurant (copié depuis un site web, PDF, WhatsApp, etc.).
+Extrais tous les plats et retourne-les en JSON.
+
+Format de réponse (JSON valide uniquement, aucun autre texte) :
+{
+  "items": [
+    {
+      "name": "Nom exact du plat",
+      "description": "Description courte (chaîne vide si absente)",
+      "price": 12.90,
+      "category": "Catégorie",
+      "emoji": "🍔"
+    }
+  ]
+}
+
+Règles strictes :
+- N'invente AUCUN plat absent du texte
+- Convertis les prix en float (ex: "12,90 €" → 12.90), null si absent
+- Regroupe en catégories cohérentes (Entrées, Plats, Burgers, Desserts, Boissons…)
+- Choisis un emoji représentatif par plat
+- Nettoie les noms (supprime numéros, codes, astérisques inutiles)
+- Si un bloc de texte n'est pas un plat (titre, adresse, horaires), ignore-le
+- Réponds UNIQUEMENT en JSON valide`;
+
+const INVENTORY_SYSTEM = `Tu es un expert en gestion d'inventaire de restaurant.
+On te donne la liste des plats d'un restaurant. Déduis les ingrédients principaux et les quantités par portion.
+
+Format de réponse (JSON valide uniquement) :
+{
+  "ingredients": [
+    {
+      "name": "Nom de l'ingrédient",
+      "unit": "kg",
+      "emoji": "🥩",
+      "stock": 5.0,
+      "alert_threshold": 1.5
+    }
+  ],
+  "recipes": {
+    "Nom exact du plat": [
+      { "ingredient": "Nom de l'ingrédient", "qty_per_portion": 0.150 }
+    ]
+  }
+}
+
+Règles :
+- Unités : kg, g, L, mL, pcs, bouquets, sachets
+- Stock de départ = estimation réaliste pour un service complet
+- alert_threshold ≈ 25% du stock de départ
+- Regroupe les ingrédients communs (ex: une seule ligne "Poulet" pour tous les plats au poulet)
+- Ne crée PAS d'ingrédients triviaux (eau, sel, poivre, huile)
+- Quantités par portion = estimation professionnelle réaliste
+- Le nom du plat dans "recipes" doit correspondre EXACTEMENT au nom fourni dans la liste
+- Réponds UNIQUEMENT en JSON valide`;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+async function callOpenAI(body: object): Promise<Response> {
+  return fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -86,8 +157,37 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context, mode } = await req.json();
+    const body = await req.json();
+    const { messages, context, mode, text } = body;
 
+    // ── Setup modes — return structured JSON ──────────────────────────────────
+    if (mode === "setup-menu" || mode === "setup-inventory") {
+      const systemPrompt = mode === "setup-menu" ? MENU_PARSER_SYSTEM : INVENTORY_SYSTEM;
+      const res = await callOpenAI({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        max_tokens: 4096,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text ?? "" },
+        ],
+      });
+      const data = await res.json();
+      const raw = data.choices?.[0]?.message?.content ?? "{}";
+      try {
+        const parsed = JSON.parse(raw);
+        return new Response(JSON.stringify(parsed), {
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: "json_parse_error", raw }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+    }
+
+    // ── Chat modes (customer / dashboard) ────────────────────────────────────
     const CUSTOMER_SYSTEM = `Tu es un assistant pour les clients d'un restaurant. Tu t'appelles Velvet.
 Ton rôle : répondre aux questions sur les plats, les allergènes, les ingrédients et les préférences alimentaires.
 
@@ -103,23 +203,16 @@ Ton rôle : répondre aux questions sur les plats, les allergènes, les ingrédi
     const systemContent = (mode === "customer" ? CUSTOMER_SYSTEM : SYSTEM) +
       (context ? `\n\n## Contexte\n${context}` : "");
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 512,
-        messages: [
-          { role: "system", content: systemContent },
-          ...messages.map((m: { role: string; content: string }) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        ],
-      }),
+    const res = await callOpenAI({
+      model: "gpt-4o-mini",
+      max_tokens: 512,
+      messages: [
+        { role: "system", content: systemContent },
+        ...(messages ?? []).map((m: { role: string; content: string }) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      ],
     });
 
     const data = await res.json();

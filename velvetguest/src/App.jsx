@@ -556,6 +556,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const TABS = [
+    { id: "setup", label: "⚡ Setup" },
     { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
     { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
     { id: "inventory", label: "Inventaire" }, { id: "menu", label: "Carte" },
@@ -584,7 +585,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         </div>
         <nav style={{ flex: 1, padding: "4px 10px" }}>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: tab === t.id ? C.bg : "transparent", color: tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: t.id === "setup" ? (tab === "setup" ? C.accentOrange + "20" : C.accentOrange + "10") : tab === t.id ? C.bg : "transparent", color: t.id === "setup" ? C.accentOrange : tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id || t.id === "setup" ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
               {t.label}
               {t.id === "orders" && active.length > 0 && <span style={{ marginLeft: "auto", background: C.dark, color: C.white, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{active.length}</span>}
             </button>
@@ -626,6 +627,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "orders" && <OrdersTab store={store} />}
           {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
+          {tab === "setup" && <SetupTab restaurant={restaurant} onDone={() => setTab("overview")} />}
           {tab === "inventory" && <InventoryTab restaurant={restaurant} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
@@ -907,6 +909,366 @@ function QRTab({ restaurant }) {
         </Surface>
       </div>
     </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETUP TAB — AI-powered onboarding: import menu + generate inventory
+// ─────────────────────────────────────────────────────────────────────────────
+function SetupTab({ restaurant, onDone }) {
+  const [phase, setPhase] = useState("menu"); // menu | inventory | done
+  const [menuText, setMenuText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
+  const [parsedItems, setParsedItems] = useState(null); // [{name,description,price,category,emoji}]
+  const [editItem, setEditItem] = useState(null); // index being edited
+  const [importing, setImporting] = useState(false);
+  const [importedCount, setImportedCount] = useState(0);
+
+  const [invItems, setInvItems] = useState([]); // menu items for inventory context
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [parsedInv, setParsedInv] = useState(null); // {ingredients, recipes}
+  const [savingInv, setSavingInv] = useState(false);
+  const [invDone, setInvDone] = useState(false);
+
+  const isDemo = restaurant.id === "demo";
+
+  // ── Phase 1: Parse menu ──────────────────────────────────────────────────
+  async function parseMenu() {
+    if (!menuText.trim()) return;
+    setParsing(true); setParseError("");
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ mode: "setup-menu", text: menuText }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const items = (data.items || []).map((it, i) => ({ ...it, _id: i, _keep: true }));
+      if (!items.length) throw new Error("Aucun plat détecté — vérifiez le texte collé.");
+      setParsedItems(items);
+    } catch (e) {
+      setParseError(e.message || "Erreur lors de l'analyse.");
+    } finally { setParsing(false); }
+  }
+
+  async function importMenu() {
+    setImporting(true);
+    const kept = parsedItems.filter(i => i._keep);
+    if (!isDemo) {
+      const rows = kept.map(i => ({
+        restaurant_id: restaurant.id,
+        name: i.name, description: i.description || "",
+        price: i.price ?? 0, category: i.category || "Plats",
+        emoji: i.emoji || "🍽️", is_popular: false, available: true,
+      }));
+      await supabase.from("menu_items").insert(rows);
+    }
+    setImportedCount(kept.length);
+    setImporting(false);
+    // Load menu items for inventory phase
+    if (!isDemo) {
+      const { data } = await supabase.from("menu_items").select("id,name,description,emoji,category").eq("restaurant_id", restaurant.id);
+      setInvItems(data ?? []);
+    } else {
+      setInvItems(kept.map((i, idx) => ({ id: `di_${idx}`, name: i.name, description: i.description, emoji: i.emoji, category: i.category })));
+    }
+    setPhase("inventory");
+  }
+
+  // ── Phase 2: Generate inventory ──────────────────────────────────────────
+  async function loadExistingMenu() {
+    if (isDemo) { setInvItems(DEMO_MENU); return; }
+    const { data } = await supabase.from("menu_items").select("id,name,description,emoji,category").eq("restaurant_id", restaurant.id);
+    setInvItems(data ?? []);
+  }
+
+  async function generateInventory() {
+    let items = invItems;
+    if (!items.length) { await loadExistingMenu(); items = invItems; }
+    if (!items.length) { setGenError("Aucun plat trouvé — importez d'abord votre carte."); return; }
+    setGenerating(true); setGenError("");
+    try {
+      const dishList = items.map(i => `${i.emoji} ${i.name}${i.description ? ": " + i.description : ""}`).join("\n");
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ mode: "setup-inventory", text: dishList }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (!data.ingredients?.length) throw new Error("Aucun ingrédient généré.");
+      setParsedInv(data);
+    } catch (e) {
+      setGenError(e.message || "Erreur lors de la génération.");
+    } finally { setGenerating(false); }
+  }
+
+  async function saveInventory() {
+    setSavingInv(true);
+    if (!isDemo) {
+      const ingRows = parsedInv.ingredients.map(i => ({
+        restaurant_id: restaurant.id,
+        name: i.name, unit: i.unit, emoji: i.emoji || "📦",
+        stock: i.stock || 0, alert_threshold: i.alert_threshold ?? null,
+      }));
+      const { data: createdIngs } = await supabase.from("ingredients").insert(ingRows).select("id,name");
+      const ingMap = Object.fromEntries((createdIngs ?? []).map(i => [i.name, i.id]));
+
+      const { data: menuItems } = await supabase.from("menu_items").select("id,name").eq("restaurant_id", restaurant.id);
+      const itemMap = Object.fromEntries((menuItems ?? []).map(i => [i.name, i.id]));
+
+      const recipeRows = [];
+      for (const [dishName, lines] of Object.entries(parsedInv.recipes ?? {})) {
+        const mid = itemMap[dishName]; if (!mid) continue;
+        for (const line of lines) {
+          const iid = ingMap[line.ingredient]; if (!iid) continue;
+          recipeRows.push({ menu_item_id: mid, ingredient_id: iid, qty_per_portion: line.qty_per_portion });
+        }
+      }
+      if (recipeRows.length) await supabase.from("recipe_items").insert(recipeRows);
+    }
+    setSavingInv(false); setInvDone(true);
+  }
+
+  // ── Shared helper ────────────────────────────────────────────────────────
+  function Step({ n, label, active, done }) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, background: done ? C.accentGreen : active ? C.dark : C.border, color: done || active ? "#fff" : C.textTertiary, flexShrink: 0 }}>
+          {done ? "✓" : n}
+        </div>
+        <span style={{ fontSize: 14, fontWeight: active || done ? 600 : 400, color: active ? C.dark : done ? C.accentGreen : C.textTertiary }}>{label}</span>
+      </div>
+    );
+  }
+
+  if (invDone) return (
+    <div className="fade-in" style={{ maxWidth: 600, margin: "0 auto", padding: "48px 0", textAlign: "center" }}>
+      <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
+      <p style={{ fontSize: 24, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", marginBottom: 8 }}>Votre restaurant est prêt !</p>
+      <p style={{ color: C.textSecondary, fontSize: 15, marginBottom: 32 }}>Carte importée, inventaire créé, recettes configurées. Tout est en place.</p>
+      <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+        <Btn variant="primary" onClick={onDone}>Aller au résumé →</Btn>
+        <Btn variant="ghost" onClick={() => { setPhase("menu"); setParsedItems(null); setParsedInv(null); setInvDone(false); setMenuText(""); }}>Recommencer</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 760, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>⚡ Setup rapide</h2>
+        <p style={{ color: C.textSecondary, fontSize: 14 }}>Collez votre menu — l'IA configure votre carte et génère votre inventaire automatiquement.</p>
+      </div>
+
+      {/* Steps */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 32 }}>
+        <Step n={1} label="Importer la carte" active={phase === "menu"} done={phase === "inventory" || invDone} />
+        <div style={{ flex: 1, height: 1, background: C.border }} />
+        <Step n={2} label="Générer l'inventaire" active={phase === "inventory"} done={invDone} />
+      </div>
+
+      {isDemo && (
+        <div style={{ background: C.accentOrange + "15", border: `1px solid ${C.accentOrange}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: C.accentOrange, fontWeight: 500 }}>
+          🎯 Mode démo — l'IA tourne normalement mais les données ne sont pas persistées en base.
+        </div>
+      )}
+
+      {/* ── PHASE 1: Menu ── */}
+      {phase === "menu" && !parsedItems && (
+        <Surface style={{ padding: 28 }}>
+          <p style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>📋 Collez votre menu</p>
+          <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 16 }}>
+            Copiez-collez le texte de votre menu depuis n'importe quelle source : site web, PDF, WhatsApp, Google Docs, fichier texte…
+          </p>
+          <textarea
+            value={menuText}
+            onChange={e => setMenuText(e.target.value)}
+            placeholder={"Exemple :\n\nBurgers\nClassic Burger - 11.90€\nDouble Cheese - 13.50€\nBacon Crispy - 13.90€\n\nDesserts\nTarte Tatin - 7.50€\nMousse Chocolat - 6.50€"}
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 240, border: `1.5px solid ${menuText ? C.borderStrong : C.border}`, borderRadius: 14, padding: "14px 16px", fontSize: 14, color: C.dark, resize: "vertical", outline: "none", lineHeight: 1.6, transition: "border-color 0.15s", ...FF }}
+          />
+          {parseError && <p style={{ color: C.accent, fontSize: 13, marginTop: 8 }}>⚠️ {parseError}</p>}
+          <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end", alignItems: "center" }}>
+            <button onClick={() => setPhase("inventory")} style={{ background: "none", border: "none", color: C.textTertiary, fontSize: 13, cursor: "pointer", ...FF }}>
+              Passer — j'ai déjà ma carte →
+            </button>
+            <Btn variant="primary" onClick={parseMenu} disabled={parsing || !menuText.trim()}>
+              {parsing ? "Analyse en cours…" : "✨ Analyser avec l'IA"}
+            </Btn>
+          </div>
+          {parsing && (
+            <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10, color: C.textSecondary, fontSize: 13 }}>
+              <div style={{ width: 16, height: 16, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite", flexShrink: 0 }} />
+              L'IA analyse votre menu et extrait les plats…
+            </div>
+          )}
+        </Surface>
+      )}
+
+      {/* ── PHASE 1: Preview parsed items ── */}
+      {phase === "menu" && parsedItems && (
+        <div className="fade-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>✅ {parsedItems.filter(i => i._keep).length} plats détectés</p>
+              <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>Vérifiez et corrigez si besoin, puis importez.</p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => { setParsedItems(null); setParseError(""); }}>← Recommencer</Btn>
+              <Btn variant="primary" size="sm" onClick={importMenu} disabled={importing}>
+                {importing ? "Import…" : `Importer ${parsedItems.filter(i => i._keep).length} plats →`}
+              </Btn>
+            </div>
+          </div>
+          <Surface style={{ overflow: "hidden" }}>
+            {/* Group by category */}
+            {Array.from(new Set(parsedItems.map(i => i.category))).map(cat => (
+              <div key={cat}>
+                <div style={{ padding: "10px 18px 6px", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em" }}>{cat?.toUpperCase()}</span>
+                </div>
+                {parsedItems.filter(i => i.category === cat).map((item, gi) => {
+                  const idx = parsedItems.indexOf(item);
+                  const editing = editItem === idx;
+                  return (
+                    <div key={item._id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: `1px solid ${C.border}`, opacity: item._keep ? 1 : 0.4, transition: "opacity 0.15s" }}>
+                      <span style={{ fontSize: 22, flexShrink: 0 }}>{item.emoji}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {editing ? (
+                          <input autoFocus value={item.name} onChange={e => setParsedItems(p => p.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                            onBlur={() => setEditItem(null)} onKeyDown={e => e.key === "Enter" && setEditItem(null)}
+                            style={{ width: "100%", border: `1.5px solid ${C.dark}`, borderRadius: 8, padding: "4px 8px", fontSize: 14, fontWeight: 600, color: C.dark, outline: "none", ...FF }} />
+                        ) : (
+                          <p onClick={() => setEditItem(idx)} style={{ fontWeight: 600, fontSize: 14, color: C.dark, cursor: "text" }} title="Cliquer pour modifier">{item.name}</p>
+                        )}
+                        {item.description && <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.description}</p>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                        {item.price != null ? (
+                          <input type="number" value={item.price} onChange={e => setParsedItems(p => p.map((x, i) => i === idx ? { ...x, price: parseFloat(e.target.value) } : x))}
+                            style={{ width: 72, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", fontSize: 14, fontWeight: 700, color: C.dark, outline: "none", textAlign: "right", ...FF }} />
+                        ) : (
+                          <span style={{ color: C.textTertiary, fontSize: 12 }}>Prix ?</span>
+                        )}
+                        <span style={{ fontSize: 12, color: C.textTertiary }}>€</span>
+                        <button onClick={() => setParsedItems(p => p.map((x, i) => i === idx ? { ...x, _keep: !x._keep } : x))}
+                          style={{ background: item._keep ? C.accent + "15" : C.bg, border: `1px solid ${item._keep ? C.accent + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: item._keep ? C.accent : C.textTertiary, cursor: "pointer", ...FF }}>
+                          {item._keep ? "Exclure" : "Inclure"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </Surface>
+        </div>
+      )}
+
+      {/* ── PHASE 2: Inventory ── */}
+      {phase === "inventory" && !parsedInv && (
+        <Surface style={{ padding: 28 }} className="fade-in">
+          {importedCount > 0 && (
+            <div style={{ background: C.accentGreen + "15", border: `1px solid ${C.accentGreen}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 20, fontSize: 14, color: C.accentGreen, fontWeight: 600 }}>
+              ✅ {importedCount} plats importés avec succès
+            </div>
+          )}
+          <p style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>📦 Générer l'inventaire</p>
+          <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>
+            L'IA analyse chaque plat de votre carte, déduit les ingrédients nécessaires et estime les quantités par portion. Vous obtenez un inventaire de départ complet en quelques secondes.
+          </p>
+          <div style={{ background: C.bg, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: C.textTertiary, letterSpacing: "0.04em", marginBottom: 8 }}>CE QUE L'IA VA CRÉER</p>
+            <div style={{ display: "flex", gap: 24 }}>
+              {[["📦", "Liste d'ingrédients", "avec unités et stocks de départ"], ["⚠️", "Seuils d'alerte", "pour être notifié avant rupture"], ["📋", "Recettes complètes", "quantités par portion par plat"]].map(([icon, title, sub]) => (
+                <div key={title}>
+                  <p style={{ fontSize: 18, marginBottom: 4 }}>{icon}</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{title}</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary }}>{sub}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {genError && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>⚠️ {genError}</p>}
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button onClick={onDone} style={{ background: "none", border: "none", color: C.textTertiary, fontSize: 13, cursor: "pointer", ...FF }}>Passer pour l'instant</button>
+            <Btn variant="primary" onClick={generateInventory} disabled={generating}>
+              {generating ? "Génération en cours…" : "✨ Générer l'inventaire"}
+            </Btn>
+          </div>
+          {generating && (
+            <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10, color: C.textSecondary, fontSize: 13 }}>
+              <div style={{ width: 16, height: 16, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite", flexShrink: 0 }} />
+              L'IA analyse vos plats et génère l'inventaire complet…
+            </div>
+          )}
+        </Surface>
+      )}
+
+      {/* ── PHASE 2: Preview generated inventory ── */}
+      {phase === "inventory" && parsedInv && !invDone && (
+        <div className="fade-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>
+                ✅ {parsedInv.ingredients?.length} ingrédients · {Object.keys(parsedInv.recipes || {}).length} recettes
+              </p>
+              <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>Vérifiez puis créez l'inventaire.</p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => setParsedInv(null)}>← Regénérer</Btn>
+              <Btn variant="primary" size="sm" onClick={saveInventory} disabled={savingInv}>
+                {savingInv ? "Création…" : "Créer l'inventaire →"}
+              </Btn>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Ingredients */}
+            <Surface style={{ overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>📦 Ingrédients</p>
+              </div>
+              <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                {parsedInv.ingredients?.map((ing, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ fontSize: 18 }}>{ing.emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, fontSize: 13, color: C.dark }}>{ing.name}</p>
+                      <p style={{ fontSize: 11, color: C.textSecondary }}>Stock : {ing.stock} {ing.unit} · Alerte ≤ {ing.alert_threshold} {ing.unit}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Surface>
+
+            {/* Recipes */}
+            <Surface style={{ overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}` }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>📋 Recettes</p>
+              </div>
+              <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                {Object.entries(parsedInv.recipes || {}).map(([dish, lines]) => (
+                  <div key={dish} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <p style={{ padding: "8px 16px 4px", fontWeight: 600, fontSize: 12, color: C.dark }}>{dish}</p>
+                    {lines.map((l, j) => (
+                      <p key={j} style={{ padding: "2px 16px 2px 24px", fontSize: 11, color: C.textSecondary }}>
+                        • {l.ingredient} — {l.qty_per_portion} {parsedInv.ingredients?.find(i => i.name === l.ingredient)?.unit ?? ""}
+                      </p>
+                    ))}
+                    <div style={{ height: 4 }} />
+                  </div>
+                ))}
+              </div>
+            </Surface>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
