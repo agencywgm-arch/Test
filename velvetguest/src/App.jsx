@@ -1561,7 +1561,7 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
     if (!STRIPE_KEY) { await onSuccess("card"); return; }
     if (!stripeRef.current || !elementsRef.current || paying) return;
     setPaying(true); setError("");
-    const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, redirect: "if_required" });
+    const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
     if (err) { setError(err.message); setPaying(false); return; }
     if (paymentIntent?.status === "succeeded") await onSuccess("card");
   }
@@ -1996,6 +1996,8 @@ function CustomerPage({ slug, tableNum }) {
   const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Je suis là pour répondre à vos questions sur les allergènes, ingrédients ou plats. Comment puis-je vous aider ?" }]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -2020,27 +2022,46 @@ function CustomerPage({ slug, tableNum }) {
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
   async function confirm(paymentMethod = "cash") {
-    let { data: order, error } = await supabase.from("orders")
-      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim(), customer_email: customerEmail.trim() })
-      .select().single();
-    // Fallback: if extra columns don't exist yet (migration pending), insert without them
-    if (error && error.message?.includes("column")) {
-      ({ data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING" })
-        .select().single());
-    }
-    if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
-    const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
-    await supabase.from("order_items").insert(orderItems);
-    // Decrement stock for items with tracked stock
-    for (const item of cart) {
-      if (item.stock != null && item.stock > 0) {
-        const newStock = Math.max(0, item.stock - item.qty);
-        await supabase.from("menu_items").update({ stock: newStock, available: newStock > 0 }).eq("id", item.id);
+    setConfirming(true); setConfirmError("");
+    try {
+      // Auto-create table if not found
+      let tid = tableId;
+      if (!tid) {
+        const { data: newTbl } = await supabase.from("tables")
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: window.location.href })
+          .select("id").single();
+        tid = newTbl?.id ?? null;
       }
+
+      let { data: order, error } = await supabase.from("orders")
+        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim(), customer_email: customerEmail.trim() })
+        .select().single();
+
+      // Fallback if extra columns not migrated yet
+      if (error && (error.message?.includes("column") || error.message?.includes("payment_method"))) {
+        ({ data: order, error } = await supabase.from("orders")
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING" })
+          .select().single());
+      }
+
+      if (error || !order) { setConfirmError("Erreur lors de la commande. Veuillez réessayer."); setConfirming(false); return; }
+
+      const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
+      await supabase.from("order_items").insert(orderItems);
+
+      for (const item of cart) {
+        if (item.stock != null && item.stock > 0) {
+          const newStock = Math.max(0, item.stock - item.qty);
+          await supabase.from("menu_items").update({ stock: newStock, available: newStock > 0 }).eq("id", item.id);
+        }
+      }
+      setOrderId(order.id);
+      setStep("done");
+    } catch (e) {
+      setConfirmError("Une erreur inattendue est survenue. Veuillez réessayer.");
+    } finally {
+      setConfirming(false);
     }
-    setOrderId(order.id);
-    setStep("done");
   }
 
   async function sendChat() {
@@ -2190,38 +2211,52 @@ function CustomerPage({ slug, tableNum }) {
 
       {step === "payment" && (
         <div style={{ padding: "40px 20px 24px" }}>
-          <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
-          <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
-          <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 24 }}>Table {tableNum} · {restaurant?.name}</p>
-          {!payMode && (
-            <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
-              {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
-              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-                <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
-              </div>
+          {confirming ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 16 }}>
+              <div style={{ width: 40, height: 40, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+              <p style={{ fontSize: 15, color: C.textSecondary, fontWeight: 500 }}>Enregistrement de votre commande…</p>
             </div>
-          )}
-          {!payMode ? (
-            <>
-              {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
-                <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
-                  <div style={{ fontSize: 26 }}>{m.icon}</div>
-                  <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{m.s}</p></div>
-                  <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
-                </div>
-              ))}
-              <div onClick={() => confirm("cash")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, cursor: "pointer", transition: "all 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
-                <div style={{ fontSize: 26 }}>💵</div>
-                <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Espèces</p><p style={{ color: C.textSecondary, fontSize: 13 }}>Le serveur passera à votre table</p></div>
-                <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
-              </div>
-            </>
           ) : (
-            <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} />
+            <>
+              <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
+              <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
+              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 24 }}>Table {tableNum} · {restaurant?.name}</p>
+              {confirmError && (
+                <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: C.accent, fontWeight: 500 }}>
+                  ⚠️ {confirmError}
+                </div>
+              )}
+              {!payMode && (
+                <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
+                  {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
+                  </div>
+                </div>
+              )}
+              {!payMode ? (
+                <>
+                  {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
+                    <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+                      <div style={{ fontSize: 26 }}>{m.icon}</div>
+                      <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{m.s}</p></div>
+                      <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+                    </div>
+                  ))}
+                  <div onClick={() => confirm("cash")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+                    <div style={{ fontSize: 26 }}>💵</div>
+                    <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Espèces</p><p style={{ color: C.textSecondary, fontSize: 13 }}>Le serveur passera à votre table</p></div>
+                    <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+                  </div>
+                </>
+              ) : (
+                <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} />
+              )}
+            </>
           )}
         </div>
       )}
