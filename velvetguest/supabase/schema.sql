@@ -136,6 +136,9 @@ create table if not exists orders (
   status        order_status not null default 'PENDING',
   note          text not null default '',
   total         numeric(10,2) not null default 0,
+  payment_method text not null default 'cash',
+  customer_name  text not null default '',
+  customer_email text not null default '',
   created_at    timestamptz not null default now()
 );
 

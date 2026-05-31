@@ -86,10 +86,22 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context } = await req.json();
+    const { messages, context, mode } = await req.json();
 
-    const systemContent = SYSTEM +
-      (context ? `\n\n## Contexte actuel du restaurant\n${context}` : "");
+    const CUSTOMER_SYSTEM = `Tu es un assistant pour les clients d'un restaurant. Tu t'appelles Velvet.
+Ton rôle : répondre aux questions sur les plats, les allergènes, les ingrédients et les préférences alimentaires.
+
+## Règles
+- Sois chaleureux, concis et utile
+- Si tu ne connais pas les ingrédients exacts d'un plat, dis-le honnêtement et conseille de demander au serveur
+- Allergènes courants à connaître : gluten, lactose, œufs, fruits à coque, arachides, soja, poisson, crustacés, céleri, moutarde, sésame, sulfites, lupin, mollusques
+- Tu peux suggérer des alternatives végétariennes/vegan si disponibles dans le menu
+- Ne prends pas de commandes — renvoie vers la carte
+- Réponds TOUJOURS en français, avec des emojis
+- Maximum 150 mots par réponse`;
+
+    const systemContent = (mode === "customer" ? CUSTOMER_SYSTEM : SYSTEM) +
+      (context ? `\n\n## Contexte\n${context}` : "");
 
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

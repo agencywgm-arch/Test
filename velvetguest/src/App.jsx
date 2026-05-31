@@ -1845,6 +1845,10 @@ function CustomerPage({ slug, tableNum }) {
   const [payMode, setPayMode] = useState(null);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Je suis là pour répondre à vos questions sur les allergènes, ingrédients ou plats. Comment puis-je vous aider ?" }]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -1869,9 +1873,15 @@ function CustomerPage({ slug, tableNum }) {
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
   async function confirm(paymentMethod = "cash") {
-    const { data: order, error } = await supabase.from("orders")
+    let { data: order, error } = await supabase.from("orders")
       .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim(), customer_email: customerEmail.trim() })
       .select().single();
+    // Fallback: if extra columns don't exist yet (migration pending), insert without them
+    if (error && error.message?.includes("column")) {
+      ({ data: order, error } = await supabase.from("orders")
+        .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING" })
+        .select().single());
+    }
     if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
     const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
     await supabase.from("order_items").insert(orderItems);
@@ -1884,6 +1894,25 @@ function CustomerPage({ slug, tableNum }) {
     }
     setOrderId(order.id);
     setStep("done");
+  }
+
+  async function sendChat() {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = { role: "user", content: chatInput.trim() };
+    const next = [...chatMsgs, userMsg];
+    setChatMsgs(next); setChatInput(""); setChatLoading(true);
+    try {
+      const menuSummary = menuItems.map(i => `${i.emoji} ${i.name} (${i.category}) — ${i.description || "sans description"}`).join("\n");
+      const ctx = `Restaurant : ${restaurant?.name}\nTable : ${tableNum}\n\nMenu disponible :\n${menuSummary}`;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ messages: next, context: ctx, mode: "customer" }),
+      });
+      const { content } = await res.json();
+      setChatMsgs(p => [...p, { role: "assistant", content: content || "Désolé, je n'ai pas pu répondre." }]);
+    } catch { setChatMsgs(p => [...p, { role: "assistant", content: "Désolé, une erreur est survenue." }]); }
+    setChatLoading(false);
   }
 
   const bg = step === "loading" || step === "error" ? C.bg : "#fff";
@@ -2119,6 +2148,79 @@ function CustomerPage({ slug, tableNum }) {
           </div>
         );
       })()}
+
+      {/* Allergen chat — visible on menu and cart steps */}
+      {(step === "menu" || step === "cart") && (
+        <>
+          {/* Floating button */}
+          <button
+            onClick={() => setChatOpen(p => !p)}
+            style={{ position: "fixed", bottom: 24, right: 20, width: 52, height: 52, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 100, ...FF }}
+            title="Aide & allergènes"
+          >💬</button>
+
+          {/* Chat panel */}
+          {chatOpen && (
+            <div style={{ position: "fixed", bottom: 88, right: 16, left: 16, maxWidth: 444, margin: "0 auto", background: C.white, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.18)", zIndex: 100, display: "flex", flexDirection: "column", maxHeight: 420, ...FF }}>
+              {/* Header */}
+              <div style={{ background: C.dark, borderRadius: "20px 20px 0 0", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.accent + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🤖</div>
+                  <div>
+                    <p style={{ color: C.white, fontWeight: 700, fontSize: 14, margin: 0 }}>Assistance</p>
+                    <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, margin: 0 }}>Allergènes & ingrédients</p>
+                  </div>
+                </div>
+                <button onClick={() => setChatOpen(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, width: 28, height: 28, color: C.white, cursor: "pointer", fontSize: 14, ...FF }}>✕</button>
+              </div>
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {chatMsgs.map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                    <div style={{ maxWidth: "82%", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "10px 13px", fontSize: 13, lineHeight: 1.5 }}>
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                    <div style={{ background: C.bg, borderRadius: "16px 16px 16px 4px", padding: "10px 14px", fontSize: 13, color: C.textTertiary }}>
+                      <span style={{ animation: "ring 1s infinite" }}>···</span>
+                    </div>
+                  </div>
+                )}
+                {/* Quick suggestions */}
+                {chatMsgs.length === 1 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                    {["Plats sans gluten ?", "Allergènes courants ?", "Plats végétariens ?", "Ingrédients du burger ?"].map(q => (
+                      <button key={q} onClick={() => { setChatInput(q); }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 12px", fontSize: 12, color: C.dark, cursor: "pointer", ...FF }}>{q}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Input */}
+              <div style={{ padding: "10px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && sendChat()}
+                  placeholder="Poser une question…"
+                  style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "9px 12px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+                />
+                <button
+                  onClick={sendChat}
+                  disabled={!chatInput.trim() || chatLoading}
+                  style={{ width: 38, height: 38, borderRadius: 10, background: chatInput.trim() && !chatLoading ? C.dark : C.bg, border: "none", cursor: chatInput.trim() && !chatLoading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", ...FF }}
+                >
+                  <span style={{ color: chatInput.trim() && !chatLoading ? C.white : C.textTertiary, fontSize: 16 }}>↑</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
