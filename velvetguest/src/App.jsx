@@ -543,9 +543,10 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
       {restaurant.id === "demo" && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 999, background: "linear-gradient(90deg, #FF9F0A, #FF375F)", padding: "8px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          <span style={{ fontSize: 14 }}>🎯</span>
-          <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>Vous êtes en mode démo — les données sont fictives et les modifications sont désactivées</span>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg, #FF9F0A, #FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <span style={{ fontSize: 13 }}>🎯</span>
+          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>MODE DÉMO — Tout est interactif, explorez librement !</span>
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>· Données fictives, aucune modification enregistrée</span>
         </div>
       )}
       <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: restaurant.id === "demo" ? 36 : 0 }}>
@@ -946,8 +947,8 @@ function MenuTabDash({ restaurant }) {
     if (cur == null) return;
     const next = Math.max(0, cur + delta);
     const available = next > 0;
-    await supabase.from("menu_items").update({ stock: next, available }).eq("id", item.id);
     setItems(p => p.map(i => i.id === item.id ? { ...i, stock: next, available } : i));
+    if (restaurant.id !== "demo") await supabase.from("menu_items").update({ stock: next, available }).eq("id", item.id);
   }
 
   async function uploadPhoto(file) {
@@ -960,12 +961,19 @@ function MenuTabDash({ restaurant }) {
   }
 
   async function save() {
-    if (restaurant.id === "demo") { setError("Mode démo — modifications désactivées."); return; }
     if (!form.name || !form.price) { setError("Nom et prix requis."); return; }
     setSaving(true); setError("");
     const stock = form.stock === "" ? null : parseInt(form.stock, 10);
     const available = stock == null ? form.available : stock > 0;
     const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id };
+    if (restaurant.id === "demo") {
+      if (modal.mode === "add") {
+        setItems(p => [...p, { ...payload, id: "dm_" + Date.now() }]);
+      } else {
+        setItems(p => p.map(i => i.id === modal.item.id ? { ...i, ...payload } : i));
+      }
+      setSaving(false); setModal(null); return;
+    }
     if (modal.mode === "add") {
       const { data, error: err } = await supabase.from("menu_items").insert(payload).select().single();
       if (err) { setError(err.message); setSaving(false); return; }
@@ -979,16 +987,14 @@ function MenuTabDash({ restaurant }) {
   }
 
   async function toggleAvailable(item) {
-    if (restaurant.id === "demo") return;
-    await supabase.from("menu_items").update({ available: !item.available }).eq("id", item.id);
     setItems(p => p.map(i => i.id === item.id ? { ...i, available: !i.available } : i));
+    if (restaurant.id !== "demo") await supabase.from("menu_items").update({ available: !item.available }).eq("id", item.id);
   }
 
   async function deleteItem(item) {
-    if (restaurant.id === "demo") return;
     if (!confirm(`Supprimer "${item.name}" ?`)) return;
-    await supabase.from("menu_items").delete().eq("id", item.id);
     setItems(p => p.filter(i => i.id !== item.id));
+    if (restaurant.id !== "demo") await supabase.from("menu_items").delete().eq("id", item.id);
   }
 
   const byCategory = items.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
@@ -1351,14 +1357,24 @@ function useLiveOrders(restaurantId, pushNotif) {
   }, [restaurantId]);
 
   const advanceOrder = useCallback(async (id) => {
-    const next = { new: "PREPARING", cooking: "READY", ready: "DONE" };
+    const next = { new: "cooking", cooking: "ready", ready: "served" };
+    const nextDB = { new: "PREPARING", cooking: "READY", ready: "DONE" };
+    if (restaurantId === "demo") {
+      setOrders(prev => {
+        const o = prev.find(x => x.id === id);
+        if (!o || !next[o.status]) return prev;
+        if (o.status === "ready") return prev.filter(x => x.id !== id);
+        return prev.map(x => x.id === id ? { ...x, status: next[x.status] } : x);
+      });
+      return;
+    }
     setOrders(prev => {
       const o = prev.find(x => x.id === id);
-      if (!o || !next[o.status]) return prev;
-      supabase.from("orders").update({ status: next[o.status] }).eq("id", id).then(() => {});
+      if (!o || !nextDB[o.status]) return prev;
+      supabase.from("orders").update({ status: nextDB[o.status] }).eq("id", id).then(() => {});
       return prev; // realtime update will handle the state change
     });
-  }, []);
+  }, [restaurantId]);
 
   const toggleItem = useCallback((orderId, itemId) => {
     setOrders(prev => prev.map(o =>
@@ -1865,7 +1881,7 @@ function AgentChat({ restaurant, store }) {
         onClick={() => setOpen(p => !p)}
         className="btn-press"
         title={open ? "Fermer l'assistant" : "Ouvrir l'assistant IA"}
-        style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 22, transition: "background 0.2s ease", ...FF }}
+        style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1010, width: 52, height: 52, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 22, transition: "background 0.2s ease", ...FF }}
       >
         <span style={{ transition: "transform 0.2s ease", display: "block", transform: open ? "rotate(45deg)" : "none" }}>
           {open ? "✕" : "✨"}
@@ -1879,7 +1895,7 @@ function AgentChat({ restaurant, store }) {
 
       {/* Panel */}
       {open && (
-        <div style={{ position: "fixed", bottom: 88, right: 24, zIndex: 999, width: 360, height: 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
+        <div style={{ position: "fixed", bottom: 88, right: 24, zIndex: 1009, width: 360, height: 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
 
           {/* Header */}
           <div style={{ padding: "14px 18px", background: C.dark, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
