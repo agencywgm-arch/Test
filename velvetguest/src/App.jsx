@@ -7,66 +7,37 @@ import QRCode from "qrcode";
 // ─────────────────────────────────────────────────────────────────────────────
 const StoreCtx = createContext(null);
 
-const makeOrder = (id, table, items, note = "") => ({
-  id, table, note, elapsed: 0,
-  status: "new",
-  items: items.map((it, i) => ({ ...it, id: id * 100 + i, done: false })),
-  createdAt: Date.now(),
-});
+function fmtStatus(s) {
+  return s === "PENDING" ? "new" : s === "PREPARING" ? "cooking" : s === "READY" ? "ready" : "served";
+}
 
-const INITIAL_ORDERS = [
-  makeOrder(1001, 4, [
-    { name: "Entrecôte 300g", detail: "Saignant × 1 / À point × 1", qty: 2, cat: "Plats" },
-    { name: "Frites maison", detail: "", qty: 2, cat: "Accompagnements" },
-    { name: "Salade César", detail: "Sans anchois", qty: 1, cat: "Entrées" },
-  ], "Allergie noix de cajou"),
-  makeOrder(1002, 7, [
-    { name: "Saumon en croûte", detail: "", qty: 2, cat: "Poissons" },
-    { name: "Purée truffée", detail: "", qty: 2, cat: "Accompagnements" },
-  ]),
-  makeOrder(1003, 2, [
-    { name: "Burger Black Angus", detail: "Rosé × 1 / Bien cuit × 1", qty: 2, cat: "Burgers" },
-    { name: "Frites maison", detail: "", qty: 3, cat: "Accompagnements" },
-  ], "1 portion enfant"),
-  makeOrder(1004, 11, [
-    { name: "Côte de veau", detail: "À point", qty: 2, cat: "Plats" },
-    { name: "Gratin dauphinois", detail: "", qty: 2, cat: "Accompagnements" },
-  ]),
-];
-INITIAL_ORDERS[1].status = "cooking";
-INITIAL_ORDERS[1].elapsed = 8;
-INITIAL_ORDERS[1].items[1].done = true;
-INITIAL_ORDERS[2].status = "cooking";
-INITIAL_ORDERS[2].elapsed = 16;
-INITIAL_ORDERS[2].items[0].done = true;
-INITIAL_ORDERS[3].status = "ready";
-INITIAL_ORDERS[3].elapsed = 22;
-INITIAL_ORDERS[3].items.forEach(i => i.done = true);
+function fmtOrder(o) {
+  return {
+    id: o.id,
+    table: o.tables?.number ?? "?",
+    note: o.note || "",
+    total: Number(o.total || 0),
+    payment_method: o.payment_method || "cash",
+    status: fmtStatus(o.status),
+    elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
+    items: (o.order_items || []).map(oi => ({
+      id: oi.id,
+      name: oi.menu_items?.name ?? "Plat",
+      price: Number(oi.menu_items?.price ?? 0),
+      qty: oi.quantity,
+      emoji: oi.menu_items?.emoji ?? "🍽",
+      cat: oi.menu_items?.category ?? "",
+    })),
+    createdAt: o.created_at,
+  };
+}
 
-const MENU = [
-  { id: 1, cat: "Entrées", name: "Soupe du jour", desc: "Velouté de saison, croûtons", price: 8, emoji: "🍲", popular: false },
-  { id: 2, cat: "Entrées", name: "Salade César", desc: "Romaine, parmesan, sauce maison", price: 14, emoji: "🥗", popular: true },
-  { id: 3, cat: "Plats", name: "Entrecôte 300g", desc: "Black Angus, sauce au poivre vert", price: 28, emoji: "🥩", popular: true },
-  { id: 4, cat: "Poissons", name: "Saumon en croûte", desc: "Feuilletage, épinards, citron", price: 24, emoji: "🐟", popular: false },
-  { id: 5, cat: "Burgers", name: "Burger Black Angus", desc: "180g, cheddar, oignons confits", price: 18, emoji: "🍔", popular: true },
-  { id: 6, cat: "Desserts", name: "Tiramisu maison", desc: "Mascarpone, café, Savoiardi", price: 9, emoji: "🍮", popular: true },
-  { id: 7, cat: "Desserts", name: "Crème brûlée", desc: "Vanille de Madagascar", price: 8, emoji: "🍯", popular: false },
-  { id: 8, cat: "Boissons", name: "Verre de vin", desc: "Sélection du jour — Rouge / Blanc / Rosé", price: 7, emoji: "🍷", popular: false },
-];
+const ORDER_QUERY = "*, tables(number), order_items(id, quantity, menu_items(name, emoji, price, category))";
 
-function useStore() {
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
-  const [servedOrders, setServedOrders] = useState([]);
+function useStore(restaurantId) {
+  const [orders, setOrders] = useState([]);
+  const [doneOrders, setDoneOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setOrders(prev => prev.map(o =>
-        !["ready", "served"].includes(o.status) ? { ...o, elapsed: o.elapsed + 0.5 } : o
-      ));
-    }, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const pushNotif = useCallback((msg, type = "info") => {
     const n = { id: Date.now(), msg, type };
@@ -74,45 +45,53 @@ function useStore() {
     setTimeout(() => setNotifications(p => p.filter(x => x.id !== n.id)), 5000);
   }, []);
 
-  const advanceOrder = useCallback((id) => {
-    setOrders(prev => prev.map(o => {
-      if (o.id !== id) return o;
-      const next = { new: "accepted", accepted: "cooking", cooking: "ready", ready: "served" }[o.status];
-      if (!next) return o;
-      if (next === "served") {
-        setServedOrders(s => [{ ...o, status: "served" }, ...s.slice(0, 9)]);
-        pushNotif(`Table ${o.table} — Commande servie ✓`, "success");
-        return null;
-      }
-      const labels = { accepted: "acceptée", cooking: "en cuisine", ready: "prête à servir" };
-      pushNotif(`Table ${o.table} — Commande ${labels[next]}`, next === "ready" ? "warning" : "info");
-      return { ...o, status: next };
-    }).filter(Boolean));
-  }, [pushNotif]);
+  useEffect(() => {
+    if (!restaurantId) { setOrders([]); setDoneOrders([]); return; }
 
-  const toggleItem = useCallback((orderId, itemId) => {
-    setOrders(prev => prev.map(o =>
-      o.id === orderId ? { ...o, items: o.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) } : o
-    ));
-  }, []);
+    supabase.from("orders").select(ORDER_QUERY)
+      .eq("restaurant_id", restaurantId).neq("status", "DONE")
+      .order("created_at", { ascending: true })
+      .then(({ data }) => setOrders((data ?? []).map(fmtOrder)));
 
-  const addOrder = useCallback((table, items, note) => {
-    const id = Date.now();
-    const order = makeOrder(id, table, items, note);
-    setOrders(prev => [order, ...prev]);
-    pushNotif(`Nouvelle commande — Table ${table}`, "new");
-    return order;
-  }, [pushNotif]);
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    supabase.from("orders").select(ORDER_QUERY)
+      .eq("restaurant_id", restaurantId).eq("status", "DONE")
+      .gte("created_at", dayStart.toISOString())
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setDoneOrders((data ?? []).map(fmtOrder)));
 
-  const revenue = [...orders, ...servedOrders].reduce((s, o) => {
-    const total = o.items.reduce((a, i) => {
-      const item = MENU.find(m => m.name === i.name);
-      return a + (item ? item.price * i.qty : 0);
-    }, 0);
-    return s + total;
-  }, 3840);
+    const ch = supabase.channel(`store-${restaurantId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        async ({ new: row }) => {
+          const { data } = await supabase.from("orders").select(ORDER_QUERY).eq("id", row.id).single();
+          if (!data) return;
+          const o = fmtOrder(data);
+          setOrders(prev => [o, ...prev]);
+          pushNotif(`Nouvelle commande — Table ${o.table}`, "new");
+        }
+      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        async ({ new: row }) => {
+          if (row.status === "DONE") {
+            setOrders(prev => prev.filter(o => o.id !== row.id));
+            const { data } = await supabase.from("orders").select(ORDER_QUERY).eq("id", row.id).single();
+            if (data) setDoneOrders(prev => [fmtOrder(data), ...prev.slice(0, 49)]);
+          } else {
+            setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: fmtStatus(row.status) } : o));
+          }
+        }
+      )
+      .subscribe();
 
-  return { orders, servedOrders, notifications, advanceOrder, toggleItem, addOrder, revenue, pushNotif, menu: MENU };
+    const tick = setInterval(() => {
+      setOrders(prev => prev.map(o => ({ ...o, elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000)) })));
+    }, 60000);
+
+    return () => { supabase.removeChannel(ch); clearInterval(tick); };
+  }, [restaurantId]);
+
+  const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
+  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -473,7 +452,8 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const ready = store.orders.filter(o => o.status === "ready");
   const TABS = [
     { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
-    { id: "qrcode", label: "QR Codes" }, { id: "reviews", label: "Avis" }, { id: "menu", label: "Carte" },
+    { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
+    { id: "reviews", label: "Avis" }, { id: "menu", label: "Carte" },
   ];
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
@@ -531,6 +511,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         <div style={{ padding: "28px 32px" }}>
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
           {tab === "orders" && <OrdersTab store={store} />}
+          {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
           {tab === "reviews" && <ReviewsTab />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
@@ -584,18 +565,43 @@ function StockAlerts({ restaurantId }) {
 }
 
 function OverviewTab({ store, restaurant, onCuisine, onClient }) {
+  const [weeklyRev, setWeeklyRev] = useState(Array(7).fill(0));
+
+  useEffect(() => {
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
+    supabase.from("orders").select("total, created_at")
+      .eq("restaurant_id", restaurant.id).eq("status", "DONE")
+      .gte("created_at", weekAgo.toISOString())
+      .then(({ data }) => {
+        const totals = Array(7).fill(0);
+        (data ?? []).forEach(o => {
+          const idx = Math.floor((new Date(o.created_at) - weekAgo) / 86400000);
+          if (idx >= 0 && idx < 7) totals[idx] += Number(o.total);
+        });
+        setWeeklyRev(totals);
+      });
+  }, [restaurant.id]);
+
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const rev = store.revenue;
-  const WEEKLY = [1840, 2430, 2100, 3200, 4800, 5900, rev].map((v, i) => ({ day: ["L","M","M","J","V","S","D"][i], v }));
-  const max = Math.max(...WEEKLY.map(w => w.v));
+  const avgTicket = store.doneOrders.length > 0 ? rev / store.doneOrders.length : 0;
+  const DAY_LABELS = ["D", "L", "M", "M", "J", "V", "S"];
+  const WEEKLY = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - 6 + i);
+    return { day: DAY_LABELS[d.getDay()], v: weeklyRev[i] };
+  });
+  const max = Math.max(...WEEKLY.map(w => w.v), 1);
+  const totalWeek = weeklyRev.reduce((s, v) => s + v, 0);
+
   return (
     <div className="fade-in">
+      <StockAlerts restaurantId={restaurant.id} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <KPICard label="Commandes actives" value={active.length} sub="en ce moment" delta={0} />
-        <KPICard label="CA aujourd'hui" value={`${rev.toLocaleString("fr")} €`} sub="vs hier" delta={9} />
-        <KPICard label="Tables servies" value={store.servedOrders.length + 4} sub="depuis l'ouverture" delta={0} />
-        <KPICard label="Scans QR" value={restaurant.scans || 0} sub="vs hier" delta={18} />
+        <KPICard label="Commandes actives" value={active.length} sub="en ce moment" />
+        <KPICard label="CA aujourd'hui" value={`${rev.toFixed(2)} €`} sub="commandes clôturées" />
+        <KPICard label="Tables servies" value={store.doneOrders.length} sub="aujourd'hui" />
+        <KPICard label="Ticket moyen" value={avgTicket > 0 ? `${avgTicket.toFixed(2)} €` : "—"} sub="aujourd'hui" />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
         <Surface onClick={onCuisine} style={{ padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} className="hover-lift">
@@ -612,7 +618,7 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
           <div style={{ width: 48, height: 48, borderRadius: 14, background: C.accentBlue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📱</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 3 }}>Vue client</div>
-            <div style={{ fontSize: 13, color: C.textSecondary }}>Simulation expérience QR</div>
+            <div style={{ fontSize: 13, color: C.textSecondary }}>Aperçu carte réelle</div>
           </div>
           <Tag color={C.accentBlue}>Preview</Tag>
         </Surface>
@@ -621,10 +627,9 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
         <Surface style={{ padding: "22px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
             <div>
-              <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>Revenus hebdomadaires</p>
-              <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>{(rev + 20270).toLocaleString("fr")} €</p>
+              <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>Revenus 7 derniers jours</p>
+              <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>{totalWeek.toFixed(2)} €</p>
             </div>
-            <Tag color={C.accentGreen}>↑ +9%</Tag>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
             {WEEKLY.map((d, i) => (
@@ -637,16 +642,20 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
         </Surface>
         <Surface style={{ padding: "22px 24px" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Commandes en direct</p>
-          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 16 }}>Démo temps réel</p>
-          {store.orders.slice(0, 4).map(o => {
-            const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen }[o.status] || C.textTertiary;
-            const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "En cuisine", ready: "Prête" }[o.status];
+          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 16 }}>
+            {store.orders.length === 0 ? "Aucune commande active" : `${store.orders.length} en cours`}
+          </p>
+          {store.orders.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 0", color: C.textTertiary, fontSize: 13 }}>Calme plat 😌</div>
+          ) : store.orders.slice(0, 4).map(o => {
+            const sc = { new: C.accentBlue, cooking: C.accentOrange, ready: C.accentGreen }[o.status] || C.textTertiary;
+            const sl = { new: "Nouvelle", cooking: "En cuisine", ready: "Prête" }[o.status];
             return (
               <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>#{o.id}</div>
-                  <div style={{ fontSize: 11, color: C.textTertiary }}>{Math.round(o.elapsed)} min</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>#{o.id.slice(0, 6).toUpperCase()}</div>
+                  <div style={{ fontSize: 11, color: C.textTertiary }}>{o.elapsed} min</div>
                 </div>
                 <Tag color={sc}>{sl}</Tag>
               </div>
@@ -682,7 +691,7 @@ function OrdersTab({ store }) {
             <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Cmd #{o.id}</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id}</p>
                 <p style={{ fontSize: 12, color: C.textSecondary }}>{o.items.map(i => i.name).join(", ").slice(0, 50)}</p>
               </div>
               <p style={{ fontSize: 13, color: C.textSecondary }}>{Math.round(o.elapsed)} min</p>
@@ -992,8 +1001,124 @@ function MenuTabDash({ restaurant }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CUISINE VIEW
+// CAISSE TAB
 // ─────────────────────────────────────────────────────────────────────────────
+function exportCSV(orders, restaurant) {
+  const rows = [["Date", "Heure", "Table", "ID", "Total (€)", "Paiement"]];
+  orders.forEach(o => {
+    const d = new Date(o.createdAt);
+    rows.push([
+      d.toLocaleDateString("fr-FR"),
+      d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      `Table ${o.table}`,
+      o.id.slice(0, 6).toUpperCase(),
+      o.total.toFixed(2),
+      o.payment_method === "card" ? "Carte" : o.payment_method === "apple_pay" ? "Apple Pay" : "Espèces",
+    ]);
+  });
+  const csv = "﻿" + rows.map(r => r.join(";")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `caisse-${restaurant.name.replace(/\s+/g, "-")}-${new Date().toLocaleDateString("fr-FR").replace(/\//g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function CaisseTab({ store, restaurant }) {
+  const today = store.doneOrders || [];
+  const revenue = store.revenue;
+  const avgTicket = today.length > 0 ? revenue / today.length : 0;
+  const byMethod = today.reduce((acc, o) => {
+    const m = o.payment_method || "cash";
+    acc[m] = (acc[m] || 0) + o.total;
+    return acc;
+  }, {});
+
+  return (
+    <div className="fade-in">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        <KPICard label="CA du jour" value={`${revenue.toFixed(2)} €`} sub="commandes clôturées" />
+        <KPICard label="Commandes servies" value={today.length} sub="aujourd'hui" />
+        <KPICard label="Ticket moyen" value={avgTicket > 0 ? `${avgTicket.toFixed(2)} €` : "—"} sub="aujourd'hui" />
+        <KPICard label="En espèces" value={`${(byMethod.cash || 0).toFixed(2)} €`} sub="à encaisser" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+        <Surface style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 18 }}>Répartition des paiements</p>
+          {[["💳", "Carte bancaire", byMethod.card || 0], ["💵", "Espèces", byMethod.cash || 0], ["📱", "Apple / Google Pay", (byMethod.apple_pay || 0) + (byMethod.google_pay || 0)]].map(([icon, label, val]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>{icon}</span>
+                <span style={{ fontSize: 14, color: C.dark }}>{label}</span>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{val.toFixed(2)} €</span>
+                {revenue > 0 && <span style={{ display: "block", fontSize: 11, color: C.textTertiary }}>{Math.round((val / revenue) * 100)}%</span>}
+              </div>
+            </div>
+          ))}
+        </Surface>
+
+        <Surface style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 18 }}>Actions caisse</p>
+          <Btn variant="primary" full onClick={() => exportCSV(today, restaurant)} style={{ marginBottom: 10 }}>
+            📊 Exporter CSV du jour
+          </Btn>
+          <Btn variant="ghost" full onClick={() => window.print()}>
+            🖨️ Imprimer le rapport Z
+          </Btn>
+          {today.length === 0 && (
+            <p style={{ color: C.textTertiary, fontSize: 13, textAlign: "center", marginTop: 20, lineHeight: 1.6 }}>
+              Les commandes clôturées<br />apparaîtront ici.
+            </p>
+          )}
+        </Surface>
+      </div>
+
+      <Surface style={{ overflow: "hidden" }}>
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Journal du jour</p>
+          <p style={{ fontSize: 13, color: C.textSecondary }}>{today.length} commande{today.length !== 1 ? "s" : ""}</p>
+        </div>
+        {today.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: C.textTertiary, fontSize: 14 }}>
+            Aucune commande clôturée aujourd'hui.<br />
+            <span style={{ fontSize: 12 }}>Passez les commandes en "Servie" depuis la vue cuisine.</span>
+          </div>
+        ) : today.map((o, i) => {
+          const pmIcon = o.payment_method === "card" ? "💳" : o.payment_method === "apple_pay" ? "📱" : "💵";
+          const pmLabel = o.payment_method === "card" ? "Carte" : o.payment_method === "apple_pay" ? "Apple Pay" : "Espèces";
+          return (
+            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: i < today.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>#{o.id.slice(0, 6).toUpperCase()}</p>
+                <p style={{ fontSize: 12, color: C.textSecondary }}>
+                  {new Date(o.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                  {o.items.length > 0 && ` · ${o.items.slice(0, 2).map(it => it.name).join(", ")}${o.items.length > 2 ? " …" : ""}`}
+                </p>
+              </div>
+              <Tag color={o.payment_method === "card" ? C.accentBlue : o.payment_method === "apple_pay" ? C.accentPurple : C.textSecondary}>
+                {pmIcon} {pmLabel}
+              </Tag>
+              <p style={{ fontWeight: 800, fontSize: 16, color: C.dark, minWidth: 70, textAlign: "right" }}>{o.total.toFixed(2)} €</p>
+            </div>
+          );
+        })}
+        {today.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", background: C.bg, borderTop: `2px solid ${C.borderStrong}` }}>
+            <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Total du jour</p>
+            <p style={{ fontWeight: 900, fontSize: 20, color: C.dark, letterSpacing: "-0.03em" }}>{revenue.toFixed(2)} €</p>
+          </div>
+        )}
+      </Surface>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CUISINE VIEW — Supabase Realtime
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1241,23 +1366,121 @@ function CuisineView({ restaurant, onBack }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLIENT VIEW
+// STRIPE CARD FORM
+// ─────────────────────────────────────────────────────────────────────────────
+function CardPaymentForm({ total, onSuccess, onCancel }) {
+  const containerRef = useRef(null);
+  const stripeRef = useRef(null);
+  const elementsRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+  const [paying, setPaying] = useState(false);
+  const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+
+  useEffect(() => {
+    if (!STRIPE_KEY) { setReady(true); return; }
+
+    const init = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
+          { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` }, body: JSON.stringify({ amount: total }) }
+        );
+        const { client_secret, error: fnErr } = await res.json();
+        if (fnErr || !client_secret) throw new Error(fnErr || "Pas de client_secret");
+        const stripe = window.Stripe(STRIPE_KEY);
+        stripeRef.current = stripe;
+        const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
+        const payEl = elements.create("payment");
+        if (containerRef.current) payEl.mount(containerRef.current);
+        elementsRef.current = elements;
+        setReady(true);
+      } catch (e) {
+        setError("Impossible de charger le module de paiement. Vérifiez votre connexion.");
+        setReady(true);
+      }
+    };
+
+    if (window.Stripe) {
+      init();
+    } else {
+      const check = setInterval(() => { if (window.Stripe) { clearInterval(check); init(); } }, 100);
+      return () => clearInterval(check);
+    }
+  }, [total, STRIPE_KEY]);
+
+  async function pay() {
+    if (!STRIPE_KEY) { await onSuccess("card"); return; }
+    if (!stripeRef.current || !elementsRef.current || paying) return;
+    setPaying(true); setError("");
+    const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, redirect: "if_required" });
+    if (err) { setError(err.message); setPaying(false); return; }
+    if (paymentIntent?.status === "succeeded") await onSuccess("card");
+  }
+
+  if (!ready) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
+      <div style={{ width: 18, height: 18, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+      <span style={{ fontSize: 14, color: C.textSecondary }}>Chargement du paiement…</span>
+    </div>
+  );
+
+  return (
+    <div>
+      {!STRIPE_KEY && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 13, color: "#7A5C00" }}>
+          ⚠️ Mode test — ajoutez VITE_STRIPE_PUBLISHABLE_KEY pour activer les vrais paiements
+        </div>
+      )}
+      <div ref={containerRef} style={{ marginBottom: 16, minHeight: STRIPE_KEY ? 80 : 0 }} />
+      {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      <button onClick={pay} disabled={paying} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: paying ? "not-allowed" : "pointer", marginBottom: 10, ...FF, opacity: paying ? 0.6 : 1 }}>
+        {paying ? "Traitement en cours…" : `Payer ${total.toFixed(2)} €`}
+      </button>
+      <button onClick={onCancel} style={{ width: "100%", padding: 14, background: "transparent", color: C.textSecondary, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 600, cursor: "pointer", ...FF }}>
+        Annuler
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT VIEW — preview with real menu
 // ─────────────────────────────────────────────────────────────────────────────
 function ClientView({ restaurant, onBack }) {
-  const store = useContext(StoreCtx);
-  const [step, setStep] = useState("scan");
+  const [step, setStep] = useState("menu");
+  const [menuItems, setMenuItems] = useState([]);
+  const [loadingMenu, setLoadingMenu] = useState(true);
   const [cart, setCart] = useState([]);
   const [activeCat, setActiveCat] = useState("Tous");
   const [note, setNote] = useState("");
   const [rating, setRating] = useState(0);
-  const tableNum = 5;
-  const cats = ["Tous", ...Array.from(new Set(MENU.map(i => i.cat)))];
-  const filtered = activeCat === "Tous" ? MENU : MENU.filter(i => i.cat === activeCat);
-  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const [payMode, setPayMode] = useState(null);
+  const tableNum = 1;
+
+  useEffect(() => {
+    supabase.from("menu_items").select("*")
+      .eq("restaurant_id", restaurant.id).eq("available", true)
+      .order("category").order("name")
+      .then(({ data }) => { setMenuItems(data ?? []); setLoadingMenu(false); });
+  }, [restaurant.id]);
+
+  const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
+  const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const total = cart.reduce((s, i) => s + Number(i.price) * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
   const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
-  const confirm = () => { store.addOrder(tableNum, cart.map(i => ({ name: i.name, detail: "", qty: i.qty, cat: i.cat })), note); setStep("done"); };
+
+  async function confirmOrder(paymentMethod = "cash") {
+    const { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
+    const { data: order } = await supabase.from("orders")
+      .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING", payment_method: paymentMethod })
+      .select().single();
+    if (!order) return;
+    await supabase.from("order_items").insert(cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" })));
+    setStep("done"); setPayMode(null);
+  }
 
   const Frame = ({ children }) => (
     <div style={{ background: "#0A0A0B", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", ...FF }}>
@@ -1277,66 +1500,64 @@ function ClientView({ restaurant, onBack }) {
     </div>
   );
 
-  if (step === "scan") return (
-    <Frame>
-      <div style={{ background: C.dark, padding: "52px 24px 28px", textAlign: "center" }}>
-        <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginBottom: 6 }}>{restaurant.name}</p>
-        <p style={{ fontSize: 32, fontWeight: 900, color: C.white, letterSpacing: "-0.04em" }}>Table {tableNum}</p>
-      </div>
-      <div style={{ padding: "28px 24px", textAlign: "center" }}>
-        <div style={{ display: "inline-block", padding: 16, background: "#f5f5f7", borderRadius: 20, marginBottom: 20 }}>
-          <QRCanvas text={`${window.location.origin}/r/${restaurant.slug}/t/${tableNum}`} size={180} fg="#1D1D1F" bg="#f5f5f7" />
-        </div>
-        <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>Scannez pour accéder à la carte, ou simulez l'expérience ci-dessous.</p>
-        <button onClick={() => setStep("menu")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Voir la carte →</button>
-      </div>
-    </Frame>
-  );
-
   if (step === "menu") return (
     <Frame>
       <div style={{ background: C.dark, padding: "48px 20px 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div><p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 4 }}>{restaurant.name}</p><p style={{ fontSize: 22, fontWeight: 800, color: C.white }}>Table {tableNum}</p></div>
-          {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "9px 16px", color: C.white, fontWeight: 700, fontSize: 13, cursor: "pointer", ...FF }}>🛒 {count} · {total}€</button>}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 18 }}>{restaurant.emoji}</span>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{restaurant.name}</p>
+            </div>
+            <p style={{ fontSize: 22, fontWeight: 800, color: C.white }}>Table {tableNum}</p>
+          </div>
+          {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "9px 16px", color: C.white, fontWeight: 700, fontSize: 13, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
         {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
       </div>
-      <div style={{ overflowY: "auto", maxHeight: 440 }}>
-        {filtered.map(item => {
-          const inCart = cart.find(i => i.id === item.id);
-          return (
-            <div key={item.id} style={{ display: "flex", gap: 12, padding: "14px 16px", borderBottom: `1px solid ${C.border}`, animation: "fadeup 0.2s ease" }}>
-              <div style={{ width: 56, height: 56, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{item.emoji}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{item.name}</p>
-                    {item.popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, display: "inline-block", marginTop: 2 }}>⭐ Populaire</span>}
+      {loadingMenu ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+          <div style={{ width: 20, height: 20, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+        </div>
+      ) : (
+        <div style={{ overflowY: "auto", maxHeight: 440 }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 32, color: C.textTertiary, fontSize: 14 }}>Aucun plat disponible</div>
+          ) : filtered.map(item => {
+            const inCart = cart.find(i => i.id === item.id);
+            return (
+              <div key={item.id} style={{ display: "flex", gap: 12, padding: "14px 16px", borderBottom: `1px solid ${C.border}`, animation: "fadeup 0.2s ease" }}>
+                <div style={{ width: 56, height: 56, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{item.emoji}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{item.name}</p>
+                      {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, display: "inline-block", marginTop: 2 }}>⭐ Populaire</span>}
+                    </div>
+                    <p style={{ fontWeight: 800, fontSize: 15, color: C.dark, flexShrink: 0 }}>{Number(item.price).toFixed(2)}€</p>
                   </div>
-                  <p style={{ fontWeight: 800, fontSize: 15, color: C.dark, flexShrink: 0 }}>{item.price}€</p>
+                  {item.description && <p style={{ color: C.textSecondary, fontSize: 12, margin: "4px 0 8px", lineHeight: 1.4 }}>{item.description}</p>}
+                  {inCart ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button onClick={() => rem(item.id)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
+                      <span style={{ fontWeight: 800, fontSize: 15 }}>{inCart.qty}</span>
+                      <button onClick={() => add(item)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => add(item)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>Ajouter</button>
+                  )}
                 </div>
-                <p style={{ color: C.textSecondary, fontSize: 12, margin: "4px 0 8px", lineHeight: 1.4 }}>{item.desc}</p>
-                {inCart ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button onClick={() => rem(item.id)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
-                    <span style={{ fontWeight: 800, fontSize: 15 }}>{inCart.qty}</span>
-                    <button onClick={() => add(item)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
-                  </div>
-                ) : (
-                  <button onClick={() => add(item)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>Ajouter</button>
-                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
       {count > 0 && (
         <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, background: C.white }}>
           <button onClick={() => setStep("cart")} style={{ width: "100%", padding: 14, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", ...FF }}>
-            <span>🛒 Voir le panier ({count})</span><span>{total}€</span>
+            <span>🛒 Voir le panier ({count})</span><span>{total.toFixed(2)}€</span>
           </button>
         </div>
       )}
@@ -1351,13 +1572,13 @@ function ClientView({ restaurant, onBack }) {
         {cart.map(item => (
           <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 22 }}>{item.emoji}</div>
-            <div style={{ flex: 1 }}><p style={{ fontWeight: 600, fontSize: 14, color: C.dark }}>{item.name}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{item.price}€/u</p></div>
+            <div style={{ flex: 1 }}><p style={{ fontWeight: 600, fontSize: 14, color: C.dark }}>{item.name}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{Number(item.price).toFixed(2)}€/u</p></div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button onClick={() => rem(item.id)} style={{ width: 26, height: 26, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 14, ...FF }}>−</button>
               <span style={{ fontWeight: 800, fontSize: 14, minWidth: 16, textAlign: "center" }}>{item.qty}</span>
               <button onClick={() => add(item)} style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 14, ...FF }}>+</button>
             </div>
-            <p style={{ fontWeight: 800, color: C.dark, minWidth: 40, textAlign: "right" }}>{item.price * item.qty}€</p>
+            <p style={{ fontWeight: 800, color: C.dark, minWidth: 40, textAlign: "right" }}>{(Number(item.price) * item.qty).toFixed(2)}€</p>
           </div>
         ))}
         <div style={{ marginTop: 14 }}>
@@ -1366,7 +1587,7 @@ function ClientView({ restaurant, onBack }) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0" }}>
           <span style={{ fontWeight: 700, fontSize: 17, color: C.dark }}>Total</span>
-          <span style={{ fontWeight: 900, fontSize: 22, color: C.dark }}>{total}€</span>
+          <span style={{ fontWeight: 900, fontSize: 22, color: C.dark }}>{total.toFixed(2)}€</span>
         </div>
         <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
       </div>
@@ -1376,23 +1597,37 @@ function ClientView({ restaurant, onBack }) {
   if (step === "payment") return (
     <Frame>
       <div style={{ padding: "48px 20px 0" }}>
-        <button onClick={() => setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Retour</button>
+        <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Retour</button>
         <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 4 }}>Paiement</p>
         <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>Table {tableNum} · {restaurant.name}</p>
-        <div style={{ background: C.bg, borderRadius: 14, padding: 16, marginBottom: 20 }}>
-          {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{i.price * i.qty}€</span></div>)}
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span><span style={{ fontWeight: 900, fontSize: 20 }}>{total}€</span>
+        {!payMode && (
+          <div style={{ background: C.bg, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
+              <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span><span style={{ fontWeight: 900, fontSize: 20 }}>{total.toFixed(2)}€</span>
+            </div>
           </div>
-        </div>
-        {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay", s: "Paiement instantané" }, { icon: "💵", l: "Espèces", s: "Le serveur viendra" }].map(m => (
-          <div key={m.l} onClick={confirm} style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, border: `1.5px solid ${C.border}`, borderRadius: 14, marginBottom: 10, cursor: "pointer", transition: "border-color 0.15s" }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
-            <div style={{ fontSize: 24 }}>{m.icon}</div>
-            <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{m.s}</p></div>
-            <span style={{ color: C.textTertiary, fontSize: 18 }}>›</span>
-          </div>
-        ))}
+        )}
+        {!payMode ? (
+          <>
+            {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
+              <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, border: `1.5px solid ${C.border}`, borderRadius: 14, marginBottom: 10, cursor: "pointer", transition: "border-color 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+                <div style={{ fontSize: 24 }}>{m.icon}</div>
+                <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 12 }}>{m.s}</p></div>
+                <span style={{ color: C.textTertiary, fontSize: 18 }}>›</span>
+              </div>
+            ))}
+            <div onClick={() => confirmOrder("cash")} style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, border: `1.5px solid ${C.border}`, borderRadius: 14, cursor: "pointer", transition: "border-color 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+              <div style={{ fontSize: 24 }}>💵</div>
+              <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>Espèces</p><p style={{ color: C.textSecondary, fontSize: 12 }}>Le serveur passera à votre table</p></div>
+              <span style={{ color: C.textTertiary, fontSize: 18 }}>›</span>
+            </div>
+          </>
+        ) : (
+          <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} />
+        )}
       </div>
     </Frame>
   );
@@ -1405,8 +1640,8 @@ function ClientView({ restaurant, onBack }) {
         <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6, marginBottom: 28 }}>En cuisine. Vous serez servi très bientôt.</p>
         <div style={{ background: C.bg, borderRadius: 16, padding: 16, marginBottom: 24, textAlign: "left" }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: C.textTertiary, letterSpacing: "0.05em", marginBottom: 10 }}>RÉCAPITULATIF</p>
-          {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.dark, marginBottom: 6 }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{i.price * i.qty}€</span></div>)}
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total payé</span><span style={{ fontWeight: 900 }}>{total}€</span></div>
+          {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.dark, marginBottom: 6 }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total</span><span style={{ fontWeight: 900 }}>{total.toFixed(2)}€</span></div>
         </div>
         <p style={{ fontWeight: 600, fontSize: 14, color: C.dark, marginBottom: 12 }}>Notez votre expérience</p>
         <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 24 }}>
@@ -1432,6 +1667,7 @@ function CustomerPage({ slug, tableNum }) {
   const [note, setNote] = useState("");
   const [rating, setRating] = useState(0);
   const [orderId, setOrderId] = useState(null);
+  const [payMode, setPayMode] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -1455,9 +1691,9 @@ function CustomerPage({ slug, tableNum }) {
   const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
-  async function confirm() {
+  async function confirm(paymentMethod = "cash") {
     const { data: order, error } = await supabase.from("orders")
-      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING" })
+      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING", payment_method: paymentMethod })
       .select().single();
     if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
     const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
@@ -1583,24 +1819,39 @@ function CustomerPage({ slug, tableNum }) {
 
       {step === "payment" && (
         <div style={{ padding: "40px 20px 24px" }}>
-          <button onClick={() => setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
+          <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
           <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
           <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 24 }}>Table {tableNum} · {restaurant?.name}</p>
-          <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
-            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
-            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-              <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
+          {!payMode && (
+            <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
+              {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
+                <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
+              </div>
             </div>
-          </div>
-          {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay", s: "Paiement instantané" }, { icon: "💵", l: "Espèces", s: "Le serveur passera à votre table" }].map(m => (
-            <div key={m.l} onClick={confirm} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
-              <div style={{ fontSize: 26 }}>{m.icon}</div>
-              <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{m.s}</p></div>
-              <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
-            </div>
-          ))}
+          )}
+          {!payMode ? (
+            <>
+              {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
+                <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+                  <div style={{ fontSize: 26 }}>{m.icon}</div>
+                  <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{m.l}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{m.s}</p></div>
+                  <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+                </div>
+              ))}
+              <div onClick={() => confirm("cash")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+                <div style={{ fontSize: 26 }}>💵</div>
+                <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Espèces</p><p style={{ color: C.textSecondary, fontSize: 13 }}>Le serveur passera à votre table</p></div>
+                <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+              </div>
+            </>
+          ) : (
+            <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} />
+          )}
         </div>
       )}
 
@@ -1638,7 +1889,7 @@ export default function App() {
   const [page, setPage] = useState("loading");
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
-  const store = useStore();
+  const store = useStore(restaurant?.id);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
