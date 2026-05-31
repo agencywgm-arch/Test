@@ -680,15 +680,37 @@ function QRTab({ restaurant }) {
   const [sel, setSel] = useState(1);
   const [fg, setFg] = useState("#1D1D1F");
   const [bg, setBg] = useState("#FFFFFF");
+  const [customBase, setCustomBase] = useState("");
   const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
-  const url = `${window.location.origin}/r/${restaurant.slug}/t/${sel}`;
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const baseUrl = customBase || window.location.origin;
+  const url = `${baseUrl}/r/${restaurant.slug}/t/${sel}`;
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
     const a = document.createElement("a"); a.download = `vg-table-${sel}.png`; a.href = canvas.toDataURL("image/png"); a.click();
   };
   return (
-    <div className="fade-in" style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
+    <div className="fade-in">
+      {isLocalhost && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <span style={{ fontSize: 20 }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontWeight: 700, color: "#7A5C00", fontSize: 14, marginBottom: 6 }}>Vous êtes en local — les QR codes ne fonctionneront pas sur un téléphone</p>
+            <p style={{ color: "#7A5C00", fontSize: 13, marginBottom: 10 }}>Entrez l'adresse IP de votre PC sur le réseau Wi-Fi pour tester depuis un téléphone. Trouvez-la avec <code style={{ background: "rgba(0,0,0,0.08)", padding: "2px 6px", borderRadius: 4 }}>ipconfig</code> (Windows) ou <code style={{ background: "rgba(0,0,0,0.08)", padding: "2px 6px", borderRadius: 4 }}>ifconfig</code> (Mac).</p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                value={customBase}
+                onChange={e => setCustomBase(e.target.value)}
+                placeholder="http://192.168.1.42:5173"
+                style={{ flex: 1, background: "#fff", border: "1.5px solid #FFE082", borderRadius: 10, padding: "8px 12px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+              />
+              {customBase && <button onClick={() => setCustomBase("")} style={{ background: "none", border: "none", color: "#7A5C00", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✕ Reset</button>}
+            </div>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
       <div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
           {[["Tables", restaurant.tables || 8], ["QR actifs", restaurant.tables || 8], ["Scans totaux", 0]].map(([l, v]) => (
@@ -738,6 +760,7 @@ function QRTab({ restaurant }) {
           </div>
         </Surface>
       </div>
+    </div>
     </div>
   );
 }

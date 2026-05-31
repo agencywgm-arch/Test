@@ -60,6 +60,10 @@ alter table restaurants enable row level security;
 create policy "Owners can manage their restaurants"
   on restaurants for all using (auth.uid() = owner_id);
 
+-- Customers need to read restaurant info when scanning a QR code
+create policy "Anyone can read restaurants"
+  on restaurants for select using (true);
+
 
 -- ─────────────────────────────────────────
 -- MENU ITEMS
