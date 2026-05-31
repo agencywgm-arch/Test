@@ -497,6 +497,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           </div>
         </div>
       </aside>
+      <AgentChat restaurant={restaurant} store={store} />
       <main style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
         <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
           <div>
@@ -1651,6 +1652,175 @@ function ClientView({ restaurant, onBack }) {
         <button onClick={() => { setStep("menu"); setCart([]); setRating(0); setNote(""); }} style={{ width: "100%", padding: 14, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander à nouveau</button>
       </div>
     </Frame>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AGENT CHAT — floating AI assistant
+// ─────────────────────────────────────────────────────────────────────────────
+const QUICK_SUGGESTIONS = [
+  "📦 Comment gérer mon stock ?",
+  "📊 Comment lire ma caisse ?",
+  "🍽️ Conseils pour ma carte",
+  "💳 Comment activer Stripe ?",
+  "📱 Comment distribuer mes QR codes ?",
+];
+
+function AgentChat({ restaurant, store }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: `Bonjour ! Je suis Velvet, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de VelvetGuest et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 100);
+  }, [open]);
+
+  const lowStockCount = (store.orders || []).length;
+  const context = [
+    `Restaurant: ${restaurant.name}`,
+    `Commandes actives en ce moment: ${store.orders?.length ?? 0}`,
+    `CA du jour: ${(store.revenue || 0).toFixed(2)}€`,
+    `Commandes servies aujourd'hui: ${store.doneOrders?.length ?? 0}`,
+    `Ticket moyen: ${store.doneOrders?.length > 0 ? (store.revenue / store.doneOrders.length).toFixed(2) : 0}€`,
+  ].join("\n");
+
+  async function send(text) {
+    const msg = (text || input).trim();
+    if (!msg || loading) return;
+    const userMsg = { role: "user", content: msg };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ messages: history, context }),
+        }
+      );
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: "assistant", content: data.content || "Désolé, une erreur est survenue." }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Désolé, je ne suis pas disponible pour le moment. Réessayez dans un instant." }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const showSuggestions = messages.length <= 1;
+
+  return (
+    <>
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="btn-press"
+        title={open ? "Fermer l'assistant" : "Ouvrir l'assistant IA"}
+        style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, width: 52, height: 52, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 22, transition: "background 0.2s ease", ...FF }}
+      >
+        <span style={{ transition: "transform 0.2s ease", display: "block", transform: open ? "rotate(45deg)" : "none" }}>
+          {open ? "✕" : "✨"}
+        </span>
+        {!open && store.orders?.length > 0 && (
+          <span style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, background: C.accent, borderRadius: "50%", border: "2px solid #fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+            {store.orders.length}
+          </span>
+        )}
+      </button>
+
+      {/* Panel */}
+      {open && (
+        <div style={{ position: "fixed", bottom: 88, right: 24, zIndex: 999, width: 360, height: 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
+
+          {/* Header */}
+          <div style={{ padding: "14px 18px", background: C.dark, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>✨</div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.white, letterSpacing: "-0.01em" }}>Velvet — Assistant IA</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                <Dot color={C.accentGreen} pulse />
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Prêt à vous aider</p>
+              </div>
+            </div>
+            <button onClick={() => { if (confirm("Effacer la conversation ?")) setMessages([{ role: "assistant", content: "Conversation réinitialisée. Comment puis-je vous aider ?" }]); }} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, padding: "5px 10px", color: "rgba(255,255,255,0.5)", fontSize: 11, cursor: "pointer", ...FF }}>
+              Effacer
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 7 }}>
+                {m.role === "assistant" && (
+                  <div style={{ width: 26, height: 26, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginBottom: 2 }}>✨</div>
+                )}
+                <div style={{ maxWidth: "82%", padding: "10px 14px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 7 }}>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>✨</div>
+                <div style={{ background: C.bg, borderRadius: "4px 16px 16px 16px", padding: "12px 16px", display: "flex", gap: 5, alignItems: "center" }}>
+                  {[0, 1, 2].map(j => (
+                    <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: C.textTertiary, animation: `pulse 1.4s ease-in-out ${j * 0.18}s infinite` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Quick suggestions */}
+          {showSuggestions && !loading && (
+            <div style={{ padding: "8px 14px", display: "flex", gap: 6, flexWrap: "wrap", borderTop: `1px solid ${C.border}` }}>
+              {QUICK_SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => send(s)} style={{ padding: "5px 10px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, fontSize: 11, color: C.textSecondary, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", ...FF }}
+                  onMouseEnter={e => { e.currentTarget.style.background = C.dark; e.currentTarget.style.color = C.white; e.currentTarget.style.borderColor = C.dark; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = C.bg; e.currentTarget.style.color = C.textSecondary; e.currentTarget.style.borderColor = C.border; }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div style={{ padding: "10px 14px 14px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, flexShrink: 0 }}>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder="Posez votre question…"
+              disabled={loading}
+              style={{ flex: 1, background: C.bg, border: `1.5px solid ${input ? C.borderStrong : "transparent"}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, color: C.dark, outline: "none", transition: "border-color 0.15s", ...FF }}
+            />
+            <button
+              onClick={() => send()}
+              disabled={!input.trim() || loading}
+              style={{ width: 38, height: 38, borderRadius: 10, background: input.trim() && !loading ? C.dark : C.bg, border: "none", cursor: input.trim() && !loading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0 }}
+            >
+              <span style={{ fontSize: 16, color: input.trim() && !loading ? C.white : C.textTertiary, lineHeight: 1 }}>↑</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
