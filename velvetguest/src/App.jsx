@@ -381,7 +381,7 @@ function SignupPage({ onDone, onDemo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RESTAURANTS PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function RestaurantsPage({ user, onSelect, onLogout }) {
+function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
   const first = (user.name || user.email).split(" ")[0];
   const h = new Date().getHours();
   const greet = h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : "Bonsoir";
@@ -472,6 +472,20 @@ function RestaurantsPage({ user, onSelect, onLogout }) {
                 </Surface>
               );
             })}
+            {/* Demo card */}
+            <div onClick={onDemo} style={{ border: `2px dashed rgba(255,149,0,0.4)`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", minHeight: 200, gap: 0, transition: "all 0.2s", background: "rgba(255,149,0,0.03)" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentOrange; e.currentTarget.style.background = "rgba(255,149,0,0.06)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,149,0,0.4)"; e.currentTarget.style.background = "rgba(255,149,0,0.03)"; }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(255,149,0,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>🎯</div>
+                <span style={{ background: "rgba(255,149,0,0.12)", color: C.accentOrange, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>DÉMO</span>
+              </div>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Explorer la démo</h3>
+              <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: "auto", lineHeight: 1.5 }}>Testez toutes les fonctionnalités avec un faux restaurant et des données fictives.</p>
+              <div style={{ borderTop: `1px solid rgba(255,149,0,0.2)`, paddingTop: 14, marginTop: 16, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: C.accentOrange, fontSize: 13, fontWeight: 600 }}>Accéder à la démo →</span>
+              </div>
+            </div>
             <div onClick={() => setShowCreate(true)} style={{ border: `2px dashed ${C.border}`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, gap: 8, transition: "all 0.2s" }}
               onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
               <div style={{ width: 40, height: 40, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.textSecondary }}>+</div>
@@ -2064,8 +2078,24 @@ function CustomerPage({ slug, tableNum }) {
                 </div>
                 <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
               </div>
-              {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "10px 18px", color: C.white, fontWeight: 700, fontSize: 14, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button onClick={() => setChatOpen(p => !p)} style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 20, padding: "8px 14px", color: C.white, fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, ...FF }}>
+                  💬 <span>Assistant</span>
+                </button>
+                {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "10px 18px", color: C.white, fontWeight: 700, fontSize: 14, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
+              </div>
             </div>
+            {/* Assistant quick-access banner — shown once until dismissed */}
+            {!chatOpen && chatMsgs.length === 1 && (
+              <div onClick={() => setChatOpen(true)} style={{ marginTop: 14, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 12, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>🤖</span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: C.white, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Une question sur le menu ?</p>
+                  <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Allergènes, ingrédients, conseils… je réponds !</p>
+                </div>
+                <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 18 }}>›</span>
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
             {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
@@ -2389,7 +2419,7 @@ export default function App() {
   return (
     <StoreCtx.Provider value={store}>
       {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@velvetguest.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
