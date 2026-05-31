@@ -1,7 +1,3 @@
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.27.3?target=deno";
-
-const client = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
-
 const SYSTEM = `Tu es l'assistant IA intégré à VelvetGuest, un SaaS de commande QR code pour restaurants. Tu t'appelles Velvet et tu parles comme un consultant restaurant expert, sympathique et direct.
 
 ## Fonctionnalités VelvetGuest que tu connais parfaitement
@@ -92,23 +88,34 @@ Deno.serve(async (req) => {
   try {
     const { messages, context } = await req.json();
 
-    const systemWithContext = SYSTEM +
+    const systemContent = SYSTEM +
       (context ? `\n\n## Contexte actuel du restaurant\n${context}` : "");
 
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      system: systemWithContext,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })),
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 512,
+        messages: [
+          { role: "system", content: systemContent },
+          ...messages.map((m: { role: string; content: string }) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        ],
+      }),
     });
 
-    return new Response(
-      JSON.stringify({ content: (response.content[0] as { text: string }).text }),
-      { headers: { "Content-Type": "application/json", ...corsHeaders } }
-    );
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content ?? "Désolé, une erreur est survenue.";
+
+    return new Response(JSON.stringify({ content }), {
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
   } catch (err) {
     return new Response(
       JSON.stringify({ error: String(err) }),
