@@ -195,9 +195,11 @@ const css = `
   input, button, textarea { font-family: inherit; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
   @keyframes ring { 0%,100% { transform:scale(1); } 50% { transform:scale(1.06); } }
+  @keyframes typingDot { 0%,80%,100% { transform:scale(0.6); opacity:0.4; } 40% { transform:scale(1); opacity:1; } }
   .btn-press:active { transform: scale(0.97); opacity: 0.9; }
   .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
   .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
@@ -2567,6 +2569,190 @@ function AgentChat({ restaurant, store }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER CHAT — mobile bottom-sheet allergen assistant
+// ─────────────────────────────────────────────────────────────────────────────
+const CHAT_SUGGESTIONS = ["Plats sans gluten ?", "Végétarien / vegan ?", "Allergènes courants ?", "Ingrédients du burger ?"];
+
+function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loading }) {
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [msgs, loading]);
+
+  useEffect(() => {
+    if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 300);
+  }, [open]);
+
+  return (
+    <>
+      {/* Floating pill button */}
+      {!open && (
+        <button
+          onClick={onOpen}
+          className="btn-press"
+          style={{
+            position: "fixed", bottom: "max(24px, env(safe-area-inset-bottom, 24px))", right: 16,
+            zIndex: 200, display: "flex", alignItems: "center", gap: 8,
+            background: C.dark, border: "none", borderRadius: 28,
+            padding: "12px 18px 12px 14px",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.28)",
+            cursor: "pointer", ...FF,
+          }}
+        >
+          <span style={{ fontSize: 20 }}>💬</span>
+          <span style={{ color: C.white, fontWeight: 700, fontSize: 14 }}>Aide & allergènes</span>
+          {msgs.length === 1 && (
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.accentGreen, flexShrink: 0, boxShadow: "0 0 0 2px rgba(52,199,89,0.3)" }} />
+          )}
+        </button>
+      )}
+
+      {/* Overlay */}
+      {open && (
+        <div
+          onClick={onClose}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, animation: "fadeIn 0.2s ease" }}
+        />
+      )}
+
+      {/* Bottom sheet */}
+      {open && (
+        <div
+          style={{
+            position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 201,
+            background: C.white,
+            borderRadius: "24px 24px 0 0",
+            boxShadow: "0 -8px 48px rgba(0,0,0,0.22)",
+            display: "flex", flexDirection: "column",
+            height: "85dvh",
+            animation: "sheetUp 0.3s cubic-bezier(0.32,0.72,0,1)",
+            ...FF,
+          }}
+        >
+          {/* Handle + header */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 14, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🤖</div>
+                <div>
+                  <p style={{ fontSize: 16, fontWeight: 800, color: C.dark, letterSpacing: "-0.02em" }}>Assistant Velvet</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 1 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accentGreen, display: "inline-block" }} />
+                    <p style={{ fontSize: 11, color: C.textSecondary }}>Allergènes · Ingrédients · Conseils</p>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                style={{ width: 36, height: 36, borderRadius: "50%", background: C.bg, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.textSecondary, ...FF }}
+              >✕</button>
+            </div>
+            <div style={{ height: 1, background: C.border }} />
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px", display: "flex", flexDirection: "column", gap: 12, WebkitOverflowScrolling: "touch" }}>
+            {msgs.map((m, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 8 }}>
+                {m.role === "assistant" && (
+                  <div style={{ width: 30, height: 30, borderRadius: 10, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0, marginBottom: 2 }}>🤖</div>
+                )}
+                <div style={{
+                  maxWidth: "78%",
+                  padding: "12px 16px",
+                  borderRadius: m.role === "user" ? "20px 6px 20px 20px" : "6px 20px 20px 20px",
+                  background: m.role === "user" ? C.dark : C.bg,
+                  color: m.role === "user" ? C.white : C.dark,
+                  fontSize: 15, lineHeight: 1.55,
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+
+            {/* Typing indicator */}
+            {loading && (
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 10, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>🤖</div>
+                <div style={{ background: C.bg, borderRadius: "6px 20px 20px 20px", padding: "14px 18px", display: "flex", gap: 4, alignItems: "center" }}>
+                  {[0, 1, 2].map(j => (
+                    <div key={j} style={{ width: 7, height: 7, borderRadius: "50%", background: C.textTertiary, animation: `typingDot 1.4s ease-in-out ${j * 0.16}s infinite` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick suggestions */}
+            {msgs.length === 1 && !loading && (
+              <div style={{ marginTop: 4 }}>
+                <p style={{ fontSize: 12, color: C.textTertiary, marginBottom: 8, fontWeight: 500 }}>Suggestions</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {CHAT_SUGGESTIONS.map(q => (
+                    <button
+                      key={q}
+                      onClick={() => onSend(q)}
+                      style={{ padding: "9px 14px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 20, fontSize: 13, color: C.dark, cursor: "pointer", fontWeight: 500, ...FF }}
+                    >{q}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input bar */}
+          <div style={{
+            flexShrink: 0,
+            padding: "12px 16px",
+            paddingBottom: "max(16px, env(safe-area-inset-bottom, 16px))",
+            borderTop: `1px solid ${C.border}`,
+            display: "flex", gap: 10, alignItems: "flex-end",
+            background: C.white,
+          }}>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={onInput}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+              placeholder="Posez votre question…"
+              disabled={loading}
+              style={{
+                flex: 1, background: C.bg,
+                border: `1.5px solid ${input ? C.dark : "transparent"}`,
+                borderRadius: 16, padding: "13px 16px",
+                fontSize: 16, color: C.dark, outline: "none",
+                transition: "border-color 0.15s",
+                lineHeight: 1.4,
+                ...FF,
+              }}
+            />
+            <button
+              onClick={onSend}
+              disabled={!input.trim() || loading}
+              style={{
+                width: 46, height: 46, borderRadius: 14, border: "none",
+                background: input.trim() && !loading ? C.dark : C.bg,
+                cursor: input.trim() && !loading ? "pointer" : "default",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, transition: "background 0.15s",
+              }}
+            >
+              <span style={{ color: input.trim() && !loading ? C.white : C.textTertiary, fontSize: 20 }}>↑</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER PAGE — public, no auth, opened by scanning QR code
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerPage({ slug, tableNum }) {
@@ -2672,9 +2858,10 @@ function CustomerPage({ slug, tableNum }) {
     }
   }
 
-  async function sendChat() {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = { role: "user", content: chatInput.trim() };
+  async function sendChat(directText) {
+    const text = (typeof directText === "string" ? directText : chatInput).trim();
+    if (!text || chatLoading) return;
+    const userMsg = { role: "user", content: text };
     const next = [...chatMsgs, userMsg];
     setChatMsgs(next); setChatInput(""); setChatLoading(true);
     try {
@@ -2724,23 +2911,9 @@ function CustomerPage({ slug, tableNum }) {
                 <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button onClick={() => setChatOpen(p => !p)} style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 20, padding: "8px 14px", color: C.white, fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, ...FF }}>
-                  💬 <span>Assistant</span>
-                </button>
                 {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "10px 18px", color: C.white, fontWeight: 700, fontSize: 14, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
               </div>
             </div>
-            {/* Assistant quick-access banner — shown once until dismissed */}
-            {!chatOpen && chatMsgs.length === 1 && (
-              <div onClick={() => setChatOpen(true)} style={{ marginTop: 14, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 12, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 18 }}>🤖</span>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: C.white, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Une question sur le menu ?</p>
-                  <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Allergènes, ingrédients, conseils… je réponds !</p>
-                </div>
-                <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 18 }}>›</span>
-              </div>
-            )}
           </div>
           <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
             {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
@@ -2959,75 +3132,16 @@ function CustomerPage({ slug, tableNum }) {
 
       {/* Allergen chat — visible on menu and cart steps */}
       {(step === "menu" || step === "cart" || step === "payment") && (
-        <>
-          {/* Floating button */}
-          <button
-            onClick={() => setChatOpen(p => !p)}
-            style={{ position: "fixed", bottom: 24, right: 20, width: 52, height: 52, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 100, ...FF }}
-            title="Aide & allergènes"
-          >💬</button>
-
-          {/* Chat panel */}
-          {chatOpen && (
-            <div style={{ position: "fixed", bottom: 88, right: 16, left: 16, maxWidth: 444, margin: "0 auto", background: C.white, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.18)", zIndex: 100, display: "flex", flexDirection: "column", maxHeight: 420, ...FF }}>
-              {/* Header */}
-              <div style={{ background: C.dark, borderRadius: "20px 20px 0 0", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.accent + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🤖</div>
-                  <div>
-                    <p style={{ color: C.white, fontWeight: 700, fontSize: 14, margin: 0 }}>Assistance</p>
-                    <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, margin: 0 }}>Allergènes & ingrédients</p>
-                  </div>
-                </div>
-                <button onClick={() => setChatOpen(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, width: 28, height: 28, color: C.white, cursor: "pointer", fontSize: 14, ...FF }}>✕</button>
-              </div>
-
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-                {chatMsgs.map((m, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                    <div style={{ maxWidth: "82%", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "10px 13px", fontSize: 13, lineHeight: 1.5 }}>
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-                {chatLoading && (
-                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                    <div style={{ background: C.bg, borderRadius: "16px 16px 16px 4px", padding: "10px 14px", fontSize: 13, color: C.textTertiary }}>
-                      <span style={{ animation: "ring 1s infinite" }}>···</span>
-                    </div>
-                  </div>
-                )}
-                {/* Quick suggestions */}
-                {chatMsgs.length === 1 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-                    {["Plats sans gluten ?", "Allergènes courants ?", "Plats végétariens ?", "Ingrédients du burger ?"].map(q => (
-                      <button key={q} onClick={() => { setChatInput(q); }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 12px", fontSize: 12, color: C.dark, cursor: "pointer", ...FF }}>{q}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Input */}
-              <div style={{ padding: "10px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
-                <input
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && sendChat()}
-                  placeholder="Poser une question…"
-                  style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "9px 12px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
-                />
-                <button
-                  onClick={sendChat}
-                  disabled={!chatInput.trim() || chatLoading}
-                  style={{ width: 38, height: 38, borderRadius: 10, background: chatInput.trim() && !chatLoading ? C.dark : C.bg, border: "none", cursor: chatInput.trim() && !chatLoading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", ...FF }}
-                >
-                  <span style={{ color: chatInput.trim() && !chatLoading ? C.white : C.textTertiary, fontSize: 16 }}>↑</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+        <CustomerChat
+          open={chatOpen}
+          onOpen={() => setChatOpen(true)}
+          onClose={() => setChatOpen(false)}
+          msgs={chatMsgs}
+          onSend={sendChat}
+          input={chatInput}
+          onInput={e => setChatInput(e.target.value)}
+          loading={chatLoading}
+        />
       )}
     </div>
   );
