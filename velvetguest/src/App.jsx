@@ -1586,11 +1586,16 @@ function ClientView({ restaurant, onBack }) {
           <label style={{ color: C.textSecondary, fontSize: 12, fontWeight: 500, display: "block", marginBottom: 6 }}>Note pour la cuisine</label>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Allergie, cuisson, sans gluten…" style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", fontSize: 13, color: C.dark, resize: "none", height: 64, outline: "none", ...FF }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0" }}>
+        <div style={{ marginTop: 14, padding: "16px", background: C.bg, borderRadius: 14 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em", marginBottom: 12 }}>VOS COORDONNÉES <span style={{ fontWeight: 400, color: C.textTertiary }}>(pour votre ticket)</span></p>
+          <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Prénom et nom" style={{ width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.dark, outline: "none", marginBottom: 8, ...FF }} />
+          <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Email (pour recevoir votre ticket)" style={{ width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.dark, outline: "none", ...FF }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0 4px" }}>
           <span style={{ fontWeight: 700, fontSize: 17, color: C.dark }}>Total</span>
           <span style={{ fontWeight: 900, fontSize: 22, color: C.dark }}>{total.toFixed(2)}€</span>
         </div>
-        <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+        <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginBottom: 16, ...FF }}>Paiement →</button>
       </div>
     </Frame>
   );
@@ -1838,6 +1843,8 @@ function CustomerPage({ slug, tableNum }) {
   const [rating, setRating] = useState(0);
   const [orderId, setOrderId] = useState(null);
   const [payMode, setPayMode] = useState(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -1863,7 +1870,7 @@ function CustomerPage({ slug, tableNum }) {
 
   async function confirm(paymentMethod = "cash") {
     const { data: order, error } = await supabase.from("orders")
-      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING", payment_method: paymentMethod })
+      .insert({ restaurant_id: restaurant.id, table_id: tableId, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim(), customer_email: customerEmail.trim() })
       .select().single();
     if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
     const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
@@ -2025,24 +2032,93 @@ function CustomerPage({ slug, tableNum }) {
         </div>
       )}
 
-      {step === "done" && (
-        <div style={{ padding: "60px 24px 40px", textAlign: "center" }}>
-          <div style={{ width: 80, height: 80, borderRadius: "50%", background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✅</div>
-          <p style={{ fontSize: 28, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", marginBottom: 10 }}>Commande envoyée !</p>
-          <p style={{ color: C.textSecondary, fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>Votre commande est en cuisine.<br />Nous vous apportons ça très bientôt !</p>
-          <div style={{ background: C.bg, borderRadius: 18, padding: 20, marginBottom: 28, textAlign: "left" }}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 12 }}>VOTRE COMMANDE</p>
-            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: C.dark, marginBottom: 8 }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
-            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}><span style={{ fontWeight: 700 }}>Total payé</span><span style={{ fontWeight: 900 }}>{total.toFixed(2)}€</span></div>
+      {step === "done" && (() => {
+        const orderDate = new Date();
+        const shortId = orderId ? orderId.slice(0, 8).toUpperCase() : "--------";
+        const payLabel = { cash: "Espèces", card: "Carte bancaire", apple_pay: "Apple Pay", google_pay: "Google Pay" };
+        return (
+          <div style={{ padding: "40px 20px 60px", background: "#f8f8f8", minHeight: "100vh" }}>
+            {/* Success banner */}
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.accentGreen + "20", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 30 }}>✅</div>
+              <p style={{ fontSize: 24, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>Commande envoyée !</p>
+              <p style={{ color: C.textSecondary, fontSize: 14 }}>Votre commande est en cuisine · Table {tableNum}</p>
+            </div>
+
+            {/* Ticket */}
+            <div id="ticket-receipt" style={{ background: C.white, borderRadius: 20, overflow: "hidden", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", marginBottom: 20 }}>
+              {/* Ticket header */}
+              <div style={{ background: C.dark, padding: "20px 20px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontSize: 24 }}>{restaurant?.logo_emoji}</span>
+                  <p style={{ fontSize: 17, fontWeight: 800, color: C.white, letterSpacing: "-0.02em" }}>{restaurant?.name}</p>
+                </div>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Table {tableNum} · {orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+              </div>
+
+              <div style={{ padding: "16px 20px" }}>
+                {/* Order ID */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 14, borderBottom: `1px dashed ${C.border}` }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em" }}>N° COMMANDE</p>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: C.dark, fontFamily: "monospace" }}>#{shortId}</p>
+                </div>
+
+                {/* Customer info */}
+                {(customerName || customerEmail) && (
+                  <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: `1px dashed ${C.border}` }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>CLIENT</p>
+                    {customerName && <p style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 3 }}>{customerName}</p>}
+                    {customerEmail && <p style={{ fontSize: 13, color: C.textSecondary }}>{customerEmail}</p>}
+                  </div>
+                )}
+
+                {/* Items */}
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 10 }}>DÉTAIL</p>
+                  {cart.map(i => (
+                    <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ fontSize: 18 }}>{i.emoji}</span>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: C.dark, lineHeight: 1.2 }}>{i.name}</p>
+                          <p style={{ fontSize: 12, color: C.textTertiary }}>{Number(i.price).toFixed(2)}€ × {i.qty}</p>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{(Number(i.price) * i.qty).toFixed(2)}€</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Total */}
+                <div style={{ background: C.bg, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>Total</p>
+                    <p style={{ fontSize: 20, fontWeight: 900, color: C.dark }}>{total.toFixed(2)}€</p>
+                  </div>
+                  <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>Paiement : {payLabel[payMode] ?? "Espèces"}</p>
+                </div>
+
+                {/* Footer */}
+                <p style={{ fontSize: 13, color: C.textTertiary, textAlign: "center", fontStyle: "italic" }}>Merci de votre visite ! 🙏</p>
+              </div>
+
+              {/* Decorative zigzag bottom */}
+              <div style={{ height: 12, background: `repeating-linear-gradient(90deg, #f8f8f8 0px, #f8f8f8 8px, ${C.white} 8px, ${C.white} 16px)` }} />
+            </div>
+
+            {/* Rating */}
+            <div style={{ background: C.white, borderRadius: 16, padding: "18px 20px", marginBottom: 16, textAlign: "center" }}>
+              <p style={{ fontWeight: 700, fontSize: 15, color: C.dark, marginBottom: 12 }}>Comment s'est passée votre expérience ?</p>
+              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
+                {[1,2,3,4,5].map(s => <button key={s} onClick={() => setRating(s)} style={{ fontSize: 30, background: "none", border: "none", cursor: "pointer", transform: rating >= s ? "scale(1.2)" : "scale(1)", transition: "transform 0.15s", filter: rating >= s ? "none" : "grayscale(1)" }}>⭐</button>)}
+              </div>
+              {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 14 }}>Merci pour votre avis ! 🙏</p>}
+            </div>
+
+            <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
           </div>
-          <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 14 }}>Comment s'est passée votre expérience ?</p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 28 }}>
-            {[1,2,3,4,5].map(s => <button key={s} onClick={() => setRating(s)} style={{ fontSize: 32, background: "none", border: "none", cursor: "pointer", transform: rating >= s ? "scale(1.2)" : "scale(1)", transition: "transform 0.15s", filter: rating >= s ? "none" : "grayscale(1)" }}>⭐</button>)}
-          </div>
-          {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 15, marginBottom: 20 }}>Merci pour votre avis ! 🙏</p>}
-          <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); }} style={{ width: "100%", padding: 16, background: C.bg, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
