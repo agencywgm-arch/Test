@@ -7,6 +7,64 @@ import QRCode from "qrcode";
 // ─────────────────────────────────────────────────────────────────────────────
 const StoreCtx = createContext(null);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DEMO MODE — static data, no Supabase required
+// ─────────────────────────────────────────────────────────────────────────────
+const DEMO_RESTAURANT = {
+  id: "demo", name: "Le Bistro Démo", slug: "demo",
+  address: "12 rue de la Paix, Paris", emoji: "🍽️", logo_emoji: "🍽️",
+};
+const DEMO_MENU = [
+  { id: "dm1", name: "Soupe du Jour", description: "Velouté de légumes de saison", price: 6.00, category: "Entrées", emoji: "🍲", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm2", name: "Salade César", description: "Romaine, croûtons, parmesan, sauce césar maison", price: 9.00, category: "Entrées", emoji: "🥗", is_popular: true, available: true, stock: null, photo_url: null },
+  { id: "dm3", name: "Steak Frites", description: "Entrecôte 250g, frites maison, sauce au poivre", price: 19.90, category: "Plats", emoji: "🥩", is_popular: true, available: true, stock: null, photo_url: null },
+  { id: "dm4", name: "Poulet Rôti", description: "Demi poulet fermier, jus de rôti, légumes du marché", price: 15.50, category: "Plats", emoji: "🍗", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm5", name: "Burger Maison", description: "Bœuf Angus, cheddar, salade, tomate, sauce maison", price: 13.90, category: "Plats", emoji: "🍔", is_popular: true, available: true, stock: null, photo_url: null },
+  { id: "dm6", name: "Pasta Carbonara", description: "Pâtes fraîches, lardons, pecorino, œuf", price: 14.50, category: "Plats", emoji: "🍝", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm7", name: "Tarte Tatin", description: "Pommes caramélisées, pâte feuilletée, crème fraîche", price: 7.50, category: "Desserts", emoji: "🥧", is_popular: true, available: true, stock: null, photo_url: null },
+  { id: "dm8", name: "Mousse au Chocolat", description: "Chocolat noir 70%, tuile croustillante", price: 6.50, category: "Desserts", emoji: "🍫", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm9", name: "Eau Minérale", description: "75 cl", price: 3.00, category: "Boissons", emoji: "💧", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm10", name: "Vin Rouge", description: "Sélection du sommelier, verre 15 cl", price: 5.50, category: "Boissons", emoji: "🍷", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm11", name: "Coca-Cola", description: "33 cl", price: 3.50, category: "Boissons", emoji: "🥤", is_popular: false, available: true, stock: null, photo_url: null },
+  { id: "dm12", name: "Frites Maison", description: "Pommes de terre fraîches, fleur de sel", price: 4.00, category: "Accompagnements", emoji: "🍟", is_popular: false, available: true, stock: 3, photo_url: null },
+];
+function _demoT(minsAgo) { return new Date(Date.now() - minsAgo * 60000).toISOString(); }
+const DEMO_ORDERS = [
+  { id: "d1", table: 3, note: "Sans oignons", total: 32.40, payment_method: "card", status: "cooking", elapsed: 8, createdAt: _demoT(8), items: [
+    { id: "di1", name: "Steak Frites", price: 19.90, qty: 1, emoji: "🥩", cat: "Plats" },
+    { id: "di2", name: "Salade César", price: 9.00, qty: 1, emoji: "🥗", cat: "Entrées" },
+    { id: "di3", name: "Coca-Cola", price: 3.50, qty: 1, emoji: "🥤", cat: "Boissons" },
+  ]},
+  { id: "d2", table: 7, note: "", total: 20.40, payment_method: "cash", status: "new", elapsed: 2, createdAt: _demoT(2), items: [
+    { id: "di4", name: "Burger Maison", price: 13.90, qty: 1, emoji: "🍔", cat: "Plats" },
+    { id: "di5", name: "Frites Maison", price: 4.00, qty: 1, emoji: "🍟", cat: "Accompagnements" },
+    { id: "di6", name: "Eau Minérale", price: 3.00, qty: 1, emoji: "💧", cat: "Boissons" },
+  ]},
+  { id: "d3", table: 2, note: "Allergie arachides", total: 46.00, payment_method: "card", status: "ready", elapsed: 19, createdAt: _demoT(19), items: [
+    { id: "di7", name: "Pasta Carbonara", price: 14.50, qty: 2, emoji: "🍝", cat: "Plats" },
+    { id: "di8", name: "Vin Rouge", price: 5.50, qty: 2, emoji: "🍷", cat: "Boissons" },
+    { id: "di9", name: "Soupe du Jour", price: 6.00, qty: 1, emoji: "🍲", cat: "Entrées" },
+  ]},
+];
+const DEMO_DONE_ORDERS = [
+  { id: "d4", table: 1, note: "", total: 41.40, payment_method: "cash", status: "served", elapsed: 0, createdAt: _demoT(45), items: [
+    { id: "di10", name: "Steak Frites", price: 19.90, qty: 1, emoji: "🥩", cat: "Plats" },
+    { id: "di11", name: "Poulet Rôti", price: 15.50, qty: 1, emoji: "🍗", cat: "Plats" },
+    { id: "di12", name: "Coca-Cola", price: 3.50, qty: 1, emoji: "🥤", cat: "Boissons" },
+  ]},
+  { id: "d5", table: 5, note: "", total: 28.50, payment_method: "card", status: "served", elapsed: 0, createdAt: _demoT(70), items: [
+    { id: "di13", name: "Burger Maison", price: 13.90, qty: 1, emoji: "🍔", cat: "Plats" },
+    { id: "di14", name: "Tarte Tatin", price: 7.50, qty: 1, emoji: "🥧", cat: "Desserts" },
+    { id: "di15", name: "Vin Rouge", price: 5.50, qty: 1, emoji: "🍷", cat: "Boissons" },
+  ]},
+  { id: "d6", table: 4, note: "Sans gluten", total: 35.90, payment_method: "apple_pay", status: "served", elapsed: 0, createdAt: _demoT(100), items: [
+    { id: "di16", name: "Salade César", price: 9.00, qty: 2, emoji: "🥗", cat: "Entrées" },
+    { id: "di17", name: "Pasta Carbonara", price: 14.50, qty: 1, emoji: "🍝", cat: "Plats" },
+    { id: "di18", name: "Mousse au Chocolat", price: 6.50, qty: 1, emoji: "🍫", cat: "Desserts" },
+  ]},
+];
+const DEMO_WEEKLY_REV = [142, 0, 89, 210, 175, 88, 0];
+
 function fmtStatus(s) {
   return s === "PENDING" ? "new" : s === "PREPARING" ? "cooking" : s === "READY" ? "ready" : "served";
 }
@@ -47,6 +105,11 @@ function useStore(restaurantId) {
 
   useEffect(() => {
     if (!restaurantId) { setOrders([]); setDoneOrders([]); return; }
+    if (restaurantId === "demo") {
+      setOrders(DEMO_ORDERS);
+      setDoneOrders(DEMO_DONE_ORDERS);
+      return;
+    }
 
     supabase.from("orders").select(ORDER_QUERY)
       .eq("restaurant_id", restaurantId).neq("status", "DONE")
@@ -234,7 +297,7 @@ function QRCanvas({ text, size = 160, fg = "#000", bg = "#fff" }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function SignupPage({ onDone }) {
+function SignupPage({ onDone, onDemo }) {
   const [mode, setMode] = useState("signup");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -303,6 +366,12 @@ function SignupPage({ onDone }) {
           {["30 jours gratuits", "Sans carte bancaire", "Support 7j/7"].map(t => (
             <span key={t} style={{ color: C.textTertiary, fontSize: 12 }}>✓ {t}</span>
           ))}
+        </div>
+        <div style={{ textAlign: "center", marginTop: 28 }}>
+          <p style={{ color: C.textTertiary, fontSize: 13, marginBottom: 12 }}>Pas encore prêt à vous inscrire ?</p>
+          <button onClick={onDemo} style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 28px", fontSize: 15, fontWeight: 700, color: C.dark, cursor: "pointer", boxShadow: "0 2px 12px rgba(0,0,0,0.07)", ...FF }}>
+            🎯 Voir la démo interactive →
+          </button>
         </div>
       </div>
     </div>
@@ -459,7 +528,13 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
-      <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+      {restaurant.id === "demo" && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 999, background: "linear-gradient(90deg, #FF9F0A, #FF375F)", padding: "8px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <span style={{ fontSize: 14 }}>🎯</span>
+          <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>Vous êtes en mode démo — les données sont fictives et les modifications sont désactivées</span>
+        </div>
+      )}
+      <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: restaurant.id === "demo" ? 36 : 0 }}>
         <div style={{ padding: "20px 16px 16px" }}>
           <Logo size={16} />
           <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
@@ -535,6 +610,10 @@ function KPICard({ label, value, sub, delta }) {
 function StockAlerts({ restaurantId }) {
   const [alerts, setAlerts] = useState([]);
   useEffect(() => {
+    if (restaurantId === "demo") {
+      setAlerts([{ id: "dm12", name: "Frites Maison", emoji: "🍟", stock: 3, category: "Accompagnements" }]);
+      return;
+    }
     supabase.from("menu_items").select("id, name, emoji, stock, category")
       .eq("restaurant_id", restaurantId).not("stock", "is", null).lte("stock", 5).order("stock")
       .then(({ data }) => setAlerts(data ?? []));
@@ -569,6 +648,7 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const [weeklyRev, setWeeklyRev] = useState(Array(7).fill(0));
 
   useEffect(() => {
+    if (restaurant.id === "demo") { setWeeklyRev(DEMO_WEEKLY_REV); return; }
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
     supabase.from("orders").select("total, created_at")
       .eq("restaurant_id", restaurant.id).eq("status", "DONE")
@@ -839,6 +919,7 @@ function MenuTabDash({ restaurant }) {
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
+    if (restaurant.id === "demo") { setItems(DEMO_MENU); setLoading(false); return; }
     supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).order("category").order("name")
       .then(({ data }) => { setItems(data ?? []); setLoading(false); });
   }, [restaurant.id]);
@@ -865,6 +946,7 @@ function MenuTabDash({ restaurant }) {
   }
 
   async function save() {
+    if (restaurant.id === "demo") { setError("Mode démo — modifications désactivées."); return; }
     if (!form.name || !form.price) { setError("Nom et prix requis."); return; }
     setSaving(true); setError("");
     const stock = form.stock === "" ? null : parseInt(form.stock, 10);
@@ -883,11 +965,13 @@ function MenuTabDash({ restaurant }) {
   }
 
   async function toggleAvailable(item) {
+    if (restaurant.id === "demo") return;
     await supabase.from("menu_items").update({ available: !item.available }).eq("id", item.id);
     setItems(p => p.map(i => i.id === item.id ? { ...i, available: !i.available } : i));
   }
 
   async function deleteItem(item) {
+    if (restaurant.id === "demo") return;
     if (!confirm(`Supprimer "${item.name}" ?`)) return;
     await supabase.from("menu_items").delete().eq("id", item.id);
     setItems(p => p.filter(i => i.id !== item.id));
@@ -1188,6 +1272,11 @@ function useLiveOrders(restaurantId, pushNotif) {
 
   useEffect(() => {
     if (!restaurantId) return;
+    if (restaurantId === "demo") {
+      setOrders(DEMO_ORDERS.map(o => ({ ...o, items: o.items.map(i => ({ ...i, done: false })) })));
+      setLoading(false);
+      return;
+    }
     fetchOrders();
 
     // Keep item done-state across realtime merges
@@ -2299,7 +2388,7 @@ export default function App() {
 
   return (
     <StoreCtx.Provider value={store}>
-      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} />}
+      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@velvetguest.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
