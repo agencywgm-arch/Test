@@ -1684,6 +1684,8 @@ function ClientView({ restaurant, onBack }) {
   const [note, setNote] = useState("");
   const [rating, setRating] = useState(0);
   const [payMode, setPayMode] = useState(null);
+  const [orderError, setOrderError] = useState("");
+  const [ordering, setOrdering] = useState(false);
   const tableNum = 1;
 
   useEffect(() => {
@@ -1701,13 +1703,36 @@ function ClientView({ restaurant, onBack }) {
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
   async function confirmOrder(paymentMethod = "cash") {
-    const { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
-    const { data: order } = await supabase.from("orders")
-      .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING", payment_method: paymentMethod })
-      .select().single();
-    if (!order) return;
-    await supabase.from("order_items").insert(cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" })));
-    setStep("done"); setPayMode(null);
+    setOrdering(true); setOrderError("");
+    try {
+      // Find or auto-create table 1
+      let { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
+      if (!tbl) {
+        const { data: newTbl } = await supabase.from("tables")
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}/r/${restaurant.slug}/t/${tableNum}` })
+          .select("id").single();
+        tbl = newTbl;
+      }
+
+      let { data: order, error } = await supabase.from("orders")
+        .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING", payment_method: paymentMethod })
+        .select().single();
+
+      // Fallback si colonnes pas encore migrées
+      if (error && (error.message?.includes("column") || error.message?.includes("payment_method"))) {
+        ({ data: order, error } = await supabase.from("orders")
+          .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING" })
+          .select().single());
+      }
+
+      if (error || !order) { setOrderError("Erreur commande : " + (error?.message || "réessayez")); setOrdering(false); return; }
+      await supabase.from("order_items").insert(cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" })));
+      setStep("done"); setPayMode(null);
+    } catch (e) {
+      setOrderError("Erreur inattendue, réessayez.");
+    } finally {
+      setOrdering(false);
+    }
   }
 
   const Frame = ({ children }) => (
@@ -1833,7 +1858,9 @@ function ClientView({ restaurant, onBack }) {
         <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Retour</button>
         <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 4 }}>Paiement</p>
         <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>Table {tableNum} · {restaurant.name}</p>
-        {!payMode && (
+        {ordering && <div style={{ textAlign: "center", padding: "20px 0" }}><div style={{ width: 28, height: 28, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite", margin: "0 auto 10px" }} /><p style={{ fontSize: 13, color: C.textSecondary }}>Enregistrement…</p></div>}
+        {orderError && <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.accent }}>{orderError}</div>}
+        {!ordering && !payMode && (
           <div style={{ background: C.bg, borderRadius: 14, padding: 16, marginBottom: 20 }}>
             {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
@@ -1858,7 +1885,7 @@ function ClientView({ restaurant, onBack }) {
               <span style={{ color: C.textTertiary, fontSize: 18 }}>›</span>
             </div>
           </>
-        ) : (
+        ) : !ordering && (
           <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} />
         )}
       </div>
