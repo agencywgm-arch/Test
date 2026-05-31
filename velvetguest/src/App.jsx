@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { supabase } from "./lib/supabase";
+import QRCode from "qrcode";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL STORE — demo orders + real Supabase restaurants
@@ -239,29 +240,14 @@ function Toasts({ notifs }) {
 function QRCanvas({ text, size = 160, fg = "#000", bg = "#fff" }) {
   const ref = useRef(null);
   useEffect(() => {
-    const canvas = ref.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const n = 25; const cell = size / n;
-    const m = Array.from({ length: n }, () => Array(n).fill(0));
-    const finder = (r, c) => { for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) if (r+i<n&&c+j<n) m[r+i][c+j]=(i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4))?1:0; };
-    finder(0,0); finder(0,18); finder(18,0);
-    for (let i = 8; i < 17; i++) { m[6][i]=i%2===0?1:0; m[i][6]=i%2===0?1:0; }
-    let h = 0; for (let i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
-    const res = (r,c) => (r<9&&c<9)||(r<9&&c>15)||(r>15&&c<9)||r===6||c===6;
-    let s = Math.abs(h);
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) { if (!res(r,c)) { s=(s*1664525+1013904223)&0xffffffff; m[r][c]=Math.abs(s)%3!==0?1:0; } }
-    ctx.fillStyle = bg; ctx.fillRect(0,0,size,size);
-    ctx.fillStyle = fg;
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
-      if (m[r][c]) {
-        const x=c*cell, y=r*cell, rad=cell*0.2;
-        ctx.beginPath(); ctx.moveTo(x+rad,y); ctx.lineTo(x+cell-rad,y); ctx.quadraticCurveTo(x+cell,y,x+cell,y+rad); ctx.lineTo(x+cell,y+cell-rad); ctx.quadraticCurveTo(x+cell,y+cell,x+cell-rad,y+cell); ctx.lineTo(x+rad,y+cell); ctx.quadraticCurveTo(x,y+cell,x,y+cell-rad); ctx.lineTo(x,y+rad); ctx.quadraticCurveTo(x,y,x+rad,y); ctx.closePath(); ctx.fill();
-      }
-    }
-    const cx=size/2, cy=size/2, rad=size*0.12;
-    ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,rad+3,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle=C.accent; ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fill();
-    ctx.font=`bold ${rad*1.2}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillStyle="#fff"; ctx.fillText("🍽",cx,cy+1);
+    const canvas = ref.current;
+    if (!canvas || !text) return;
+    QRCode.toCanvas(canvas, text, {
+      width: size,
+      margin: 2,
+      color: { dark: fg, light: bg },
+      errorCorrectionLevel: "M",
+    });
   }, [text, size, fg, bg]);
   return <canvas ref={ref} width={size} height={size} style={{ display: "block", borderRadius: 10 }} />;
 }
@@ -1232,7 +1218,7 @@ function ClientView({ restaurant, onBack }) {
       </div>
       <div style={{ padding: "28px 24px", textAlign: "center" }}>
         <div style={{ display: "inline-block", padding: 16, background: "#f5f5f7", borderRadius: 20, marginBottom: 20 }}>
-          <QRCanvas text={`https://velvetguest.app/r/${restaurant.id}/t/${tableNum}`} size={180} fg="#1D1D1F" bg="#f5f5f7" />
+          <QRCanvas text={`${window.location.origin}/r/${restaurant.slug}/t/${tableNum}`} size={180} fg="#1D1D1F" bg="#f5f5f7" />
         </div>
         <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>Scannez pour accéder à la carte, ou simulez l'expérience ci-dessous.</p>
         <button onClick={() => setStep("menu")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", ...FF }}>Voir la carte →</button>
