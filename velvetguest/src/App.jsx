@@ -550,6 +550,39 @@ function KPICard({ label, value, sub, delta }) {
   );
 }
 
+function StockAlerts({ restaurantId }) {
+  const [alerts, setAlerts] = useState([]);
+  useEffect(() => {
+    supabase.from("menu_items").select("id, name, emoji, stock, category")
+      .eq("restaurant_id", restaurantId).not("stock", "is", null).lte("stock", 5).order("stock")
+      .then(({ data }) => setAlerts(data ?? []));
+  }, [restaurantId]);
+  if (alerts.length === 0) return null;
+  return (
+    <Surface style={{ padding: "18px 22px", marginBottom: 20, border: `1.5px solid ${C.accentOrange}20` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <span style={{ fontSize: 16 }}>⚠️</span>
+        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Alertes stock</p>
+        <span style={{ background: C.accentOrange + "20", color: C.accentOrange, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>{alerts.length}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {alerts.map(item => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 12, background: item.stock === 0 ? C.accent + "08" : C.accentOrange + "08" }}>
+            <span style={{ fontSize: 20 }}>{item.emoji}</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{item.name}</p>
+              <p style={{ fontSize: 11, color: C.textSecondary }}>{item.category}</p>
+            </div>
+            <Tag color={item.stock === 0 ? C.accent : C.accentOrange}>
+              {item.stock === 0 ? "Épuisé" : `${item.stock} restant${item.stock > 1 ? "s" : ""}`}
+            </Tag>
+          </div>
+        ))}
+      </div>
+    </Surface>
+  );
+}
+
 function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
@@ -783,7 +816,7 @@ function ReviewsTab() {
   );
 }
 
-const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", is_popular: false, available: true };
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", is_popular: false, available: true, stock: "" };
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
@@ -801,12 +834,23 @@ function MenuTabDash({ restaurant }) {
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
-  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, is_popular: item.is_popular, available: item.available }); setError(""); setModal({ mode: "edit", item }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock) }); setError(""); setModal({ mode: "edit", item }); }
+
+  async function updateStock(item, delta) {
+    const cur = item.stock == null ? null : item.stock;
+    if (cur == null) return;
+    const next = Math.max(0, cur + delta);
+    const available = next > 0;
+    await supabase.from("menu_items").update({ stock: next, available }).eq("id", item.id);
+    setItems(p => p.map(i => i.id === item.id ? { ...i, stock: next, available } : i));
+  }
 
   async function save() {
     if (!form.name || !form.price) { setError("Nom et prix requis."); return; }
     setSaving(true); setError("");
-    const payload = { ...form, price: parseFloat(form.price), restaurant_id: restaurant.id };
+    const stock = form.stock === "" ? null : parseInt(form.stock, 10);
+    const available = stock == null ? form.available : stock > 0;
+    const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id };
     if (modal.mode === "add") {
       const { data, error: err } = await supabase.from("menu_items").insert(payload).select().single();
       if (err) { setError(err.message); setSaving(false); return; }
@@ -859,14 +903,26 @@ function MenuTabDash({ restaurant }) {
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", borderBottom: i < catItems.length - 1 ? `1px solid ${C.border}` : "none", opacity: item.available ? 1 : 0.5 }}>
                   <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{item.emoji}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p>
                       {item.is_popular && <Tag color={C.accent}>⭐ Populaire</Tag>}
                       {!item.available && <Tag color={C.textTertiary}>Indisponible</Tag>}
+                      {item.stock != null && (
+                        <Tag color={item.stock === 0 ? C.accent : item.stock <= 3 ? C.accentOrange : C.accentGreen}>
+                          {item.stock === 0 ? "Épuisé" : `Stock : ${item.stock}`}
+                        </Tag>
+                      )}
                     </div>
                     <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{item.description}</p>
                   </div>
                   <p style={{ fontSize: 16, fontWeight: 700, color: C.dark, minWidth: 56, textAlign: "right" }}>{Number(item.price).toFixed(2)} €</p>
+                  {item.stock != null && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button onClick={() => updateStock(item, -1)} disabled={item.stock === 0} style={{ width: 26, height: 26, borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, cursor: "pointer", fontWeight: 700, fontSize: 14, opacity: item.stock === 0 ? 0.3 : 1 }}>−</button>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.dark, minWidth: 24, textAlign: "center" }}>{item.stock}</span>
+                      <button onClick={() => updateStock(item, 1)} style={{ width: 26, height: 26, borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>+</button>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => toggleAvailable(item)} title={item.available ? "Désactiver" : "Activer"} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 13 }}>{item.available ? "👁" : "🚫"}</button>
                     <Btn variant="ghost" size="xs" onClick={() => openEdit(item)}>Modifier</Btn>
@@ -904,13 +960,24 @@ function MenuTabDash({ restaurant }) {
                 </select>
               </div>
             </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+                Stock <span style={{ color: C.textTertiary, fontWeight: 400 }}>(laisser vide = illimité)</span>
+              </label>
+              <input type="number" min={0} placeholder="Ex: 12 — vide = illimité" value={form.stock} onChange={fv("stock")}
+                style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF }} />
+            </div>
             <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
-              {[["is_popular", "⭐ Populaire"], ["available", "✅ Disponible"]].map(([k, l]) => (
-                <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={form[k]} onChange={e => setForm(p => ({ ...p, [k]: e.target.checked }))} style={{ width: 16, height: 16 }} />
-                  <span style={{ fontSize: 14, color: C.dark }}>{l}</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={form.is_popular} onChange={e => setForm(p => ({ ...p, is_popular: e.target.checked }))} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 14, color: C.dark }}>⭐ Populaire</span>
+              </label>
+              {form.stock === "" && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.available} onChange={e => setForm(p => ({ ...p, available: e.target.checked }))} style={{ width: 16, height: 16 }} />
+                  <span style={{ fontSize: 14, color: C.dark }}>✅ Disponible</span>
                 </label>
-              ))}
+              )}
             </div>
             {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
             <div style={{ display: "flex", gap: 10 }}>
@@ -1395,6 +1462,13 @@ function CustomerPage({ slug, tableNum }) {
     if (error || !order) { alert("Erreur lors de la commande. Réessayez."); return; }
     const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
     await supabase.from("order_items").insert(orderItems);
+    // Decrement stock for items with tracked stock
+    for (const item of cart) {
+      if (item.stock != null && item.stock > 0) {
+        const newStock = Math.max(0, item.stock - item.qty);
+        await supabase.from("menu_items").update({ stock: newStock, available: newStock > 0 }).eq("id", item.id);
+      }
+    }
     setOrderId(order.id);
     setStep("done");
   }
