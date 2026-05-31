@@ -1523,11 +1523,15 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  // Mock form state (used when Stripe not configured)
+  const [cardNum, setCardNum] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [name, setName] = useState("");
   const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
   useEffect(() => {
     if (!STRIPE_KEY) { setReady(true); return; }
-
     const init = async () => {
       try {
         const res = await fetch(
@@ -1548,17 +1552,20 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
         setReady(true);
       }
     };
-
-    if (window.Stripe) {
-      init();
-    } else {
+    if (window.Stripe) { init(); } else {
       const check = setInterval(() => { if (window.Stripe) { clearInterval(check); init(); } }, 100);
       return () => clearInterval(check);
     }
   }, [total, STRIPE_KEY]);
 
   async function pay() {
-    if (!STRIPE_KEY) { await onSuccess("card"); return; }
+    if (!STRIPE_KEY) {
+      // Simulate processing with a short delay
+      setPaying(true);
+      await new Promise(r => setTimeout(r, 1800));
+      await onSuccess("card");
+      return;
+    }
     if (!stripeRef.current || !elementsRef.current || paying) return;
     setPaying(true); setError("");
     const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
@@ -1573,17 +1580,90 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
     </div>
   );
 
+  // ── Mock payment form (no Stripe key) ──────────────────────────────────────
+  if (!STRIPE_KEY) {
+    const fmtCard = v => v.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
+    const fmtExp = v => { const d = v.replace(/\D/g, "").slice(0, 4); return d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d; };
+    const cardBrand = cardNum.startsWith("4") ? "VISA" : cardNum.startsWith("5") ? "MC" : cardNum.startsWith("3") ? "AMEX" : "";
+
+    if (paying) return (
+      <div style={{ textAlign: "center", padding: "40px 0" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", position: "relative" }}>
+          <div style={{ width: 56, height: 56, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite", position: "absolute" }} />
+          <span style={{ fontSize: 22 }}>💳</span>
+        </div>
+        <p style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Traitement en cours…</p>
+        <p style={{ fontSize: 13, color: C.textSecondary }}>Veuillez patienter</p>
+      </div>
+    );
+
+    return (
+      <div>
+        {/* Card visual */}
+        <div style={{ background: "linear-gradient(135deg, #1D1D1F 0%, #3a3a3c 100%)", borderRadius: 16, padding: "20px 22px", marginBottom: 22, color: "#fff", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
+          <div style={{ position: "absolute", bottom: -30, left: 60, width: 100, height: 100, borderRadius: "50%", background: "rgba(255,255,255,0.04)" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div style={{ width: 36, height: 26, background: "linear-gradient(135deg, #FFD700, #FFA500)", borderRadius: 4 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>{cardBrand}</span>
+          </div>
+          <p style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.15em", marginBottom: 16, color: cardNum ? "#fff" : "rgba(255,255,255,0.3)" }}>
+            {cardNum ? fmtCard(cardNum).padEnd(19, " ").replace(/ /g, " ") : "•••• •••• •••• ••••"}
+          </p>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div>
+              <p style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginBottom: 2, letterSpacing: "0.08em" }}>NOM</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: name ? "#fff" : "rgba(255,255,255,0.3)" }}>{name || "PRÉNOM NOM"}</p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginBottom: 2, letterSpacing: "0.08em" }}>EXPIRATION</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: expiry ? "#fff" : "rgba(255,255,255,0.3)" }}>{expiry || "MM/AA"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Fields */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>NUMÉRO DE CARTE</label>
+          <input value={fmtCard(cardNum)} onChange={e => setCardNum(e.target.value.replace(/\D/g, "").slice(0, 16))} placeholder="1234 5678 9012 3456" inputMode="numeric"
+            style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, color: C.dark, outline: "none", letterSpacing: "0.1em", ...FF }} />
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>EXPIRATION</label>
+            <input value={expiry} onChange={e => setExpiry(fmtExp(e.target.value))} placeholder="MM/AA" inputMode="numeric"
+              style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, color: C.dark, outline: "none", ...FF }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>CVV</label>
+            <input value={cvv} onChange={e => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="•••" inputMode="numeric" type="password"
+              style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, color: C.dark, outline: "none", ...FF }} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6, letterSpacing: "0.05em" }}>NOM SUR LA CARTE</label>
+          <input value={name} onChange={e => setName(e.target.value.toUpperCase())} placeholder="JEAN DUPONT"
+            style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", letterSpacing: "0.05em", ...FF }} />
+        </div>
+        {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
+        <button onClick={pay} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginBottom: 10, ...FF }}>
+          🔒 Payer {total.toFixed(2)} €
+        </button>
+        <button onClick={onCancel} style={{ width: "100%", padding: 14, background: "transparent", color: C.textSecondary, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 600, cursor: "pointer", ...FF }}>
+          Annuler
+        </button>
+        <p style={{ textAlign: "center", fontSize: 11, color: C.textTertiary, marginTop: 14 }}>🔒 Paiement sécurisé · Stripe</p>
+      </div>
+    );
+  }
+
+  // ── Real Stripe form ────────────────────────────────────────────────────────
   return (
     <div>
-      {!STRIPE_KEY && (
-        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 13, color: "#7A5C00" }}>
-          ⚠️ Mode test — ajoutez VITE_STRIPE_PUBLISHABLE_KEY pour activer les vrais paiements
-        </div>
-      )}
-      <div ref={containerRef} style={{ marginBottom: 16, minHeight: STRIPE_KEY ? 80 : 0 }} />
+      <div ref={containerRef} style={{ marginBottom: 16, minHeight: 80 }} />
       {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
       <button onClick={pay} disabled={paying} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: paying ? "not-allowed" : "pointer", marginBottom: 10, ...FF, opacity: paying ? 0.6 : 1 }}>
-        {paying ? "Traitement en cours…" : `Payer ${total.toFixed(2)} €`}
+        {paying ? "Traitement en cours…" : `🔒 Payer ${total.toFixed(2)} €`}
       </button>
       <button onClick={onCancel} style={{ width: "100%", padding: 14, background: "transparent", color: C.textSecondary, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 600, cursor: "pointer", ...FF }}>
         Annuler
