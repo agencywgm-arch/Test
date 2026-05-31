@@ -1838,11 +1838,6 @@ function ClientView({ restaurant, onBack }) {
           <label style={{ color: C.textSecondary, fontSize: 12, fontWeight: 500, display: "block", marginBottom: 6 }}>Note pour la cuisine</label>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Allergie, cuisson, sans gluten…" style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", fontSize: 13, color: C.dark, resize: "none", height: 64, outline: "none", ...FF }} />
         </div>
-        <div style={{ marginTop: 14, padding: "16px", background: C.bg, borderRadius: 14 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em", marginBottom: 12 }}>VOS COORDONNÉES <span style={{ fontWeight: 400, color: C.textTertiary }}>(pour votre ticket)</span></p>
-          <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Prénom et nom" style={{ width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.dark, outline: "none", marginBottom: 8, ...FF }} />
-          <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="Email (pour recevoir votre ticket)" style={{ width: "100%", boxSizing: "border-box", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.dark, outline: "none", ...FF }} />
-        </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0 4px" }}>
           <span style={{ fontWeight: 700, fontSize: 17, color: C.dark }}>Total</span>
           <span style={{ fontWeight: 900, fontSize: 22, color: C.dark }}>{total.toFixed(2)}€</span>
