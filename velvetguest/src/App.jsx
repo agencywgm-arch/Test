@@ -658,6 +658,8 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function CampaignModal({ campaign, restaurant, store, onClose }) {
   const [sent, setSent] = useState(false);
+  const [subject, setSubject] = useState(`${campaign.emoji} ${campaign.name} — Offre exclusive pour vous !`);
+  const [msgText, setMsgText] = useState(campaign.msg || "");
   const isDemo = restaurant?.id === "demo";
   const orders = store?.orders ?? [];
   const avgTicket = orders.length ? (orders.reduce((s, o) => s + o.total, 0) / orders.length) : 18;
@@ -666,16 +668,15 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
 
   async function send() {
     setSent(true);
-    // Live update: push to store (promotions tab + CRM tab update instantly)
-    await store.launchCampaign(campaign, isDemo);
+    await store.launchCampaign({ ...campaign, msg: msgText }, isDemo);
     setTimeout(onClose, 1800);
   }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
-      <div style={{ background: C.white, borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", ...FF }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: C.white, borderRadius: 20, width: "100%", maxWidth: 520, maxHeight: "90vh", overflow: "auto", ...FF }} onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ background: campaign.color + "15", borderBottom: `1px solid ${campaign.color}25`, padding: "18px 22px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ background: campaign.color + "15", borderBottom: `1px solid ${campaign.color}25`, padding: "18px 22px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0 }}>
           <span style={{ fontSize: 28 }}>{campaign.emoji}</span>
           <div>
             <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{campaign.name}</p>
@@ -685,7 +686,7 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
         </div>
         <div style={{ padding: "20px 22px" }}>
           {/* Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
             <div style={{ background: C.bg, borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
               <p style={{ fontSize: 24, fontWeight: 800, color: campaign.color }}>{clientCount}</p>
               <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>clients ciblés</p>
@@ -695,20 +696,29 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
               <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>CA estimé récupéré</p>
             </div>
           </div>
-          {/* Email preview */}
-          <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
-            <div style={{ background: C.bg, padding: "8px 14px", borderBottom: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 11, color: C.textTertiary }}>De : {restaurant?.name ?? "Votre restaurant"} &lt;contact@velvetguest.fr&gt;</p>
-              <p style={{ fontSize: 11, color: C.textTertiary }}>Objet : {campaign.emoji} {campaign.name} — Offre exclusive pour vous !</p>
+
+          {/* Editable email composer */}
+          <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 10 }}>✏️ Personnalisez votre message</p>
+          <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
+            <div style={{ background: C.bg, padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 4 }}>De : {restaurant?.name ?? "Votre restaurant"} &lt;contact@velvetguest.fr&gt;</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <p style={{ fontSize: 11, color: C.textTertiary, flexShrink: 0 }}>Objet :</p>
+                <input value={subject} onChange={e => setSubject(e.target.value)}
+                  style={{ flex: 1, border: "none", background: "transparent", fontSize: 12, color: C.dark, fontWeight: 600, outline: "none", ...FF }} />
+              </div>
             </div>
             <div style={{ padding: "14px 16px" }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Bonjour {"{prénom}"} 👋</p>
-              <p style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.6, marginBottom: 10 }}>{campaign.msg}</p>
-              <div style={{ background: campaign.color, borderRadius: 8, padding: "8px 14px", textAlign: "center", display: "inline-block" }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 8 }}>Bonjour {"{prénom}"} 👋</p>
+              <textarea value={msgText} onChange={e => setMsgText(e.target.value)}
+                rows={4}
+                style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.textSecondary, lineHeight: 1.6, resize: "vertical", outline: "none", ...FF }} />
+              <div style={{ background: campaign.color, borderRadius: 8, padding: "8px 14px", textAlign: "center", display: "inline-block", marginTop: 10 }}>
                 <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>Voir la carte →</span>
               </div>
             </div>
           </div>
+
           <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 16 }}>📧 Envoi réel via Resend API (clé RESEND_API_KEY dans les secrets Supabase)</p>
           {sent
             ? <div style={{ background: C.accentGreen + "15", border: `1px solid ${C.accentGreen}30`, borderRadius: 12, padding: "12px 16px", textAlign: "center" }}>
@@ -2112,11 +2122,111 @@ const PROMO_COLORS = ["#FF9F0A", "#FF375F", "#34C759", "#0071E3", "#BF5AF2", "#1
 const PROMO_TYPES = [{ value: "happy_hour", label: "Happy Hour" }, { value: "seasonal", label: "Saisonnier" }, { value: "event", label: "Événement" }];
 const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji: "🎁", color: "#FF9F0A", type: "event", start_date: "", end_date: "", active: true };
 
+function EventCalendar({ promos }) {
+  const [cur, setCur] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
+  const today = new Date();
+
+  const firstDay = new Date(cur.year, cur.month, 1);
+  const daysInMonth = new Date(cur.year, cur.month + 1, 0).getDate();
+  const startDow = (firstDay.getDay() + 6) % 7; // Monday=0
+
+  // Seasonal events for this month
+  const seasonalThisMonth = SEASONAL_EVENTS.filter(e => e.month === cur.month + 1);
+
+  // Promos active in this month
+  const promoEvents = promos.filter(p => {
+    if (!p.start_date && !p.end_date) return false;
+    const start = p.start_date ? new Date(p.start_date) : null;
+    const end = p.end_date ? new Date(p.end_date) : null;
+    const mStart = new Date(cur.year, cur.month, 1);
+    const mEnd = new Date(cur.year, cur.month + 1, 0);
+    if (start && end) return start <= mEnd && end >= mStart;
+    if (start) return start.getMonth() === cur.month && start.getFullYear() === cur.year;
+    return false;
+  });
+
+  const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+  const DAYS_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+
+  function getDayEvents(day) {
+    const date = new Date(cur.year, cur.month, day);
+    const seasonal = seasonalThisMonth.filter(e => e.day === day);
+    const pEvents = promoEvents.filter(p => {
+      const start = p.start_date ? new Date(p.start_date) : null;
+      const end = p.end_date ? new Date(p.end_date) : null;
+      if (start && end) return date >= start && date <= end;
+      if (start) return start.getDate() === day;
+      return false;
+    });
+    return { seasonal, promos: pEvents };
+  }
+
+  const cells = Array.from({ length: startDow }, () => null)
+    .concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <Surface style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+      {/* Calendar header */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={() => setCur(p => { const d = new Date(p.year, p.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
+          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, color: C.dark, ...FF }}>‹</button>
+        <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{MONTHS_FR[cur.month]} {cur.year}</p>
+        <button onClick={() => setCur(p => { const d = new Date(p.year, p.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
+          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, color: C.dark, ...FF }}>›</button>
+      </div>
+      {/* Day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", borderBottom: `1px solid ${C.border}` }}>
+        {DAYS_FR.map(d => <div key={d} style={{ padding: "8px 0", textAlign: "center", fontSize: 11, fontWeight: 700, color: C.textTertiary }}>{d}</div>)}
+      </div>
+      {/* Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+        {cells.map((day, i) => {
+          const isToday = day && today.getDate() === day && today.getMonth() === cur.month && today.getFullYear() === cur.year;
+          const { seasonal, promos: dayPromos } = day ? getDayEvents(day) : { seasonal: [], promos: [] };
+          const hasEvent = seasonal.length > 0 || dayPromos.length > 0;
+          return (
+            <div key={i} style={{ minHeight: 68, padding: "6px 6px 4px", borderBottom: i < cells.length - 7 ? `1px solid ${C.border}` : "none", borderRight: (i + 1) % 7 !== 0 ? `1px solid ${C.border}` : "none", background: isToday ? C.dark + "08" : "transparent" }}>
+              {day && <>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: isToday ? C.dark : "transparent", color: isToday ? C.white : hasEvent ? C.dark : C.textTertiary, fontSize: 12, fontWeight: isToday || hasEvent ? 700 : 400, marginBottom: 3 }}>{day}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {seasonal.map(ev => (
+                    <div key={ev.name} title={ev.name} style={{ background: ev.color + "20", borderLeft: `2px solid ${ev.color}`, borderRadius: 4, padding: "1px 4px", fontSize: 10, fontWeight: 600, color: ev.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                      {ev.emoji} {ev.name}
+                    </div>
+                  ))}
+                  {dayPromos.map(p => (
+                    <div key={p.id} title={p.name} style={{ background: p.color + "20", borderLeft: `2px solid ${p.color}`, borderRadius: 4, padding: "1px 4px", fontSize: 10, fontWeight: 600, color: p.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                      {p.emoji} {p.name}
+                    </div>
+                  ))}
+                </div>
+              </>}
+            </div>
+          );
+        })}
+      </div>
+      {/* Legend */}
+      {(seasonalThisMonth.length > 0 || promoEvents.length > 0) && (
+        <div style={{ padding: "12px 20px", borderTop: `1px solid ${C.border}`, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {seasonalThisMonth.map(ev => (
+            <span key={ev.name} style={{ fontSize: 11, background: ev.color + "15", color: ev.color, fontWeight: 600, padding: "3px 10px", borderRadius: 20 }}>{ev.emoji} {ev.name}</span>
+          ))}
+          {promoEvents.map(p => (
+            <span key={p.id} style={{ fontSize: 11, background: p.color + "15", color: p.color, fontWeight: 600, padding: "3px 10px", borderRadius: 20 }}>{p.emoji} {p.name}</span>
+          ))}
+        </div>
+      )}
+    </Surface>
+  );
+}
+
 function PromosTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
   // Use shared store so campaign launches from alerts appear instantly here
   const promos = store.promotions ?? [];
   const setPromos = store.setPromotions;
+  const [subTab, setSubTab] = useState("promos"); // promos | calendar
   const [modal, setModal] = useState(null); // null | "new" | "edit" | "relance"
   const [editing, setEditing] = useState(null);
   const [relancePromo, setRelancePromo] = useState(null);
@@ -2176,7 +2286,7 @@ function PromosTab({ restaurant, store }) {
           {toast}
         </div>
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Promotions & Événements</h2>
           <p style={{ color: C.textSecondary, fontSize: 14, marginTop: 4 }}>{promos.length} promo{promos.length !== 1 ? "s" : ""} configurée{promos.length !== 1 ? "s" : ""}</p>
@@ -2184,7 +2294,17 @@ function PromosTab({ restaurant, store }) {
         <Btn variant="primary" onClick={openNew}>+ Nouvelle promo</Btn>
       </div>
 
-      {promos.length === 0 ? (
+      {/* Sub-tab switcher */}
+      <div style={{ display: "inline-flex", background: C.bg, borderRadius: 12, padding: 4, marginBottom: 24, gap: 2 }}>
+        {[{ id: "promos", label: "🎁 Promos" }, { id: "calendar", label: "📅 Calendrier" }].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)}
+            style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: subTab === t.id ? C.white : "transparent", color: subTab === t.id ? C.dark : C.textSecondary, fontWeight: subTab === t.id ? 700 : 500, fontSize: 13, cursor: "pointer", boxShadow: subTab === t.id ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all 0.15s", ...FF }}>{t.label}</button>
+        ))}
+      </div>
+
+      {subTab === "calendar" && <EventCalendar promos={promos} />}
+
+      {subTab === "promos" && (promos.length === 0 ? (
         <Surface style={{ padding: 48, textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🎁</div>
           <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 6 }}>Aucune promotion</p>
@@ -2230,7 +2350,7 @@ function PromosTab({ restaurant, store }) {
             </Surface>
           ))}
         </div>
-      )}
+      ))}
 
       {/* Add/Edit Modal */}
       {(modal === "new" || modal === "edit") && (
