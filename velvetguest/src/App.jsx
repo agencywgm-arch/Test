@@ -98,21 +98,58 @@ const DEMO_CUSTOMERS = [
   { id:"c14", restaurant_id:"demo", first_name:"Pierre", email:"pierre.henry@gmail.com", phone:"07 55 44 33 22", first_visit:"2025-10-28", last_visit:"2026-01-14", order_count:5, total_spent:102.50, created_at:"2025-10-28T12:00:00Z" },
   { id:"c15", restaurant_id:"demo", first_name:"Sarah", email:"sarah.blanc@gmail.com", phone:"06 88 99 00 11", first_visit:"2026-02-14", last_visit:"2026-05-20", order_count:9, total_spent:201.60, created_at:"2026-02-14T12:00:00Z" },
 ];
-// Calendrier événements saisonniers (mois 1-12, jour)
+// Calendrier exhaustif — tous les événements de l'année (mois 1-12, jour)
 const SEASONAL_EVENTS = [
-  { emoji: "❤️", name: "Saint-Valentin", month: 2, day: 14, color: "#FF375F", msg: "Proposez un menu spécial pour les amoureux." },
-  { emoji: "🌸", name: "Fête des Mères", month: 5, day: 25, color: "#BF5AF2", msg: "Menu brunch ou formule famille pour l'occasion." },
-  { emoji: "👔", name: "Fête des Pères", month: 6, day: 21, color: "#0071E3", msg: "Offrez une expérience premium pour les papas." },
-  { emoji: "🎵", name: "Fête de la Musique", month: 6, day: 21, color: "#FF9F0A", msg: "Soirée musicale + offre boissons spéciale." },
-  { emoji: "🎆", name: "14 Juillet", month: 7, day: 14, color: "#0071E3", msg: "Soirée festive, menu patriotique ou happy hour." },
-  { emoji: "🍂", name: "Rentrée Septembre", month: 9, day: 1, color: "#FF9F0A", msg: "Relancez vos clients après l'été avec une offre bienvenue." },
-  { emoji: "🎃", name: "Halloween", month: 10, day: 31, color: "#FF6B35", msg: "Menu ou cocktails à thème pour attirer les curieux." },
-  { emoji: "🎄", name: "Noël", month: 12, day: 25, color: "#34C759", msg: "Menu de fête, réservations groupes, offre cadeau." },
-  { emoji: "🥂", name: "Réveillon Nouvel An", month: 12, day: 31, color: "#BF5AF2", msg: "Soirée premium, menu gastronomique, animations." },
-  { emoji: "🐣", name: "Pâques", month: 4, day: 20, color: "#FF9F0A", msg: "Brunch pascal, desserts de saison, offre famille." },
+  // ── Janvier ──
+  { emoji: "🥂", name: "Jour de l'An", month: 1, day: 1, color: "#BF5AF2", msg: "Soirée de l'An passée ? Relancez avec une offre 'Bonne Année' sur vos menus du midi." },
+  { emoji: "👑", name: "Épiphanie", month: 1, day: 6, color: "#FF9F0A", msg: "Galette des rois, fève, couronne — proposez une formule épiphanie en janvier." },
+  { emoji: "❄️", name: "Veille Bleu Janvier", month: 1, day: 15, color: "#0071E3", msg: "Mi-janvier = creux post-fêtes. Lancez une promo 'rechauffe-toi chez nous'." },
+  // ── Février ──
+  { emoji: "🥞", name: "Chandeleur", month: 2, day: 2, color: "#FF9F0A", msg: "Crêpes party ! Proposez un menu crêpes ou un dessert spécial Chandeleur." },
+  { emoji: "❤️", name: "Saint-Valentin", month: 2, day: 14, color: "#FF375F", msg: "Menu en amoureux, table décorée, offre cocktail pour 2 — soirée incontournable." },
+  // ── Mars ──
+  { emoji: "👩", name: "Journée de la Femme", month: 3, day: 8, color: "#FF375F", msg: "Offrez un verre offert ou une réduction pour toutes les femmes ce soir-là." },
+  { emoji: "☘️", name: "Saint-Patrick", month: 3, day: 17, color: "#34C759", msg: "Soirée irlandaise, bières spéciales, plats à l'ancienne — ambiance garantie." },
+  { emoji: "🌱", name: "Printemps", month: 3, day: 20, color: "#34C759", msg: "Carte de printemps : légumes frais, cocktails fruités, terrasse ouverte." },
+  // ── Avril ──
+  { emoji: "🐣", name: "Pâques", month: 4, day: 20, color: "#FF9F0A", msg: "Brunch pascal, desserts chocolatés, formule famille — week-end prolongé." },
+  { emoji: "🐟", name: "Poisson d'Avril", month: 4, day: 1, color: "#0071E3", msg: "Ajoutez un plat surprise ou un dessert rigolo — fun et mémorable." },
+  // ── Mai ──
+  { emoji: "🌹", name: "Fête du Travail", month: 5, day: 1, color: "#34C759", msg: "Jour férié = tables remplies le midi. Promo 'muguet offert' avec chaque menu." },
+  { emoji: "🕊️", name: "8 Mai 1945", month: 5, day: 8, color: "#0071E3", msg: "Pont du 8 mai : familles en sortie, menu spécial déjeuner patrimonial." },
+  { emoji: "🌸", name: "Fête des Mères", month: 5, day: 25, color: "#BF5AF2", msg: "Menu brunch, fleur offerte, cocktail 'Maman' — un des meilleurs jours de l'année." },
+  // ── Juin ──
+  { emoji: "👔", name: "Fête des Pères", month: 6, day: 15, color: "#0071E3", msg: "Menu premium, dessert personnalisé, expérience 'chef pour un soir'." },
+  { emoji: "🎵", name: "Fête de la Musique", month: 6, day: 21, color: "#FF9F0A", msg: "Soirée live music, happy hour prolongé, cocktails aux noms de chansons." },
+  { emoji: "☀️", name: "Solstice d'Été", month: 6, day: 21, color: "#FF9F0A", msg: "La nuit la plus courte : soirée rooftop, apéro dinatoire, cocktails estivaux." },
+  // ── Juillet ──
+  { emoji: "🎆", name: "14 Juillet", month: 7, day: 14, color: "#0071E3", msg: "Soirée feux d'artifice : menu patriotique bleu-blanc-rouge, happy hour avant le show." },
+  { emoji: "🏖️", name: "Départs Vacances", month: 7, day: 7, color: "#34C759", msg: "Clients en vacances : misez sur les touristes et les terrasses avec offres fraîcheur." },
+  // ── Août ──
+  { emoji: "⛅", name: "15 Août", month: 8, day: 15, color: "#FF9F0A", msg: "Jour férié estival — pique-nique chic, brunch tardif, menu soleil." },
+  { emoji: "🌅", name: "Fin Août — Avant Rentrée", month: 8, day: 25, color: "#FF9F0A", msg: "Derniers jours d'été : soirée 'adieu l'été', cocktail coucher de soleil." },
+  // ── Septembre ──
+  { emoji: "🍂", name: "Rentrée", month: 9, day: 1, color: "#FF6B35", msg: "Relancez vos clients habituels avec une offre 'de retour chez nous'." },
+  { emoji: "🍇", name: "Vendanges & Automne", month: 9, day: 22, color: "#BF5AF2", msg: "Carte d'automne, vins de saison, plats mijotés — le retour du réconfort." },
+  // ── Octobre ──
+  { emoji: "👨‍🍳", name: "Semaine du Goût", month: 10, day: 14, color: "#FF9F0A", msg: "Ateliers, menus découverte, mise en avant des producteurs locaux." },
+  { emoji: "🎃", name: "Halloween", month: 10, day: 31, color: "#FF6B35", msg: "Déco, menu à thème, cocktails 'sang de vampire' — soirée costumée." },
+  // ── Novembre ──
+  { emoji: "🕯️", name: "Toussaint", month: 11, day: 1, color: "#888", msg: "Week-end Toussaint : familles réunies, grand déjeuner, menus enfants." },
+  { emoji: "🥊", name: "Black Friday", month: 11, day: 28, color: "#1D1D1F", msg: "Offre flash 'Black Menu' : réduction sur une formule ce week-end uniquement." },
+  { emoji: "🍷", name: "Beaujolais Nouveau", month: 11, day: 20, color: "#FF375F", msg: "Soirée dégustation, verre de Beaujolais offert à l'entrée — tradition française." },
+  // ── Décembre ──
+  { emoji: "🎅", name: "Saint-Nicolas", month: 12, day: 6, color: "#FF375F", msg: "Tradition Nord/Est : menu familial, dessert spécial, atmosphère chaleureuse." },
+  { emoji: "🎄", name: "Noël", month: 12, day: 25, color: "#34C759", msg: "Menu de réveillon, réservations groupes, coffret cadeau — pic de l'année." },
+  { emoji: "🥂", name: "Réveillon Nouvel An", month: 12, day: 31, color: "#BF5AF2", msg: "Soirée premium, menu gastronomique, animations, champagne à minuit." },
+  // ── Événements sportifs & culturels ──
+  { emoji: "🎾", name: "Roland Garros", month: 5, day: 26, color: "#FF9F0A", msg: "2 semaines de tournoi = clients devant les écrans. Menu 'match', snacks à partager." },
+  { emoji: "⚽", name: "Euro / Coupe du Monde", month: 6, day: 12, color: "#0071E3", msg: "Retransmission des matchs, formule 'supporter', ambiance festive garantie." },
+  { emoji: "🚴", name: "Tour de France", month: 7, day: 5, color: "#FF375F", msg: "Grande boucle = terrasses animées. Menu régions françaises, spécialités locales." },
+  { emoji: "🎬", name: "Festival de Cannes", month: 5, day: 14, color: "#BF5AF2", msg: "Soirée cinéma, menu 'Palme d'Or', cocktails glamour — pour les amateurs de culture." },
 ];
 
-function getUpcomingEvents(daysAhead = 45) {
+function getUpcomingEvents(daysAhead = 60) {
   const today = new Date();
   const results = [];
   for (const ev of SEASONAL_EVENTS) {
@@ -191,6 +228,15 @@ function useStore(restaurantId) {
       created_at: new Date().toISOString(),
     };
     setPromotions(prev => [newPromo, ...prev]);
+    // CRM impact: mark inactive customers as "relancé"
+    const now = new Date().toISOString();
+    setCustomers(prev => prev.map(c => {
+      const daysSinceLast = (Date.now() - new Date(c.last_visit).getTime()) / 86400000;
+      if (daysSinceLast > 30) {
+        return { ...c, last_contacted: now, campaign_count: (c.campaign_count || 0) + 1, _relanced: true };
+      }
+      return c;
+    }));
     pushNotif(`🚀 Campagne "${campaignData.name}" lancée vers ${campaignData.clientCount} clients !`, "success");
     if (!isDemo) {
       try {
@@ -314,6 +360,16 @@ const css = `
   .slide-up { animation: slideUp 0.3s ease; }
 `;
 const FF = { fontFamily: "'Figtree', -apple-system, sans-serif" };
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return mobile;
+}
 
 function Surface({ children, style: s = {}, onClick, className = "", id }) {
   return (
@@ -737,6 +793,7 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
 function AlertBubbles({ store, restaurant }) {
   const [dismissed, setDismissed] = useState(new Set());
   const [campaign, setCampaign] = useState(null);
+  const isMobile = useIsMobile();
 
   const ingredients = store.ingredients ?? [];
   const orders = store.orders ?? [];
@@ -804,7 +861,7 @@ function AlertBubbles({ store, restaurant }) {
   return (
     <>
       {campaign && <CampaignModal campaign={campaign} restaurant={restaurant} store={store} onClose={() => setCampaign(null)} />}
-      <div style={{ position: "fixed", top: 72, right: 80, zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
+      <div style={{ position: "fixed", ...(isMobile ? { bottom: 72, left: 8, right: 8 } : { top: 72, right: 80 }), zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
         {allAlerts.map(alert => (
           <div key={alert.id} style={{
             minWidth: 260, maxWidth: 320, background: C.white, borderRadius: 14,
@@ -840,80 +897,121 @@ function AlertBubbles({ store, restaurant }) {
 function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
+  const isMobile = useIsMobile();
   const first = (user.name || user.email).split(" ")[0];
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const TABS = [
-    { id: "setup", label: "⚡ Setup" },
-    { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
-    { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
-    { id: "inventory", label: "Inventaire" }, { id: "promos", label: "🎁 Promos" },
-    { id: "crm", label: "👥 CRM" },
-    { id: "menu", label: "Carte" },
+    { id: "setup", label: "⚡ Setup", icon: "⚡" },
+    { id: "overview", label: "Résumé", icon: "🏠" },
+    { id: "orders", label: "Commandes", icon: "📋" },
+    { id: "caisse", label: "Caisse", icon: "💰" },
+    { id: "qrcode", label: "QR Codes", icon: "📷" },
+    { id: "inventory", label: "Inventaire", icon: "📦" },
+    { id: "promos", label: "Promos", icon: "🎁" },
+    { id: "crm", label: "CRM", icon: "👥" },
+    { id: "menu", label: "Carte", icon: "🍽️" },
   ];
+  // Bottom nav tabs on mobile (most used)
+  const MOBILE_TABS = [
+    { id: "overview", icon: "🏠", label: "Accueil" },
+    { id: "orders", icon: "📋", label: "Commandes" },
+    { id: "caisse", icon: "💰", label: "Caisse" },
+    { id: "promos", icon: "🎁", label: "Promos" },
+    { id: "crm", icon: "👥", label: "CRM" },
+  ];
+  const demoBanner = restaurant.id === "demo";
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
-      {restaurant.id === "demo" && (
+      {demoBanner && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg, #FF9F0A, #FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <span style={{ fontSize: 13 }}>🎯</span>
           <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>MODE DÉMO — Tout est interactif, explorez librement !</span>
-          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>· Données fictives, aucune modification enregistrée</span>
+          {!isMobile && <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>· Données fictives, aucune modification enregistrée</span>}
         </div>
       )}
-      <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: restaurant.id === "demo" ? 36 : 0 }}>
-        <div style={{ padding: "20px 16px 16px" }}>
-          <Logo size={16} />
-          <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
-            <div style={{ fontSize: 22 }}>{restaurant.emoji}</div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{restaurant.name}</div>
-              <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Changer</div>
+      {/* Desktop sidebar */}
+      {!isMobile && (
+        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: demoBanner ? 36 : 0 }}>
+          <div style={{ padding: "20px 16px 16px" }}>
+            <Logo size={16} />
+            <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
+              <div style={{ fontSize: 22 }}>{restaurant.emoji}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{restaurant.name}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Changer</div>
+              </div>
             </div>
           </div>
-        </div>
-        <nav style={{ flex: 1, padding: "4px 10px" }}>
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: t.id === "setup" ? (tab === "setup" ? C.accentOrange + "20" : C.accentOrange + "10") : tab === t.id ? C.bg : "transparent", color: t.id === "setup" ? C.accentOrange : tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id || t.id === "setup" ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
-              {t.label}
-              {t.id === "orders" && active.length > 0 && <span style={{ marginLeft: "auto", background: C.dark, color: C.white, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{active.length}</span>}
-            </button>
-          ))}
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-            <button onClick={onCuisine} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: ready.length > 0 ? C.accentGreen + "15" : C.bg, color: ready.length > 0 ? C.accentGreen : C.textSecondary, fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 4, ...FF }}>
-              <Dot color={C.accentGreen} pulse={ready.length > 0} />Vue cuisine
-              {ready.length > 0 && <span style={{ marginLeft: "auto", background: C.accentGreen, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{ready.length} prête{ready.length > 1 ? "s" : ""}</span>}
-            </button>
-            <button onClick={onClient} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.bg, color: C.textSecondary, fontWeight: 500, fontSize: 14, cursor: "pointer", ...FF }}>
-              <span style={{ fontSize: 14 }}>📱</span> Vue client
-            </button>
-          </div>
-        </nav>
-        <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Avatar name={user.name || user.email} size={30} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
-              <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
+          <nav style={{ flex: 1, padding: "4px 10px" }}>
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: t.id === "setup" ? (tab === "setup" ? C.accentOrange + "20" : C.accentOrange + "10") : tab === t.id ? C.bg : "transparent", color: t.id === "setup" ? C.accentOrange : tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id || t.id === "setup" ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
+                {t.icon} <span style={{ marginLeft: 8 }}>{t.label}</span>
+                {t.id === "orders" && active.length > 0 && <span style={{ marginLeft: "auto", background: C.dark, color: C.white, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{active.length}</span>}
+              </button>
+            ))}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+              <button onClick={onCuisine} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: ready.length > 0 ? C.accentGreen + "15" : C.bg, color: ready.length > 0 ? C.accentGreen : C.textSecondary, fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 4, ...FF }}>
+                <Dot color={C.accentGreen} pulse={ready.length > 0} />Vue cuisine
+                {ready.length > 0 && <span style={{ marginLeft: "auto", background: C.accentGreen, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{ready.length} prête{ready.length > 1 ? "s" : ""}</span>}
+              </button>
+              <button onClick={onClient} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.bg, color: C.textSecondary, fontWeight: 500, fontSize: 14, cursor: "pointer", ...FF }}>
+                <span style={{ fontSize: 14 }}>📱</span> Vue client
+              </button>
+            </div>
+          </nav>
+          <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Avatar name={user.name || user.email} size={30} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
       <AgentChat restaurant={restaurant} store={store} />
       <AlertBubbles store={store} restaurant={restaurant} />
-      <main style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-        <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
-          <div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: C.dark, letterSpacing: "-0.02em" }}>{TABS.find(t => t.id === tab)?.label}</h2>
-            <p style={{ fontSize: 12, color: C.textTertiary }}>Bienvenue, {first} · {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 Cuisine{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
-            <Btn variant="primary" size="sm" onClick={onClient}>📱 Vue client</Btn>
-          </div>
-        </header>
-        <div style={{ padding: "28px 32px" }}>
+      <main style={{ flex: 1, minWidth: 0, overflow: "auto", paddingBottom: isMobile ? 72 : 0 }}>
+        {isMobile ? (
+          /* Mobile header */
+          <header style={{ background: "rgba(245,245,247,0.95)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: demoBanner ? 34 : 0, zIndex: 50 }}>
+            <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <div style={{ fontSize: 20 }}>{restaurant.emoji}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{restaurant.name}</div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {active.length > 0 && <button onClick={() => setTab("orders")} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", ...FF }}>{active.length} cmd</button>}
+              <button onClick={onCuisine} style={{ background: ready.length > 0 ? C.accentGreen : C.bg, color: ready.length > 0 ? "#fff" : C.textSecondary, border: "none", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>🍳</button>
+            </div>
+          </header>
+        ) : (
+          /* Desktop header */
+          <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: C.dark, letterSpacing: "-0.02em" }}>{TABS.find(t => t.id === tab)?.label}</h2>
+              <p style={{ fontSize: 12, color: C.textTertiary }}>Bienvenue, {first} · {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 Cuisine{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
+              <Btn variant="primary" size="sm" onClick={onClient}>📱 Vue client</Btn>
+            </div>
+          </header>
+        )}
+        <div style={{ padding: isMobile ? "16px 14px" : "28px 32px" }}>
+          {isMobile && (
+            <div style={{ marginBottom: 16, overflowX: "auto", display: "flex", gap: 8, WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
+              {TABS.map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 20, border: "none", background: tab === t.id ? C.dark : C.surface, color: tab === t.id ? "#fff" : C.textSecondary, fontSize: 13, fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", ...FF }}>
+                  {t.icon} {t.label}
+                  {t.id === "orders" && active.length > 0 && <span style={{ background: C.accent, color: "#fff", fontSize: 10, fontWeight: 700, padding: "0px 5px", borderRadius: 10, marginLeft: 2 }}>{active.length}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
           {tab === "orders" && <OrdersTab store={store} />}
           {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
@@ -925,6 +1023,19 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
       </main>
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 600, background: "rgba(245,245,247,0.96)", backdropFilter: "blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "stretch", height: 64 }}>
+          {MOBILE_TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", position: "relative", ...FF }}>
+              <span style={{ fontSize: 20 }}>{t.icon}</span>
+              <span style={{ fontSize: 10, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.dark : C.textTertiary }}>{t.label}</span>
+              {tab === t.id && <div style={{ position: "absolute", top: 0, left: "20%", right: "20%", height: 2, background: C.dark, borderRadius: 2 }} />}
+              {t.id === "orders" && active.length > 0 && <div style={{ position: "absolute", top: 6, right: "20%", width: 16, height: 16, background: C.accent, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 9, color: "#fff", fontWeight: 700 }}>{active.length}</span></div>}
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }
@@ -3846,8 +3957,9 @@ function CRMTab({ restaurant, store }) {
                   {(c.first_name || "?")[0].toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{c.first_name}</p>
+                    {c._relanced && <span style={{ fontSize: 10, background: C.accentGreen + "20", color: C.accentGreen, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>✅ RELANCÉ</span>}
                     {c.loyal && <span style={{ fontSize: 10, background: C.accentBlue + "15", color: C.accentBlue, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>FIDÈLE</span>}
                     {c.highValue && <span style={{ fontSize: 10, background: C.accentPurple + "15", color: C.accentPurple, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>VIP</span>}
                   </div>
