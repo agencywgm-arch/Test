@@ -81,6 +81,32 @@ const DEMO_PROMOS = [
   { id: "promo2", restaurant_id: "demo", name: "Menu Saint-Valentin", description: "Menu spécial pour 2 personnes à -20%", discount_percent: 20, emoji: "❤️", color: "#FF375F", type: "seasonal", start_date: "2026-02-14", end_date: "2026-02-14", active: false, send_count: 0, created_at: new Date().toISOString() },
   { id: "promo3", restaurant_id: "demo", name: "Midi Express", description: "Plat + boisson à 12€ le midi", discount_percent: 0, emoji: "⚡", color: "#34C759", type: "event", start_date: null, end_date: null, active: true, send_count: 123, created_at: new Date().toISOString() },
 ];
+// Calendrier événements saisonniers (mois 1-12, jour)
+const SEASONAL_EVENTS = [
+  { emoji: "❤️", name: "Saint-Valentin", month: 2, day: 14, color: "#FF375F", msg: "Proposez un menu spécial pour les amoureux." },
+  { emoji: "🌸", name: "Fête des Mères", month: 5, day: 25, color: "#BF5AF2", msg: "Menu brunch ou formule famille pour l'occasion." },
+  { emoji: "👔", name: "Fête des Pères", month: 6, day: 21, color: "#0071E3", msg: "Offrez une expérience premium pour les papas." },
+  { emoji: "🎵", name: "Fête de la Musique", month: 6, day: 21, color: "#FF9F0A", msg: "Soirée musicale + offre boissons spéciale." },
+  { emoji: "🎆", name: "14 Juillet", month: 7, day: 14, color: "#0071E3", msg: "Soirée festive, menu patriotique ou happy hour." },
+  { emoji: "🍂", name: "Rentrée Septembre", month: 9, day: 1, color: "#FF9F0A", msg: "Relancez vos clients après l'été avec une offre bienvenue." },
+  { emoji: "🎃", name: "Halloween", month: 10, day: 31, color: "#FF6B35", msg: "Menu ou cocktails à thème pour attirer les curieux." },
+  { emoji: "🎄", name: "Noël", month: 12, day: 25, color: "#34C759", msg: "Menu de fête, réservations groupes, offre cadeau." },
+  { emoji: "🥂", name: "Réveillon Nouvel An", month: 12, day: 31, color: "#BF5AF2", msg: "Soirée premium, menu gastronomique, animations." },
+  { emoji: "🐣", name: "Pâques", month: 4, day: 20, color: "#FF9F0A", msg: "Brunch pascal, desserts de saison, offre famille." },
+];
+
+function getUpcomingEvents(daysAhead = 45) {
+  const today = new Date();
+  const results = [];
+  for (const ev of SEASONAL_EVENTS) {
+    let evDate = new Date(today.getFullYear(), ev.month - 1, ev.day);
+    if (evDate < today) evDate = new Date(today.getFullYear() + 1, ev.month - 1, ev.day);
+    const diff = Math.ceil((evDate - today) / 86400000);
+    if (diff <= daysAhead && diff >= 0) results.push({ ...ev, daysLeft: diff, date: evDate });
+  }
+  return results.sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
 const DEMO_RECIPES = {
   dm3: [{ ingredient_id: "ing1", qty_per_portion: 0.25 }, { ingredient_id: "ing5", qty_per_portion: 0.30 }],
   dm4: [{ ingredient_id: "ing6", qty_per_portion: 0.40 }],
@@ -559,67 +585,169 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ALERT BUBBLES — floating alert cards fixed to top-right
 // ─────────────────────────────────────────────────────────────────────────────
-function AlertBubbles({ store }) {
+function CampaignModal({ campaign, restaurant, store, onClose }) {
+  const [sent, setSent] = useState(false);
+  const isDemo = restaurant?.id === "demo";
+  const orders = store?.orders ?? [];
+  const avgTicket = orders.length ? (orders.reduce((s, o) => s + o.total, 0) / orders.length) : 18;
+  const clientCount = campaign.clientCount ?? 0;
+  const estRevenue = (clientCount * avgTicket).toFixed(0);
+
+  function send() {
+    setSent(true);
+    setTimeout(onClose, 1800);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div style={{ background: C.white, borderRadius: 20, width: "100%", maxWidth: 480, overflow: "hidden", ...FF }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ background: campaign.color + "15", borderBottom: `1px solid ${campaign.color}25`, padding: "18px 22px", display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 28 }}>{campaign.emoji}</span>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{campaign.name}</p>
+            <p style={{ fontSize: 12, color: C.textSecondary }}>{campaign.subtitle}</p>
+          </div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.textTertiary }}>×</button>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          {/* Stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ background: C.bg, borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: campaign.color }}>{clientCount}</p>
+              <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>clients ciblés</p>
+            </div>
+            <div style={{ background: C.bg, borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: C.accentGreen }}>{estRevenue}€</p>
+              <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>CA estimé récupéré</p>
+            </div>
+          </div>
+          {/* Email preview */}
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
+            <div style={{ background: C.bg, padding: "8px 14px", borderBottom: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 11, color: C.textTertiary }}>De : {restaurant?.name ?? "Votre restaurant"} &lt;contact@velvetguest.fr&gt;</p>
+              <p style={{ fontSize: 11, color: C.textTertiary }}>Objet : {campaign.emoji} {campaign.name} — Offre exclusive pour vous !</p>
+            </div>
+            <div style={{ padding: "14px 16px" }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Bonjour {"{prénom}"} 👋</p>
+              <p style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.6, marginBottom: 10 }}>{campaign.msg}</p>
+              <div style={{ background: campaign.color, borderRadius: 8, padding: "8px 14px", textAlign: "center", display: "inline-block" }}>
+                <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>Voir la carte →</span>
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 16 }}>📧 Envoi réel via Resend API (clé RESEND_API_KEY dans les secrets Supabase)</p>
+          {sent
+            ? <div style={{ background: C.accentGreen + "15", border: `1px solid ${C.accentGreen}30`, borderRadius: 12, padding: "12px 16px", textAlign: "center" }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: C.accentGreen }}>✓ Campagne lancée vers {clientCount} clients !</p>
+              </div>
+            : <button onClick={send} style={{ width: "100%", background: campaign.color, color: "#fff", border: "none", borderRadius: 12, padding: "13px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", ...FF }}>
+                🚀 Lancer la campagne ({clientCount} clients)
+              </button>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AlertBubbles({ store, restaurant }) {
   const [dismissed, setDismissed] = useState(new Set());
+  const [campaign, setCampaign] = useState(null);
 
   const ingredients = store.ingredients ?? [];
   const orders = store.orders ?? [];
+  const isDemo = restaurant?.id === "demo";
+
+  // Inactive clients: customer_email seen, last order > 30 days ago
+  const inactiveClients = (() => {
+    if (isDemo) return 34;
+    const now = Date.now();
+    const byEmail = {};
+    for (const o of orders) {
+      if (!o.customer_email) continue;
+      const t = new Date(o.created_at || 0).getTime();
+      if (!byEmail[o.customer_email] || t > byEmail[o.customer_email]) byEmail[o.customer_email] = t;
+    }
+    return Object.values(byEmail).filter(t => now - t > 30 * 86400000).length;
+  })();
+
+  const avgTicket = orders.length ? (orders.reduce((s, o) => s + o.total, 0) / orders.length) : 18;
+  const upcomingEvents = getUpcomingEvents(45);
 
   const allAlerts = [
     ...orders.filter(o => o.status !== "served" && o.elapsed >= 20).map(o => ({
-      id: `urgent-${o.id}`,
-      icon: "🔴",
-      label: "Commande urgente",
-      text: `Table ${o.table} — ${o.elapsed} min`,
-      color: C.accent,
+      id: `urgent-${o.id}`, icon: "🔴", label: "Commande urgente",
+      text: `Table ${o.table} — ${o.elapsed} min`, color: C.accent, type: "ops",
     })),
     ...orders.filter(o => o.status === "new").map(o => ({
-      id: `new-${o.id}`,
-      icon: "🟡",
-      label: "Nouvelle commande",
-      text: `Table ${o.table} · ${o.total.toFixed(2)}€`,
-      color: C.accentBlue,
+      id: `new-${o.id}`, icon: "🟡", label: "Nouvelle commande",
+      text: `Table ${o.table} · ${o.total.toFixed(2)}€`, color: C.accentBlue, type: "ops",
     })),
     ...ingredients.filter(i => i.stock > 0 && i.alert_threshold != null && i.stock <= i.alert_threshold).map(i => ({
-      id: `low-${i.id}`,
-      icon: "🟠",
-      label: "Stock bas",
-      text: `${i.emoji} ${i.name} (${+i.stock.toFixed(2)} ${i.unit})`,
-      color: C.accentOrange,
+      id: `low-${i.id}`, icon: "🟠", label: "Stock bas",
+      text: `${i.emoji} ${i.name} (${+i.stock.toFixed(2)} ${i.unit})`, color: C.accentOrange, type: "ops",
     })),
     ...ingredients.filter(i => i.stock === 0).map(i => ({
-      id: `out-${i.id}`,
-      icon: "🔴",
-      label: "Rupture de stock",
-      text: `${i.emoji} ${i.name}`,
-      color: C.accent,
+      id: `out-${i.id}`, icon: "🔴", label: "Rupture de stock",
+      text: `${i.emoji} ${i.name}`, color: C.accent, type: "ops",
+    })),
+    ...(inactiveClients > 0 ? [{
+      id: "inactive-clients", icon: "💤", label: `${inactiveClients} clients inactifs ce mois`,
+      text: `Potentiel : ~${Math.round(inactiveClients * avgTicket)}€ récupérables`,
+      color: C.accentPurple, type: "campaign",
+      campaignData: {
+        emoji: "💤", name: "Clients inactifs — Reviens nous voir !",
+        subtitle: `${inactiveClients} clients sans commande depuis 30+ jours`,
+        color: C.accentPurple, clientCount: inactiveClients,
+        msg: `Ça fait un moment qu'on ne vous a pas vu ! Revenez découvrir nos nouveautés — on a une petite surprise pour vous. Réservez votre table dès maintenant et profitez d'une offre de bienvenue exclusive.`,
+      },
+    }] : []),
+    ...upcomingEvents.map(ev => ({
+      id: `event-${ev.name}`, icon: ev.emoji,
+      label: `${ev.name} dans ${ev.daysLeft} jour${ev.daysLeft > 1 ? "s" : ""}`,
+      text: ev.msg, color: ev.color, type: "campaign",
+      campaignData: {
+        emoji: ev.emoji, name: `Campagne ${ev.name}`,
+        subtitle: `J-${ev.daysLeft} · ${ev.date.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}`,
+        color: ev.color, clientCount: isDemo ? 67 : Math.max(20, Math.floor(orders.length * 0.6)),
+        msg: ev.msg,
+      },
     })),
   ].filter(a => !dismissed.has(a.id));
 
-  if (allAlerts.length === 0) return null;
+  if (allAlerts.length === 0 && !campaign) return null;
 
   return (
-    <div style={{ position: "fixed", top: 72, right: 80, zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
-      {allAlerts.map(alert => (
-        <div key={alert.id} style={{
-          minWidth: 240, maxWidth: 300, background: C.white, borderRadius: 12,
-          padding: "10px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-          borderLeft: `3px solid ${alert.color}`,
-          display: "flex", alignItems: "center", gap: 10,
-          animation: "slideDown 0.2s ease",
-          pointerEvents: "all",
-          ...FF,
-        }}>
-          <span style={{ fontSize: 14, flexShrink: 0 }}>{alert.icon}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: alert.color, marginBottom: 1 }}>{alert.label}</p>
-            <p style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alert.text}</p>
+    <>
+      {campaign && <CampaignModal campaign={campaign} restaurant={restaurant} store={store} onClose={() => setCampaign(null)} />}
+      <div style={{ position: "fixed", top: 72, right: 80, zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
+        {allAlerts.map(alert => (
+          <div key={alert.id} style={{
+            minWidth: 260, maxWidth: 320, background: C.white, borderRadius: 14,
+            padding: "10px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
+            borderLeft: `3px solid ${alert.color}`,
+            animation: "slideDown 0.2s ease", pointerEvents: "all", ...FF,
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{alert.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: alert.color, marginBottom: 2 }}>{alert.label}</p>
+                <p style={{ fontSize: 11, color: C.textSecondary, lineHeight: 1.4 }}>{alert.text}</p>
+                {alert.type === "campaign" && (
+                  <button onClick={() => setCampaign(alert.campaignData)}
+                    style={{ marginTop: 8, background: alert.color, color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", ...FF }}>
+                    🚀 Lancer la campagne
+                  </button>
+                )}
+              </div>
+              <button onClick={() => setDismissed(prev => new Set([...prev, alert.id]))}
+                style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>×</button>
+            </div>
           </div>
-          <button onClick={() => setDismissed(prev => new Set([...prev, alert.id]))}
-            style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>×</button>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -689,7 +817,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         </div>
       </aside>
       <AgentChat restaurant={restaurant} store={store} />
-      <AlertBubbles store={store} />
+      <AlertBubbles store={store} restaurant={restaurant} />
       <main style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
         <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
           <div>
