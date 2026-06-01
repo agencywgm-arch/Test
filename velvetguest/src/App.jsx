@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 
 // Base path for QR URL generation — injected at build time, empty on Vercel
 const BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 class ErrorBoundary extends Component {
   constructor(p) { super(p); this.state = { err: null }; }
@@ -4263,6 +4264,55 @@ function CRMTab({ restaurant, store }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GMAIL OAUTH CALLBACK — handles redirect after Google OAuth consent
+// ─────────────────────────────────────────────────────────────────────────────
+function GmailOAuthCallback() {
+  const [status, setStatus] = useState("processing");
+  const [emailConnected, setEmailConnected] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (!code || !state) { setStatus("error"); return; }
+    const redirectUri = `${window.location.origin}${BASE_PATH}/oauth/gmail`;
+    supabase.functions.invoke("gmail-oauth", { body: { code, restaurant_id: state, redirect_uri: redirectUri } })
+      .then(({ data, error }) => {
+        if (error || data?.error) { setStatus("error"); return; }
+        setEmailConnected(data.email);
+        setStatus("success");
+        setTimeout(() => { window.location.href = `${window.location.origin}${BASE_PATH}/`; }, 2500);
+      });
+  }, []);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", padding: 32, textAlign: "center", fontFamily: "'Figtree', -apple-system, sans-serif", background: "#F5F5F7" }}>
+      {status === "processing" && (
+        <>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+          <p style={{ fontSize: 18, fontWeight: 700, color: "#1D1D1F" }}>Connexion Gmail en cours…</p>
+        </>
+      )}
+      {status === "success" && (
+        <>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
+          <p style={{ fontSize: 18, fontWeight: 700, color: "#34C759" }}>Gmail connecté !</p>
+          <p style={{ color: "#666", marginTop: 8 }}>{emailConnected}</p>
+          <p style={{ color: "#999", fontSize: 13, marginTop: 12 }}>Redirection…</p>
+        </>
+      )}
+      {status === "error" && (
+        <>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>❌</div>
+          <p style={{ fontSize: 18, fontWeight: 700, color: "#FF375F" }}>Erreur de connexion</p>
+          <button onClick={() => window.history.back()} style={{ marginTop: 16, padding: "10px 24px", background: "#1D1D1F", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, cursor: "pointer", fontFamily: "'Figtree', -apple-system, sans-serif" }}>Retour</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER PAGE — public, no auth, opened by scanning QR code
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerPage({ slug, tableNum }) {
@@ -4758,6 +4808,9 @@ function CustomerPage({ slug, tableNum }) {
 // APP ROOT — Supabase session restore
 // ─────────────────────────────────────────────────────────────────────────────
 function AppInner() {
+  const oauthMatch = window.location.pathname.match(/\/oauth\/gmail/);
+  if (oauthMatch) return <GmailOAuthCallback />;
+
   const customerMatch = window.location.pathname.match(/\/r\/([^/]+)\/t\/(\d+)/);
   if (customerMatch) {
     return <CustomerPage slug={customerMatch[1]} tableNum={Number(customerMatch[2])} />;
