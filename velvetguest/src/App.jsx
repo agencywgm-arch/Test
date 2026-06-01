@@ -4439,7 +4439,9 @@ function CustomerPage({ slug, tableNum }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", padding: 32, textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>😕</div>
           <p style={{ fontSize: 20, fontWeight: 700, color: C.dark, marginBottom: 8 }}>Restaurant introuvable</p>
-          <p style={{ color: C.textSecondary, fontSize: 14 }}>Ce QR code n'est plus valide.</p>
+          <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 16 }}>Ce QR code n'est plus valide.</p>
+          <p style={{ color: C.textTertiary, fontSize: 11, wordBreak: "break-all", background: "#f5f5f7", padding: "8px 12px", borderRadius: 8, maxWidth: 320 }}>{window.location.href}</p>
+          <button onClick={() => window.location.reload()} style={{ marginTop: 20, padding: "10px 24px", background: C.dark, color: C.white, border: "none", borderRadius: 10, fontSize: 14, cursor: "pointer", ...FF }}>Réessayer</button>
         </div>
       )}
 
