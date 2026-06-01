@@ -3310,7 +3310,11 @@ function ClientView({ restaurant, onBack }) {
     supabase.from("menu_items").select("*")
       .eq("restaurant_id", restaurant.id).eq("available", true)
       .order("category").order("name")
-      .then(({ data }) => { setMenuItems(data ?? []); setLoadingMenu(false); });
+      .then(({ data }) => {
+        const seen = new Set();
+        setMenuItems((data ?? []).filter(i => seen.has(i.id) ? false : seen.add(i.id)));
+        setLoadingMenu(false);
+      });
   }, [restaurant.id]);
 
   const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
@@ -4303,7 +4307,10 @@ function CustomerPage({ slug, tableNum }) {
           supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name"),
         ]);
         setTableId(tblRes.data?.id ?? null);
-        setMenuItems(itemsRes.data ?? []);
+        // deduplicate by id in case DB has duplicate rows
+        const raw = itemsRes.data ?? [];
+        const seen = new Set();
+        setMenuItems(raw.filter(i => seen.has(i.id) ? false : seen.add(i.id)));
         // promos optional — table may not exist yet
         try {
           const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
