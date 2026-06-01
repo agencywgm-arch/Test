@@ -5,67 +5,19 @@
 
 ---
 
-## Dernières modifications (session courante)
-
-### ⚡ Onglet Setup — Onboarding IA
-- Nouvel onglet "⚡ Setup" en première position dans la sidebar, mis en évidence en orange
-- **Phase 1 — Importer la carte** : l'utilisateur colle du texte (site web, PDF, WhatsApp…) → l'IA (`gpt-4o-mini`) extrait tous les plats → preview éditable groupée par catégorie → import en base en un clic
-  - Édition inline du nom (clic → input), du prix, de l'emoji par plat
-  - Toggle inclure/exclure par plat
-  - Indicateur de progression animé (étapes 1 → 2)
-- **Phase 2 — Générer l'inventaire** : après import de la carte, l'IA déduit proactivement les ingrédients de chaque plat (quantités par portion, unités, stocks de départ, seuils d'alerte) → preview deux colonnes (ingrédients + recettes) → sauvegarde en base
-- Mode démo : l'IA fonctionne mais aucune écriture en base
-- Edge Function mise à jour : modes `setup-menu` et `setup-inventory` avec `response_format: { type: "json_object" }` et `max_tokens: 4096`
-
-### 📦 Onglet Inventaire (remplace "Avis")
-- **Sous-onglet Stocks** : grille d'ingrédients avec badge couleur (OK / Stock bas / Épuisé), barre de progression, boutons +/− par 0.1, modal ajout/édition/suppression, KPIs en haut
-- **Sous-onglet Recettes** : sélection d'un plat → configuration des ingrédients par portion (qty_per_portion), ajout/suppression par ligne
-- **Décrément automatique** : à chaque commande QR, les `recipe_items` sont lus, les quantités multipliées par les portions commandées, et les stocks ingrédients décrémentés en base
-- Mode démo : DEMO_INGREDIENTS + DEMO_RECIPES (8 ingrédients, recettes pour 6 plats), mutations en mémoire
-
-### 💬 Chat mobile — Page client QR
-- Remplacement du panneau flottant fixe par un **bottom sheet natif** (hauteur 85dvh, animation `sheetUp` translateY)
-- Overlay sombre cliquable pour fermer
-- `env(safe-area-inset-bottom)` pour support iPhone notch/home bar
-- Scroll inertiel iOS (`WebkitOverflowScrolling: touch`)
-- Auto-focus input 300 ms après ouverture
-- Chips de suggestions qui envoient directement sans passer par l'état input
-
-### 💬 Chat dans la Vue client admin (ClientViewChat)
-- Composant `ClientViewChat` autonome ajouté aux 3 étapes de la preview admin (menu, panier, paiement)
-- Bouton flottant fixe (bottom: 100px, right: 32px) distinct du bouton principal
-- Panel compact (maxWidth 380, maxHeight 400) avec le même mode `customer`
-
-### 🤖 Alertes intelligentes — Agent dashboard
-- Panneau d'alertes collapsible au-dessus des messages de l'agent
-- 🔴 Commandes urgentes (≥ 20 min d'attente)
-- 🟡 Nouvelles commandes en attente
-- 🟠 Stock bas (≤ 5 unités), rafraîchi toutes les 2 min
-- Badge sur le bouton agent : rouge si urgence, orange sinon, avec compteur
-
-### 🌱 Seed Baoma Burger — données complètes
-- Stock fictif renseigné sur les plats du jour et suggestions
-- 31 ingrédients avec stocks réalistes + seuils d'alerte
-- Recettes complètes pour les 48 plats (protéines, sauces, pains, produits frais, desserts, bar)
-- Script PL/pgSQL avec `returning id into v_xxx` pour tous les liens FK
-
-### 🔧 Corrections
-- `ClientView` panier : suppression des champs `customerName`/`customerEmail` qui n'existent que dans `CustomerPage` (évitait un crash)
-- `AgentChat` z-index porté à 1010 pour passer au-dessus du bandeau démo (z-index 999)
-
----
-
 ## Architecture générale
 
 ```
 velvetguest/
 ├── src/
-│   ├── App.jsx              — composant racine unique (~3 000 lignes)
-│   └── lib/supabase.js      — client Supabase
+│   ├── App.jsx                        — composant racine unique (~4 500 lignes)
+│   └── lib/supabase.js                — client Supabase
 ├── supabase/
-│   ├── schema.sql           — schéma complet (tables, RLS, triggers)
-│   ├── migration_inventory.sql  — tables ingredients + recipe_items
-│   ├── seed_baoma.sql       — seed Baoma Burger (Courbevoie)
+│   ├── schema.sql                     — schéma complet (tables, RLS, triggers)
+│   ├── migration_inventory.sql        — tables ingredients + recipe_items
+│   ├── migration_promotions.sql       — table promotions
+│   ├── migration_customers.sql        — table customers + trigger stats
+│   ├── seed_baoma.sql                 — seed Baoma Burger (Courbevoie)
 │   └── functions/
 │       ├── chat-agent/index.ts        — Edge Function IA (OpenAI)
 │       └── create-payment-intent/     — Edge Function Stripe
@@ -77,14 +29,14 @@ velvetguest/
 | URL | Vue |
 |-----|-----|
 | `/` | Landing page SaaS |
-| `/r/[slug]/t/[num]` | Page client QR (menu → panier → paiement → confirmation) |
+| `/r/[slug]/t/[num]` | Page client QR (menu → profil → paiement → confirmation) |
 | `/dashboard` | Dashboard restaurant (post-login) |
 
-### Routing interne (state machine dans App.jsx)
+### Routing interne (state machine App.jsx)
 
-`page` : `landing` → `login` → `restaurants` → `dashboard` → `client` (preview) / `kitchen`
+`page` : `landing` → `login` → `restaurants` → `dashboard` → `client` / `kitchen`
 
-`step` (CustomerPage) : `loading` → `menu` → `cart` → `payment` → `done` / `error`
+`step` (CustomerPage) : `loading` → `menu` → `cart` → `profile` → `payment` → `done` / `error`
 
 ---
 
@@ -100,11 +52,12 @@ velvetguest/
 | `menu_items` | Plats (name, price, category, emoji, photo_url, stock, is_popular, available) |
 | `orders` | Commandes (status ENUM, total, payment_method, customer_name, customer_email) |
 | `order_items` | Lignes de commande (menu_item_id, quantity, detail) |
-| `reviews` | Avis clients (rating 1-5, comment) |
 | `ingredients` | Ingrédients (name, unit, stock, alert_threshold, emoji) |
 | `recipe_items` | Recettes : lien ingredient ↔ menu_item avec qty_per_portion |
+| `promotions` | Promotions/événements (name, emoji, color, type, discount_percent, dates, active, send_count) |
+| `customers` | Profils CRM clients (email unique/restaurant, prénom, téléphone, visites, dépenses) |
 
-### Colonnes ajoutées en cours de projet
+### Colonnes ajoutées
 
 ```sql
 alter table menu_items add column if not exists photo_url text;
@@ -114,22 +67,41 @@ alter table orders add column if not exists customer_name text default '';
 alter table orders add column if not exists customer_email text default '';
 ```
 
-> Fichier complet : `supabase/schema.sql`  
-> Inventaire : `supabase/migration_inventory.sql`
+### Migrations à appliquer dans l'ordre
+
+```
+1. supabase/schema.sql
+2. supabase/migration_inventory.sql
+3. supabase/migration_promotions.sql
+4. supabase/migration_customers.sql
+```
 
 ### Storage
 
 Bucket `menu-images` — photos des plats uploadées depuis le dashboard.
 
-```sql
-insert into storage.buckets (id, name, public) values ('menu-images', 'menu-images', true);
-create policy "Owner uploads" on storage.objects for insert with check (bucket_id = 'menu-images' and auth.uid() is not null);
-create policy "Public read" on storage.objects for select using (bucket_id = 'menu-images');
-```
-
 ### Realtime
 
-Activé sur `orders` et `order_items` (Dashboard > Database > Replication).
+Activé sur `orders`, `order_items`, `customers`, `promotions` (Dashboard > Database > Replication).
+
+---
+
+## Store partagé (useStore)
+
+Toute la donnée live est dans un seul hook `useStore(restaurantId)` exposé via `StoreCtx` :
+
+| Clé | Type | Description |
+|-----|------|-------------|
+| `orders` | Order[] | Commandes actives en temps réel |
+| `doneOrders` | Order[] | Commandes servies du jour |
+| `ingredients` | Ingredient[] | Stocks ingrédients |
+| `promotions` | Promotion[] | Promos — mise à jour live via Realtime |
+| `customers` | Customer[] | Profils CRM — mise à jour live via Realtime |
+| `launchCampaign(data, isDemo)` | fn | Crée une promo + notif + écriture DB |
+| `setPromotions` | fn | Mise à jour locale des promos |
+| `setCustomers` | fn | Mise à jour locale des clients |
+| `pushNotif(msg, type)` | fn | Toast notification |
+| `revenue` | number | CA du jour |
 
 ---
 
@@ -165,7 +137,7 @@ La preview admin (`ClientView`) et la page client (`CustomerPage`) sont connect�
 
 ### 4. Paiement client (page QR)
 
-**Flux :** menu → panier → choix méthode → confirmation → ticket.
+**Flux :** menu → panier → profil → choix méthode → confirmation → ticket.
 
 **Méthodes disponibles :**
 - 💳 Carte bancaire / Apple Pay / Google Pay → Stripe (si `VITE_STRIPE_PUBLISHABLE_KEY` configuré)
@@ -175,18 +147,15 @@ La preview admin (`ClientView`) et la page client (`CustomerPage`) sont connect�
 - Widget carte visuel mis à jour en temps réel (numéro, expiry, CVV, titulaire)
 - Traitement simulé de 1.8 s puis confirmation réelle en base
 
-**Robustesse :**
-- Auto-création de la table si introuvable en base
-- Fallback insert sans colonnes optionnelles si migration non encore appliquée
-- Try/catch global → erreurs affichées inline (jamais de page blanche)
-
 ---
 
-### 5. Collecte nom + email client
+### 5. Collecte client & CRM automatique
 
-Sur la page QR, le client saisit son nom et son email avant de payer.  
-Ces données sont stockées dans `orders.customer_name` et `orders.customer_email`.  
-Affichées sur le ticket de confirmation.
+**Étape "Profil"** dans le parcours QR (entre panier et paiement) :
+- Champs : Prénom · Email (obligatoire) · Téléphone (optionnel)
+- Message : "Recevez votre ticket de caisse par email et profitez des offres et avantages du restaurant."
+- Bouton "Passer cette étape" disponible
+- Après commande → upsert automatique dans `customers` (trigger SQL incrémente `order_count` + `total_spent`)
 
 ---
 
@@ -245,7 +214,7 @@ Bouton ✨ flottant (bottom-right) dans le dashboard admin.
 **Panneau d'alertes intelligentes** (affiché en haut du panel si alertes) :
 - 🔴 Commandes urgentes (≥ 20 min d'attente)
 - 🟡 Nouvelles commandes en attente
-- 🟠 Stock bas (≤ 5 unités, rafraîchi toutes les 2 min)
+- 🟠 Stock bas (≤ 5 unités), rafraîchi toutes les 2 min
 - Badge sur le bouton : rouge si urgence, orange sinon
 
 **Edge Function** : `supabase/functions/chat-agent/index.ts`  
@@ -255,39 +224,35 @@ Clé : `OPENAI_API_KEY` en secret Supabase (ne jamais mettre dans le code).
 
 ### 11. Assistant allergènes Velvet — Page client QR
 
-Bouton 💬 flottant sur les étapes menu, panier et paiement de la page client.
+Bouton 💬 flottant sur les étapes menu, panier, profil et paiement de la page client.
 
-**Fonctionnalités :**
 - Mode `customer` : système prompt axé allergènes et ingrédients
 - Contexte : nom du restaurant + liste complète du menu avec descriptions
 - Suggestions rapides : "Plats sans gluten ?", "Végétarien ?", "Allergènes ?"
 - Disponible aussi dans la Vue client (preview admin) via `ClientViewChat`
+- **Mobile** : bottom sheet natif (85dvh, animation `sheetUp`, `env(safe-area-inset-bottom)`, scroll inertiel iOS)
 
 ---
 
 ### 12. Mode Démo
 
-Accessible depuis la page de sélection des restaurants (après connexion) via la carte "Explorer la démo".
+Accessible depuis la page de sélection des restaurants via "Explorer la démo".
 
 **Données fictives :**
 - Restaurant "Le Bistro Démo"
 - 12 plats répartis en 5 catégories
-- 3 commandes actives (new / cooking / ready)
-- 3 commandes servies
+- 3 commandes actives (new / cooking / ready) + 3 servies
 - 8 ingrédients avec stocks + recettes pour 6 plats
+- 3 promotions (Happy Hour, Saint-Valentin, Midi Express)
+- 15 profils clients CRM avec historique réaliste
 
-**Toutes les actions sont interactives** (mutations en mémoire, aucune écriture Supabase) :
-- Ajouter/modifier/supprimer des plats ✓
-- Avancer des commandes en cuisine ✓
-- Modifier les stocks ✓
-- Gérer les ingrédients et recettes ✓
-- Simuler le chat IA ✓
+**Toutes les actions sont interactives** (mutations en mémoire, aucune écriture Supabase).
 
 Bandeau orange en haut : "MODE DÉMO — Tout est interactif, explorez librement !"
 
 ---
 
-### 13. Inventaire (onglet remplaçant "Avis")
+### 13. Inventaire (onglet "Inventaire")
 
 #### Sous-onglet Stocks
 - Carte par ingrédient : emoji, nom, stock, badge (✓ OK / ⚠️ Stock bas / Épuisé)
@@ -299,23 +264,127 @@ Bandeau orange en haut : "MODE DÉMO — Tout est interactif, explorez librement
 #### Sous-onglet Recettes
 - Sélection d'un plat → configuration de sa recette (ingrédients + quantités par portion)
 - Ajout / modification / suppression de chaque ligne
-- Seuls les ingrédients non encore utilisés sont proposés à l'ajout
 
 #### Décrément automatique à la commande
-Quand un client passe commande via QR, le système :
 1. Récupère les `recipe_items` de chaque plat commandé
 2. Multiplie les `qty_per_portion` par les quantités commandées
 3. Décrémente chaque ingrédient en base
 
-**Unités supportées :** kg · g · L · mL · pcs · boîtes · sachets
+---
+
+### 14. Alertes flottantes (AlertBubbles)
+
+Cartes fixes top-right du dashboard, séparées du chat. 6 types d'alertes :
+
+| Type | Déclencheur | Couleur |
+|------|-------------|---------|
+| 🔴 Commande urgente | elapsed ≥ 20 min | Rouge |
+| 🟡 Nouvelle commande | status = new | Bleu |
+| 🟠 Stock bas | stock ≤ alert_threshold | Orange |
+| 🔴 Rupture de stock | stock = 0 | Rouge |
+| 💤 Clients inactifs | last_visit > 30j | Violet |
+| 🎵 Événement saisonnier | J-45 avant la date | Couleur événement |
+
+Chaque alerte campagne a un bouton **"🚀 Lancer la campagne"** qui ouvre le `CampaignModal`.
 
 ---
 
-### 14. Seed Baoma Burger
+### 15. Promotions & Événements (onglet "🎁 Promos")
 
-Script `supabase/seed_baoma.sql` — 50+ plats, 10 catégories, 15 tables.
+#### Sous-onglet Promos
+- CRUD complet : créer / modifier / supprimer / activer-désactiver
+- Champs : emoji, nom, description, réduction %, couleur (6 swatches), type, dates, actif
+- Bouton "Relance" → modal avec aperçu email + statistiques d'envoi
+- Affiché sur la page QR client en bandeau scrollable si active
 
-Catégories : Nouveauté · Menus · Starters · Wings · Smash Bao · Bao Créations · Asian Fusion · Accompagnements · Desserts · Cocktails · Boissons
+#### Sous-onglet Calendrier
+- Vue mensuelle avec navigation mois par mois
+- **Événements saisonniers automatiques** sur les bonnes dates : Saint-Valentin, Pâques, Fête des Mères, Fête des Pères, Fête de la Musique, 14 Juillet, Rentrée, Halloween, Noël, Réveillon
+- **Promos avec dates** affichées comme barres colorées
+- Légende en bas du calendrier
+- Aujourd'hui mis en évidence
+
+#### Calendrier saisonnier intégré (10 événements récurrents)
+```
+Fév 14 — ❤️ Saint-Valentin
+Avr 20 — 🐣 Pâques
+Mai 25 — 🌸 Fête des Mères
+Juin 21 — 👔 Fête des Pères + 🎵 Fête de la Musique
+Juil 14 — 🎆 14 Juillet
+Sep 01 — 🍂 Rentrée
+Oct 31 — 🎃 Halloween
+Déc 25 — 🎄 Noël
+Déc 31 — 🥂 Réveillon
+```
+
+---
+
+### 16. CampaignModal — messages éditables
+
+- Objet de l'email éditable (champ texte)
+- Corps du message éditable (textarea pré-rempli par l'IA, modifiable librement)
+- Stats : clients ciblés + CA estimé récupéré (clients × ticket moyen réel)
+- Aperçu email stylisé avec bouton CTA coloré
+- Au clic "Lancer" → promo créée dans le store → apparaît instantanément dans l'onglet Promos
+
+---
+
+### 17. CRM automatique (onglet "👥 CRM")
+
+**Collecte automatique** : chaque commande QR alimente le profil client en base.
+
+**Profil client** :
+- Prénom, email (clé unique par restaurant), téléphone
+- Première visite, dernière visite
+- Nombre de commandes, total dépensé (mis à jour par trigger SQL)
+- Panier moyen calculé à la volée
+
+**7 segments** :
+| Segment | Critère |
+|---------|---------|
+| Actifs | last_visit < 30j |
+| Fidèles | order_count ≥ 5 |
+| Haute valeur | panier moyen ≥ 25€ |
+| Inactifs 30j | last_visit entre 30 et 59j |
+| À risque 60j | last_visit entre 60 et 89j |
+| Perdus 90j+ | last_visit ≥ 90j |
+
+**Fonctionnalités** :
+- KPIs : total / actifs / à relancer / panier moyen
+- Cartes client avec badges FIDÈLE/VIP
+- Clic → modal profil complet
+- Recherche par nom ou email
+- **Live** : Supabase Realtime écoute `customers` → se met à jour à chaque nouvelle commande QR
+
+---
+
+### 18. ⚡ Onglet Setup — Onboarding IA
+
+**Phase 1 — Importer la carte** :
+- Coller du texte brut (site web, PDF, WhatsApp, Google Docs…)
+- L'IA extrait tous les plats → preview éditable groupée par catégorie
+- Édition inline : nom, prix, emoji par plat ; toggle inclure/exclure
+- Import en base en un clic
+
+**Phase 2 — Générer l'inventaire** :
+- L'IA déduit proactivement les ingrédients de chaque plat
+- Quantités par portion, unités, stocks de départ, seuils d'alerte
+- Preview deux colonnes (ingrédients + recettes) → sauvegarde en base
+
+**Edge Function modes** :
+- `setup-menu` → `MENU_PARSER_SYSTEM` + `response_format: json_object` + `max_tokens: 4096`
+- `setup-inventory` → `INVENTORY_SYSTEM` + `response_format: json_object` + `max_tokens: 4096`
+
+---
+
+### 19. Seed Baoma Burger
+
+Script `supabase/seed_baoma.sql` — 50+ plats, 11 catégories, 15 tables.
+
+- Catégories : Nouveauté · Menus · Starters · Wings · Smash Bao · Bao Créations · Asian Fusion · Accompagnements · Desserts · Cocktails · Boissons
+- 31 ingrédients avec stocks réalistes + seuils d'alerte
+- Recettes complètes pour 48 plats
+- Script PL/pgSQL avec `returning id into v_xxx` pour tous les liens FK
 
 ---
 
@@ -331,6 +400,7 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...   # optionnel
 ```
 OPENAI_API_KEY=sk-...
 STRIPE_SECRET_KEY=sk_live_...   # optionnel
+RESEND_API_KEY=re_...           # optionnel — envoi emails campagnes
 ```
 
 ---
@@ -341,20 +411,19 @@ STRIPE_SECRET_KEY=sk_live_...   # optionnel
 # Développement
 npm run dev
 
-# Production
-npm run build
+# Production (Vercel)
+# Root directory: velvetguest
+# Build command: npm run build
+# Output directory: dist
 
-# Supabase migrations (SQL Editor)
+# Supabase migrations (SQL Editor — dans l'ordre)
 # 1. supabase/schema.sql
 # 2. supabase/migration_inventory.sql
-# Colonnes supplémentaires (si pas encore migrées) :
-#   alter table menu_items add column if not exists photo_url text;
-#   alter table menu_items add column if not exists stock int default null;
-#   alter table orders add column if not exists payment_method text default 'cash';
-#   alter table orders add column if not exists customer_name text default '';
-#   alter table orders add column if not exists customer_email text default '';
+# 3. supabase/migration_promotions.sql
+# 4. supabase/migration_customers.sql
 
-# Déployer les Edge Functions
+# Déployer les Edge Functions (CLI local)
+supabase link --project-ref <ref>
 supabase functions deploy chat-agent
 supabase functions deploy create-payment-intent
 
