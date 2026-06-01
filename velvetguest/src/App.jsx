@@ -586,6 +586,7 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
   const first = (user.name || user.email).split(" ")[0];
   const h = new Date().getHours();
   const greet = h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : "Bonsoir";
+  const isMobile = useIsMobile();
   const [restaurants, setRestaurants] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
