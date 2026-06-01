@@ -5,6 +5,56 @@
 
 ---
 
+## Dernières modifications (session courante)
+
+### ⚡ Onglet Setup — Onboarding IA
+- Nouvel onglet "⚡ Setup" en première position dans la sidebar, mis en évidence en orange
+- **Phase 1 — Importer la carte** : l'utilisateur colle du texte (site web, PDF, WhatsApp…) → l'IA (`gpt-4o-mini`) extrait tous les plats → preview éditable groupée par catégorie → import en base en un clic
+  - Édition inline du nom (clic → input), du prix, de l'emoji par plat
+  - Toggle inclure/exclure par plat
+  - Indicateur de progression animé (étapes 1 → 2)
+- **Phase 2 — Générer l'inventaire** : après import de la carte, l'IA déduit proactivement les ingrédients de chaque plat (quantités par portion, unités, stocks de départ, seuils d'alerte) → preview deux colonnes (ingrédients + recettes) → sauvegarde en base
+- Mode démo : l'IA fonctionne mais aucune écriture en base
+- Edge Function mise à jour : modes `setup-menu` et `setup-inventory` avec `response_format: { type: "json_object" }` et `max_tokens: 4096`
+
+### 📦 Onglet Inventaire (remplace "Avis")
+- **Sous-onglet Stocks** : grille d'ingrédients avec badge couleur (OK / Stock bas / Épuisé), barre de progression, boutons +/− par 0.1, modal ajout/édition/suppression, KPIs en haut
+- **Sous-onglet Recettes** : sélection d'un plat → configuration des ingrédients par portion (qty_per_portion), ajout/suppression par ligne
+- **Décrément automatique** : à chaque commande QR, les `recipe_items` sont lus, les quantités multipliées par les portions commandées, et les stocks ingrédients décrémentés en base
+- Mode démo : DEMO_INGREDIENTS + DEMO_RECIPES (8 ingrédients, recettes pour 6 plats), mutations en mémoire
+
+### 💬 Chat mobile — Page client QR
+- Remplacement du panneau flottant fixe par un **bottom sheet natif** (hauteur 85dvh, animation `sheetUp` translateY)
+- Overlay sombre cliquable pour fermer
+- `env(safe-area-inset-bottom)` pour support iPhone notch/home bar
+- Scroll inertiel iOS (`WebkitOverflowScrolling: touch`)
+- Auto-focus input 300 ms après ouverture
+- Chips de suggestions qui envoient directement sans passer par l'état input
+
+### 💬 Chat dans la Vue client admin (ClientViewChat)
+- Composant `ClientViewChat` autonome ajouté aux 3 étapes de la preview admin (menu, panier, paiement)
+- Bouton flottant fixe (bottom: 100px, right: 32px) distinct du bouton principal
+- Panel compact (maxWidth 380, maxHeight 400) avec le même mode `customer`
+
+### 🤖 Alertes intelligentes — Agent dashboard
+- Panneau d'alertes collapsible au-dessus des messages de l'agent
+- 🔴 Commandes urgentes (≥ 20 min d'attente)
+- 🟡 Nouvelles commandes en attente
+- 🟠 Stock bas (≤ 5 unités), rafraîchi toutes les 2 min
+- Badge sur le bouton agent : rouge si urgence, orange sinon, avec compteur
+
+### 🌱 Seed Baoma Burger — données complètes
+- Stock fictif renseigné sur les plats du jour et suggestions
+- 31 ingrédients avec stocks réalistes + seuils d'alerte
+- Recettes complètes pour les 48 plats (protéines, sauces, pains, produits frais, desserts, bar)
+- Script PL/pgSQL avec `returning id into v_xxx` pour tous les liens FK
+
+### 🔧 Corrections
+- `ClientView` panier : suppression des champs `customerName`/`customerEmail` qui n'existent que dans `CustomerPage` (évitait un crash)
+- `AgentChat` z-index porté à 1010 pour passer au-dessus du bandeau démo (z-index 999)
+
+---
+
 ## Architecture générale
 
 ```
