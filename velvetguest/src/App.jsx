@@ -635,7 +635,7 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
             <div style={{ width: 24, height: 24, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: isMobile ? 10 : 16 }}>
             {restaurants.map(r => {
               const mapped = mapRestaurant(r);
               return (
@@ -793,6 +793,7 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
 function AlertBubbles({ store, restaurant }) {
   const [dismissed, setDismissed] = useState(new Set());
   const [campaign, setCampaign] = useState(null);
+  const [visibleIdx, setVisibleIdx] = useState(0);
   const isMobile = useIsMobile();
 
   const ingredients = store.ingredients ?? [];
@@ -856,13 +857,28 @@ function AlertBubbles({ store, restaurant }) {
     })),
   ].filter(a => !dismissed.has(a.id));
 
+  // Cycle one alert at a time, every 15s
+  useEffect(() => {
+    if (allAlerts.length <= 1) return;
+    const t = setInterval(() => setVisibleIdx(i => (i + 1) % allAlerts.length), 15000);
+    return () => clearInterval(t);
+  }, [allAlerts.length]);
+  // Reset index if it's out of bounds after dismiss
+  const safeIdx = allAlerts.length > 0 ? visibleIdx % allAlerts.length : 0;
+  const visibleAlerts = allAlerts.length > 0 ? [allAlerts[safeIdx]] : [];
+
   if (allAlerts.length === 0 && !campaign) return null;
 
   return (
     <>
       {campaign && <CampaignModal campaign={campaign} restaurant={restaurant} store={store} onClose={() => setCampaign(null)} />}
       <div style={{ position: "fixed", ...(isMobile ? { bottom: 72, left: 8, right: 8 } : { top: 72, right: 80 }), zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
-        {allAlerts.map(alert => (
+        {allAlerts.length > 1 && (
+          <div style={{ pointerEvents: "all", display: "flex", justifyContent: isMobile ? "center" : "flex-end", marginBottom: 2 }}>
+            <span style={{ fontSize: 10, color: C.textTertiary, background: C.white, borderRadius: 20, padding: "2px 8px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>{safeIdx + 1} / {allAlerts.length}</span>
+          </div>
+        )}
+        {visibleAlerts.map(alert => (
           <div key={alert.id} style={{
             minWidth: 260, maxWidth: 320, background: C.white, borderRadius: 14,
             padding: "10px 14px", boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
@@ -1089,6 +1105,7 @@ function StockAlerts({ restaurantId }) {
 
 function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const [weeklyRev, setWeeklyRev] = useState(Array(7).fill(0));
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (restaurant.id === "demo") { setWeeklyRev(DEMO_WEEKLY_REV); return; }
@@ -1121,33 +1138,30 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   return (
     <div className="fade-in">
       <StockAlerts restaurantId={restaurant.id} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <KPICard label="Commandes actives" value={active.length} sub="en ce moment" />
-        <KPICard label="CA aujourd'hui" value={`${rev.toFixed(2)} €`} sub="commandes clôturées" />
-        <KPICard label="Tables servies" value={store.doneOrders.length} sub="aujourd'hui" />
-        <KPICard label="Ticket moyen" value={avgTicket > 0 ? `${avgTicket.toFixed(2)} €` : "—"} sub="aujourd'hui" />
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
+        <KPICard label="Actives" value={active.length} sub="en cours" />
+        <KPICard label="CA today" value={`${rev.toFixed(0)}€`} sub="clôturées" />
+        <KPICard label="Servies" value={store.doneOrders.length} sub="aujourd'hui" />
+        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="moy." />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-        <Surface onClick={onCuisine} style={{ padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} className="hover-lift">
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>🍳</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 3 }}>Vue cuisine</div>
-            <div style={{ fontSize: 13, color: C.textSecondary }}>{active.length} en cours · {ready.length} prête{ready.length > 1 ? "s" : ""}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
+        <Surface onClick={onCuisine} style={{ padding: isMobile ? "12px 14px" : "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }} className="hover-lift">
+          <div style={{ width: isMobile ? 36 : 48, height: isMobile ? 36 : 48, borderRadius: 12, background: C.accentGreen + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 18 : 22, flexShrink: 0 }}>🍳</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: isMobile ? 13 : 15, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Cuisine</div>
+            <div style={{ fontSize: isMobile ? 11 : 13, color: C.textSecondary }}>{active.length} en cours</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Dot color={C.accentGreen} pulse /><span style={{ color: C.accentGreen, fontSize: 12, fontWeight: 600 }}>LIVE</span>
+          {!isMobile && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Dot color={C.accentGreen} pulse /><span style={{ color: C.accentGreen, fontSize: 12, fontWeight: 600 }}>LIVE</span></div>}
+        </Surface>
+        <Surface onClick={onClient} style={{ padding: isMobile ? "12px 14px" : "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }} className="hover-lift">
+          <div style={{ width: isMobile ? 36 : 48, height: isMobile ? 36 : 48, borderRadius: 12, background: C.accentBlue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 18 : 22, flexShrink: 0 }}>📱</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: isMobile ? 13 : 15, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Vue client</div>
+            <div style={{ fontSize: isMobile ? 11 : 13, color: C.textSecondary }}>Aperçu carte</div>
           </div>
         </Surface>
-        <Surface onClick={onClient} style={{ padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }} className="hover-lift">
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.accentBlue + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📱</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 3 }}>Vue client</div>
-            <div style={{ fontSize: 13, color: C.textSecondary }}>Aperçu carte réelle</div>
-          </div>
-          <Tag color={C.accentBlue}>Preview</Tag>
-        </Surface>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.6fr 1fr", gap: isMobile ? 8 : 12 }}>
         <Surface style={{ padding: "22px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
             <div>
@@ -1194,31 +1208,32 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
 function OrdersTab({ store }) {
   const byStatus = s => store.orders.filter(o => o.status === s);
   const all = [...store.orders, ...store.servedOrders.slice(0, 4)];
+  const isMobile = useIsMobile();
   return (
     <div className="fade-in">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        {[["Nouvelles", "new", C.accentBlue], ["En cuisine", "cooking", C.accentOrange], ["Prêtes", "ready", C.accentGreen], ["Servies", "served", C.textTertiary]].map(([l, s, c]) => (
-          <Surface key={s} style={{ padding: "16px 18px" }}>
-            <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 8, fontWeight: 500 }}>{l}</p>
-            <p style={{ fontSize: 28, fontWeight: 800, color: c }}>{s === "served" ? store.servedOrders.length : byStatus(s).length}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: isMobile ? 6 : 12, marginBottom: isMobile ? 12 : 20 }}>
+        {[["Nouvelles", "new", C.accentBlue], ["Cuisine", "cooking", C.accentOrange], ["Prêtes", "ready", C.accentGreen], ["Servies", "served", C.textTertiary]].map(([l, s, c]) => (
+          <Surface key={s} style={{ padding: isMobile ? "10px 10px" : "16px 18px" }}>
+            <p style={{ fontSize: isMobile ? 10 : 12, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>{l}</p>
+            <p style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, color: c }}>{s === "served" ? store.servedOrders.length : byStatus(s).length}</p>
           </Surface>
         ))}
       </div>
       <Surface style={{ overflow: "hidden" }}>
-        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Toutes les commandes</p>
+        <div style={{ padding: isMobile ? "12px 14px" : "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Toutes les commandes</p>
         </div>
         {all.map((o, i) => {
           const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen, served: C.textTertiary }[o.status];
-          const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "En cuisine", ready: "Prête", served: "Servie" }[o.status];
+          const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "Cuisine", ready: "Prête", served: "Servie" }[o.status];
           return (
-            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id}</p>
-                <p style={{ fontSize: 12, color: C.textSecondary }}>{o.items.map(i => i.name).join(", ").slice(0, 50)}</p>
+            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(0)}€</p>
+                <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.items.map(i => i.name).join(", ")}</p>
               </div>
-              <p style={{ fontSize: 13, color: C.textSecondary }}>{Math.round(o.elapsed)} min</p>
+              {!isMobile && <p style={{ fontSize: 13, color: C.textSecondary, flexShrink: 0 }}>{Math.round(o.elapsed)} min</p>}
               <Tag color={sc}>{sl}</Tag>
             </div>
           );
@@ -1234,6 +1249,7 @@ function QRTab({ restaurant }) {
   const [bg, setBg] = useState("#FFFFFF");
   const [customBase, setCustomBase] = useState("");
   const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
+  const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const baseUrl = customBase || window.location.origin;
   const basePath = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test";
@@ -1263,7 +1279,7 @@ function QRTab({ restaurant }) {
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: 16 }}>
       <div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
           {[["Tables", restaurant.tables || 8], ["QR actifs", restaurant.tables || 8], ["Scans totaux", 0]].map(([l, v]) => (
@@ -2365,6 +2381,7 @@ function EventCalendar({ promos }) {
 
 function PromosTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
+  const isMobile = useIsMobile();
   // Use shared store so campaign launches from alerts appear instantly here
   const promos = store.promotions ?? [];
   const setPromos = store.setPromotions;
@@ -2454,7 +2471,7 @@ function PromosTab({ restaurant, store }) {
           <Btn variant="primary" onClick={openNew}>+ Créer une promo</Btn>
         </Surface>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: isMobile ? 10 : 16 }}>
           {promos.map(promo => (
             <Surface key={promo.id} style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${promo.color}`, opacity: promo.active ? 1 : 0.7 }}>
               <div style={{ padding: "18px 20px" }}>
@@ -2624,6 +2641,7 @@ function CaisseTab({ store, restaurant }) {
   const today = store.doneOrders || [];
   const revenue = store.revenue;
   const avgTicket = today.length > 0 ? revenue / today.length : 0;
+  const isMobile = useIsMobile();
   const byMethod = today.reduce((acc, o) => {
     const m = o.payment_method || "cash";
     acc[m] = (acc[m] || 0) + o.total;
@@ -2632,14 +2650,14 @@ function CaisseTab({ store, restaurant }) {
 
   return (
     <div className="fade-in">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <KPICard label="CA du jour" value={`${revenue.toFixed(2)} €`} sub="commandes clôturées" />
-        <KPICard label="Commandes servies" value={today.length} sub="aujourd'hui" />
-        <KPICard label="Ticket moyen" value={avgTicket > 0 ? `${avgTicket.toFixed(2)} €` : "—"} sub="aujourd'hui" />
-        <KPICard label="En espèces" value={`${(byMethod.cash || 0).toFixed(2)} €`} sub="à encaisser" />
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
+        <KPICard label="CA jour" value={`${revenue.toFixed(0)}€`} sub="clôturées" />
+        <KPICard label="Commandes" value={today.length} sub="servies" />
+        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="" />
+        <KPICard label="Espèces" value={`${(byMethod.cash || 0).toFixed(0)}€`} sub="à encaisser" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
         <Surface style={{ padding: "22px 24px" }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 18 }}>Répartition des paiements</p>
           {[["💳", "Carte bancaire", byMethod.card || 0], ["💵", "Espèces", byMethod.cash || 0], ["📱", "Apple / Google Pay", (byMethod.apple_pay || 0) + (byMethod.google_pay || 0)]].map(([icon, label, val]) => (
@@ -3891,6 +3909,7 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 // ─────────────────────────────────────────────────────────────────────────────
 function CRMTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
+  const isMobile = useIsMobile();
   // Use shared store — updates live when new QR orders come in
   const customers = store.customers ?? [];
   const [segment, setSegment] = useState("all");
@@ -3946,16 +3965,16 @@ function CRMTab({ restaurant, store }) {
   return (
     <div>
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 14, marginBottom: isMobile ? 14 : 24 }}>
         {[
-          { label: "Total clients", value: customers.length, color: C.dark },
-          { label: "Actifs (30j)", value: activeCount, color: C.accentGreen },
+          { label: "Clients", value: customers.length, color: C.dark },
+          { label: "Actifs 30j", value: activeCount, color: C.accentGreen },
           { label: "À relancer", value: inactiveCount, color: C.accentOrange },
-          { label: "Panier moyen", value: `${avgTicket.toFixed(2)}€`, color: C.accentPurple },
+          { label: "Panier moy.", value: `${avgTicket.toFixed(0)}€`, color: C.accentPurple },
         ].map(k => (
-          <Surface key={k.label} style={{ padding: "16px 18px" }}>
-            <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 8, fontWeight: 500 }}>{k.label}</p>
-            <p style={{ fontSize: 26, fontWeight: 800, color: k.color, letterSpacing: "-0.03em" }}>{k.value}</p>
+          <Surface key={k.label} style={{ padding: isMobile ? "10px 12px" : "16px 18px" }}>
+            <p style={{ fontSize: isMobile ? 10 : 12, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>{k.label}</p>
+            <p style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: k.color, letterSpacing: "-0.03em" }}>{k.value}</p>
           </Surface>
         ))}
       </div>
@@ -3998,7 +4017,7 @@ function CRMTab({ restaurant, store }) {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un client..." style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 14, marginBottom: 16, outline: "none", ...FF }} />
 
       {/* Customer list */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", gap: isMobile ? 8 : 12 }}>
         {filtered.map(c => {
           const statusColor = c.seg === "active" ? C.accentGreen : c.seg === "atrisk" ? C.accent : c.seg === "lost" ? "#aaa" : C.accentOrange;
           const statusLabel = c.seg === "active" ? "Actif" : c.seg === "atrisk" ? "À risque" : c.seg === "lost" ? "Perdu" : "Inactif";
