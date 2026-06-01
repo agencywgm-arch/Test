@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback, createContext, useContext, Co
 import { supabase } from "./lib/supabase";
 import QRCode from "qrcode";
 
+// Base path for QR URL generation — injected at build time, empty on Vercel
+const BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
+
 class ErrorBoundary extends Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(e) { return { err: e }; }
@@ -634,7 +637,7 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
     // Create table records
     const tableRows = Array.from({ length: Number(form.tables_count) }, (_, i) => ({
       restaurant_id: data.id, number: i + 1,
-      qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${data.id}/t/${i + 1}`,
+      qr_url: `${window.location.origin}${BASE_PATH}/r/${data.id}/t/${i + 1}`,
     }));
     await supabase.from("tables").insert(tableRows);
     setRestaurants(p => [data, ...p]);
@@ -1368,8 +1371,7 @@ function QRTab({ restaurant }) {
   const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const baseUrl = customBase || window.location.origin;
-  const basePath = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test";
-  const url = `${baseUrl}${basePath}/r/${restaurant.id}/t/${sel}`;
+  const url = `${baseUrl}${BASE_PATH}/r/${restaurant.id}/t/${sel}`;
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
@@ -3331,7 +3333,7 @@ function ClientView({ restaurant, onBack }) {
       let { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
       if (!tbl) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.id}/t/${tableNum}` })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` })
           .select("id").single();
         tbl = newTbl;
       }
@@ -4342,7 +4344,7 @@ function CustomerPage({ slug, tableNum }) {
       let tid = tableId;
       if (!tid) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.id}/t/${tableNum}` })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` })
           .select("id").single();
         tid = newTbl?.id ?? null;
       }
