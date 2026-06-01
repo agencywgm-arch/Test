@@ -165,6 +165,8 @@ function useStore(restaurantId) {
   const [doneOrders, setDoneOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [ingredients, setIngredients] = useState([]);
+  const [promotions, setPromotions] = useState([]);
+  const [customers, setCustomers] = useState([]);
 
   const pushNotif = useCallback((msg, type = "info") => {
     const n = { id: Date.now(), msg, type };
@@ -172,17 +174,57 @@ function useStore(restaurantId) {
     setTimeout(() => setNotifications(p => p.filter(x => x.id !== n.id)), 5000);
   }, []);
 
+  // Launch a campaign: creates a promo + increments send_count live
+  const launchCampaign = useCallback(async (campaignData, isDemo) => {
+    const newPromo = {
+      id: "camp_" + Date.now(),
+      restaurant_id: restaurantId,
+      name: campaignData.name,
+      description: campaignData.msg || "",
+      discount_percent: 0,
+      emoji: campaignData.emoji,
+      color: campaignData.color,
+      type: "event",
+      start_date: null, end_date: null,
+      active: true,
+      send_count: campaignData.clientCount || 0,
+      created_at: new Date().toISOString(),
+    };
+    setPromotions(prev => [newPromo, ...prev]);
+    pushNotif(`🚀 Campagne "${campaignData.name}" lancée vers ${campaignData.clientCount} clients !`, "success");
+    if (!isDemo) {
+      try {
+        await supabase.from("promotions").insert({
+          restaurant_id: restaurantId,
+          name: newPromo.name, description: newPromo.description,
+          discount_percent: 0, emoji: newPromo.emoji, color: newPromo.color,
+          type: "event", active: true, send_count: newPromo.send_count,
+        });
+      } catch {}
+    }
+  }, [restaurantId, pushNotif]);
+
   useEffect(() => {
     if (!restaurantId) { setOrders([]); setDoneOrders([]); return; }
     if (restaurantId === "demo") {
       setOrders(DEMO_ORDERS);
       setDoneOrders(DEMO_DONE_ORDERS);
       setIngredients(DEMO_INGREDIENTS);
+      setPromotions(DEMO_PROMOS);
+      setCustomers(DEMO_CUSTOMERS);
       return;
     }
 
     supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId)
       .then(({ data }) => setIngredients(data ?? []));
+
+    supabase.from("promotions").select("*").eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setPromotions(data ?? []));
+
+    supabase.from("customers").select("*").eq("restaurant_id", restaurantId)
+      .order("last_visit", { ascending: false })
+      .then(({ data }) => setCustomers(data ?? []));
 
     supabase.from("orders").select(ORDER_QUERY)
       .eq("restaurant_id", restaurantId).neq("status", "DONE")
@@ -217,6 +259,18 @@ function useStore(restaurantId) {
           }
         }
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `restaurant_id=eq.${restaurantId}` },
+        async () => {
+          const { data } = await supabase.from("customers").select("*").eq("restaurant_id", restaurantId).order("last_visit", { ascending: false });
+          setCustomers(data ?? []);
+        }
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "promotions", filter: `restaurant_id=eq.${restaurantId}` },
+        async () => {
+          const { data } = await supabase.from("promotions").select("*").eq("restaurant_id", restaurantId).order("created_at", { ascending: false });
+          setPromotions(data ?? []);
+        }
+      )
       .subscribe();
 
     const tick = setInterval(() => {
@@ -227,7 +281,7 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients };
+  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -610,8 +664,10 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
   const clientCount = campaign.clientCount ?? 0;
   const estRevenue = (clientCount * avgTicket).toFixed(0);
 
-  function send() {
+  async function send() {
     setSent(true);
+    // Live update: push to store (promotions tab + CRM tab update instantly)
+    await store.launchCampaign(campaign, isDemo);
     setTimeout(onClose, 1800);
   }
 
@@ -2058,7 +2114,9 @@ const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji
 
 function PromosTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
-  const [promos, setPromos] = useState([]);
+  // Use shared store so campaign launches from alerts appear instantly here
+  const promos = store.promotions ?? [];
+  const setPromos = store.setPromotions;
   const [modal, setModal] = useState(null); // null | "new" | "edit" | "relance"
   const [editing, setEditing] = useState(null);
   const [relancePromo, setRelancePromo] = useState(null);
@@ -2071,12 +2129,6 @@ function PromosTab({ restaurant, store }) {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
   }
-
-  useEffect(() => {
-    if (isDemo) { setPromos(DEMO_PROMOS); return; }
-    supabase.from("promotions").select("*").eq("restaurant_id", restaurant.id).order("created_at", { ascending: false })
-      .then(({ data }) => setPromos(data ?? []));
-  }, [restaurant.id]);
 
   async function savePromo() {
     if (!form.name.trim()) return;
@@ -3577,17 +3629,11 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 // ─────────────────────────────────────────────────────────────────────────────
 function CRMTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
-  const [customers, setCustomers] = useState([]);
+  // Use shared store — updates live when new QR orders come in
+  const customers = store.customers ?? [];
   const [segment, setSegment] = useState("all");
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null); // customer detail modal
-
-  useEffect(() => {
-    if (isDemo) { setCustomers(DEMO_CUSTOMERS); return; }
-    supabase.from("customers").select("*").eq("restaurant_id", restaurant.id)
-      .order("last_visit", { ascending: false })
-      .then(({ data }) => setCustomers(data ?? []));
-  }, [restaurant.id]);
+  const [selected, setSelected] = useState(null);
 
   const now = new Date();
   function daysSince(dateStr) {
