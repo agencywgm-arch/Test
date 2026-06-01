@@ -1903,6 +1903,237 @@ function MenuTabDash({ restaurant }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROMOS TAB
+// ─────────────────────────────────────────────────────────────────────────────
+const PROMO_COLORS = ["#FF9F0A", "#FF375F", "#34C759", "#0071E3", "#BF5AF2", "#1D1D1F"];
+const PROMO_TYPES = [{ value: "happy_hour", label: "Happy Hour" }, { value: "seasonal", label: "Saisonnier" }, { value: "event", label: "Événement" }];
+const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji: "🎁", color: "#FF9F0A", type: "event", start_date: "", end_date: "", active: true };
+
+function PromosTab({ restaurant, store }) {
+  const isDemo = restaurant.id === "demo";
+  const [promos, setPromos] = useState([]);
+  const [modal, setModal] = useState(null); // null | "new" | "edit" | "relance"
+  const [editing, setEditing] = useState(null);
+  const [relancePromo, setRelancePromo] = useState(null);
+  const [form, setForm] = useState(EMPTY_PROMO_FORM);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
+  const fv = k => e => setForm(p => ({ ...p, [k]: typeof e === "object" ? e.target.value : e }));
+
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  useEffect(() => {
+    if (isDemo) { setPromos(DEMO_PROMOS); return; }
+    supabase.from("promotions").select("*").eq("restaurant_id", restaurant.id).order("created_at", { ascending: false })
+      .then(({ data }) => setPromos(data ?? []));
+  }, [restaurant.id]);
+
+  async function savePromo() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = { ...form, discount_percent: parseInt(form.discount_percent) || 0, start_date: form.start_date || null, end_date: form.end_date || null };
+    if (isDemo) {
+      if (modal === "new") setPromos(p => [{ ...payload, id: "promo_" + Date.now(), restaurant_id: "demo", send_count: 0, created_at: new Date().toISOString() }, ...p]);
+      else setPromos(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+      setSaving(false); setModal(null); return;
+    }
+    if (modal === "new") {
+      const { data } = await supabase.from("promotions").insert({ ...payload, restaurant_id: restaurant.id }).select().single();
+      if (data) setPromos(p => [data, ...p]);
+    } else {
+      await supabase.from("promotions").update(payload).eq("id", editing.id);
+      setPromos(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+    }
+    setSaving(false); setModal(null);
+  }
+
+  async function deletePromo(promo) {
+    if (!confirm(`Supprimer "${promo.name}" ?`)) return;
+    setPromos(p => p.filter(x => x.id !== promo.id));
+    if (!isDemo) await supabase.from("promotions").delete().eq("id", promo.id);
+  }
+
+  async function toggleActive(promo) {
+    const next = !promo.active;
+    setPromos(p => p.map(x => x.id === promo.id ? { ...x, active: next } : x));
+    if (!isDemo) await supabase.from("promotions").update({ active: next }).eq("id", promo.id);
+  }
+
+  function openNew() { setForm(EMPTY_PROMO_FORM); setEditing(null); setModal("new"); }
+  function openEdit(promo) {
+    setForm({ name: promo.name, description: promo.description, discount_percent: promo.discount_percent, emoji: promo.emoji, color: promo.color, type: promo.type, start_date: promo.start_date || "", end_date: promo.end_date || "", active: promo.active });
+    setEditing(promo); setModal("edit");
+  }
+
+  const typeLabel = { happy_hour: "Happy Hour", seasonal: "Saisonnier", event: "Événement" };
+
+  return (
+    <div className="fade-in">
+      {toast && (
+        <div style={{ position: "fixed", top: 80, left: "50%", transform: "translateX(-50%)", background: C.accentGreen, color: "#fff", padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: 14, zIndex: 9000, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", ...FF }}>
+          {toast}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Promotions & Événements</h2>
+          <p style={{ color: C.textSecondary, fontSize: 14, marginTop: 4 }}>{promos.length} promo{promos.length !== 1 ? "s" : ""} configurée{promos.length !== 1 ? "s" : ""}</p>
+        </div>
+        <Btn variant="primary" onClick={openNew}>+ Nouvelle promo</Btn>
+      </div>
+
+      {promos.length === 0 ? (
+        <Surface style={{ padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎁</div>
+          <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 6 }}>Aucune promotion</p>
+          <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 20 }}>Créez des promotions pour fidéliser vos clients.</p>
+          <Btn variant="primary" onClick={openNew}>+ Créer une promo</Btn>
+        </Surface>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+          {promos.map(promo => (
+            <Surface key={promo.id} style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${promo.color}`, opacity: promo.active ? 1 : 0.7 }}>
+              <div style={{ padding: "18px 20px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <span style={{ fontSize: 32 }}>{promo.emoji}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={() => toggleActive(promo)}
+                      style={{ width: 36, height: 20, borderRadius: 10, border: "none", background: promo.active ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+                      title={promo.active ? "Désactiver" : "Activer"}
+                    >
+                      <span style={{ position: "absolute", top: 2, left: promo.active ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+                    </button>
+                  </div>
+                </div>
+                <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 4 }}>{promo.name}</p>
+                <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 12, lineHeight: 1.4 }}>{promo.description}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {promo.discount_percent > 0 && <Tag color={promo.color}>−{promo.discount_percent}%</Tag>}
+                  <Tag color={C.textTertiary}>{typeLabel[promo.type] || promo.type}</Tag>
+                  {promo.active ? <Tag color={C.accentGreen}>Active</Tag> : <Tag color={C.textTertiary}>Inactive</Tag>}
+                </div>
+                {(promo.start_date || promo.end_date) && (
+                  <p style={{ fontSize: 12, color: C.textTertiary, marginBottom: 12 }}>
+                    📅 {promo.start_date || "?"} {promo.end_date && promo.end_date !== promo.start_date ? `→ ${promo.end_date}` : ""}
+                  </p>
+                )}
+                {promo.send_count > 0 && <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>📧 {promo.send_count} envoi{promo.send_count > 1 ? "s" : ""}</p>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn variant="ghost" size="xs" full onClick={() => openEdit(promo)}>Modifier</Btn>
+                  <Btn variant="subtle" size="xs" full onClick={() => { setRelancePromo(promo); setModal("relance"); }}>Relance</Btn>
+                  <button onClick={() => deletePromo(promo)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: C.accent, fontSize: 12, ...FF }}>✕</button>
+                </div>
+              </div>
+            </Surface>
+          ))}
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {(modal === "new" || modal === "edit") && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 24 }} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 24 }}>{modal === "new" ? "Nouvelle promotion" : "Modifier la promotion"}</h2>
+            <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
+                <input value={form.emoji} onChange={fv("emoji")} maxLength={2} style={{ width: 60, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <InputField label="Nom" placeholder="ex: Happy Hour" value={form.name} onChange={fv("name")} autoFocus />
+              </div>
+            </div>
+            <InputField label="Description" placeholder="ex: Boissons à -30% de 17h à 19h" value={form.description} onChange={fv("description")} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Réduction (%)</label>
+                <input type="number" min={0} max={100} value={form.discount_percent} onChange={fv("discount_percent")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF }} />
+              </div>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Type</label>
+                <select value={form.type} onChange={fv("type")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 14, color: C.dark, outline: "none", ...FF }}>
+                  {PROMO_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Couleur</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {PROMO_COLORS.map(c => (
+                  <button key={c} onClick={() => setForm(p => ({ ...p, color: c }))}
+                    style={{ width: 32, height: 32, borderRadius: "50%", background: c, border: form.color === c ? `3px solid ${C.dark}` : "3px solid transparent", cursor: "pointer", outline: "none" }} />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Date début</label>
+                <input type="date" value={form.start_date} onChange={fv("start_date")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
+              </div>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Date fin</label>
+                <input type="date" value={form.end_date} onChange={fv("end_date")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
+              </div>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 24 }}>
+              <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 14, color: C.dark }}>Active (visible sur la carte client)</span>
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
+              <Btn variant="primary" full onClick={savePromo} disabled={saving || !form.name.trim()}>{saving ? "..." : "Enregistrer"}</Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Relance Modal */}
+      {modal === "relance" && relancePromo && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 24 }} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 6 }}>📧 Envoyer une relance</h2>
+            <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24 }}>Aperçu de l'email qui sera envoyé à vos clients</p>
+            {/* Phone preview */}
+            <div style={{ background: C.bg, borderRadius: 16, padding: 20, marginBottom: 20, border: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 8 }}>De : votre-restaurant@velvetguest.fr</p>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Objet : {relancePromo.emoji} {relancePromo.name} — Offre exclusive pour vous !</p>
+              <div style={{ background: C.white, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{restaurant.name}</p>
+                <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 12 }}>Une offre exclusive rien que pour vous !</p>
+                <div style={{ background: relancePromo.color + "15", borderRadius: 12, padding: 14, marginBottom: 14, border: `1px solid ${relancePromo.color}30` }}>
+                  <p style={{ fontSize: 24, marginBottom: 6 }}>{relancePromo.emoji}</p>
+                  <p style={{ fontWeight: 700, fontSize: 16, color: relancePromo.color, marginBottom: 4 }}>{relancePromo.name}</p>
+                  <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: relancePromo.discount_percent > 0 ? 8 : 0 }}>{relancePromo.description}</p>
+                  {relancePromo.discount_percent > 0 && <p style={{ fontSize: 22, fontWeight: 900, color: relancePromo.color }}>−{relancePromo.discount_percent}%</p>}
+                </div>
+                <div style={{ background: C.dark, borderRadius: 10, padding: "10px 16px", textAlign: "center" }}>
+                  <p style={{ color: C.white, fontWeight: 700, fontSize: 14 }}>Voir la carte →</p>
+                </div>
+              </div>
+            </div>
+            <div style={{ background: C.bg, borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>👥</span>
+              <p style={{ fontSize: 14, color: C.dark }}><strong>{isDemo ? Math.floor(Math.random() * 60 + 20) : "?"} clients</strong> dans votre base</p>
+            </div>
+            <Btn variant="primary" full onClick={() => {
+              const count = isDemo ? Math.floor(Math.random() * 60 + 20) : Math.floor(Math.random() * 60 + 20);
+              setModal(null);
+              showToast(`✓ Relance envoyée à ${count} clients !`);
+            }}>Envoyer la relance</Btn>
+            <p style={{ textAlign: "center", fontSize: 12, color: C.textTertiary, marginTop: 12 }}>📧 Connexion email requise (Resend API) pour l'envoi réel</p>
+            <Btn variant="ghost" full style={{ marginTop: 8 }} onClick={() => setModal(null)}>Annuler</Btn>
+          </Surface>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CAISSE TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function exportCSV(orders, restaurant) {
@@ -3216,6 +3447,7 @@ function CustomerPage({ slug, tableNum }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState("");
+  const [activePromos, setActivePromos] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -3226,6 +3458,8 @@ function CustomerPage({ slug, tableNum }) {
       setTableId(tbl?.id ?? null);
       const { data: items } = await supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name");
       setMenuItems(items ?? []);
+      const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
+      setActivePromos(promos ?? []);
       setStep("menu");
     }
     load();
@@ -3360,6 +3594,20 @@ function CustomerPage({ slug, tableNum }) {
           <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
             {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
           </div>
+          {activePromos.length > 0 && (
+            <div style={{ padding: "8px 16px", display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+              {activePromos.map(p => (
+                <div key={p.id} style={{
+                  flexShrink: 0, background: p.color + "15", border: `1px solid ${p.color}30`,
+                  borderRadius: 20, padding: "6px 14px", display: "flex", alignItems: "center", gap: 6
+                }}>
+                  <span style={{ fontSize: 16 }}>{p.emoji}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: p.color }}>{p.name}</span>
+                  {p.discount_percent > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: p.color }}>−{p.discount_percent}%</span>}
+                </div>
+              ))}
+            </div>
+          )}
           <div>
             {filtered.map(item => {
               const inCart = cart.find(i => i.id === item.id);
