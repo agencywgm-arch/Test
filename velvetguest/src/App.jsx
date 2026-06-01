@@ -597,7 +597,7 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
     // Create table records
     const tableRows = Array.from({ length: Number(form.tables_count) }, (_, i) => ({
       restaurant_id: data.id, number: i + 1,
-      qr_url: `${window.location.origin}/r/${slug}/t/${i + 1}`,
+      qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${slug}/t/${i + 1}`,
     }));
     await supabase.from("tables").insert(tableRows);
     setRestaurants(p => [data, ...p]);
@@ -1236,7 +1236,8 @@ function QRTab({ restaurant }) {
   const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const baseUrl = customBase || window.location.origin;
-  const url = `${baseUrl}/r/${restaurant.slug}/t/${sel}`;
+  const basePath = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test";
+  const url = `${baseUrl}${basePath}/r/${restaurant.slug}/t/${sel}`;
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
@@ -2235,16 +2236,16 @@ const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji
 
 function EventCalendar({ promos }) {
   const [cur, setCur] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
+  const [selectedDay, setSelectedDay] = useState(null);
   const today = new Date();
+  const isMobile = useIsMobile();
 
   const firstDay = new Date(cur.year, cur.month, 1);
   const daysInMonth = new Date(cur.year, cur.month + 1, 0).getDate();
   const startDow = (firstDay.getDay() + 6) % 7; // Monday=0
 
-  // Seasonal events for this month
   const seasonalThisMonth = SEASONAL_EVENTS.filter(e => e.month === cur.month + 1);
 
-  // Promos active in this month
   const promoEvents = promos.filter(p => {
     if (!p.start_date && !p.end_date) return false;
     const start = p.start_date ? new Date(p.start_date) : null;
@@ -2257,7 +2258,7 @@ function EventCalendar({ promos }) {
   });
 
   const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
-  const DAYS_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+  const DAYS_FR = isMobile ? ["L","M","M","J","V","S","D"] : ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
 
   function getDayEvents(day) {
     const date = new Date(cur.year, cur.month, day);
@@ -2276,39 +2277,40 @@ function EventCalendar({ promos }) {
     .concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
   while (cells.length % 7 !== 0) cells.push(null);
 
+  const selectedEvents = selectedDay ? getDayEvents(selectedDay) : null;
+
   return (
     <Surface style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
-      {/* Calendar header */}
-      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onClick={() => setCur(p => { const d = new Date(p.year, p.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
-          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, color: C.dark, ...FF }}>‹</button>
-        <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{MONTHS_FR[cur.month]} {cur.year}</p>
-        <button onClick={() => setCur(p => { const d = new Date(p.year, p.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; })}
-          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, color: C.dark, ...FF }}>›</button>
+      <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={() => { setCur(p => { const d = new Date(p.year, p.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; }); setSelectedDay(null); }}
+          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 18, color: C.dark, ...FF }}>‹</button>
+        <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{MONTHS_FR[cur.month]} {cur.year}</p>
+        <button onClick={() => { setCur(p => { const d = new Date(p.year, p.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; }); setSelectedDay(null); }}
+          style={{ background: C.bg, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 18, color: C.dark, ...FF }}>›</button>
       </div>
-      {/* Day headers */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", borderBottom: `1px solid ${C.border}` }}>
-        {DAYS_FR.map(d => <div key={d} style={{ padding: "8px 0", textAlign: "center", fontSize: 11, fontWeight: 700, color: C.textTertiary }}>{d}</div>)}
+        {DAYS_FR.map((d, i) => <div key={i} style={{ padding: "6px 0", textAlign: "center", fontSize: 11, fontWeight: 700, color: C.textTertiary }}>{d}</div>)}
       </div>
-      {/* Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
         {cells.map((day, i) => {
           const isToday = day && today.getDate() === day && today.getMonth() === cur.month && today.getFullYear() === cur.year;
+          const isSel = day === selectedDay;
           const { seasonal, promos: dayPromos } = day ? getDayEvents(day) : { seasonal: [], promos: [] };
           const hasEvent = seasonal.length > 0 || dayPromos.length > 0;
           return (
-            <div key={i} style={{ minHeight: 68, padding: "6px 6px 4px", borderBottom: i < cells.length - 7 ? `1px solid ${C.border}` : "none", borderRight: (i + 1) % 7 !== 0 ? `1px solid ${C.border}` : "none", background: isToday ? C.dark + "08" : "transparent" }}>
+            <div key={i} onClick={() => day && setSelectedDay(isSel ? null : day)}
+              style={{ minHeight: isMobile ? 48 : 64, padding: isMobile ? "4px 3px 2px" : "6px 6px 4px", borderBottom: i < cells.length - 7 ? `1px solid ${C.border}` : "none", borderRight: (i + 1) % 7 !== 0 ? `1px solid ${C.border}` : "none", background: isSel ? C.dark + "10" : isToday ? C.accentBlue + "08" : "transparent", cursor: day ? "pointer" : "default" }}>
               {day && <>
-                <div style={{ width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: isToday ? C.dark : "transparent", color: isToday ? C.white : hasEvent ? C.dark : C.textTertiary, fontSize: 12, fontWeight: isToday || hasEvent ? 700 : 400, marginBottom: 3 }}>{day}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <div style={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: isToday ? C.dark : "transparent", color: isToday ? C.white : hasEvent ? C.dark : C.textTertiary, fontSize: isMobile ? 11 : 12, fontWeight: isToday || hasEvent ? 700 : 400, marginBottom: 2 }}>{day}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   {seasonal.map(ev => (
-                    <div key={ev.name} title={ev.name} style={{ background: ev.color + "20", borderLeft: `2px solid ${ev.color}`, borderRadius: 4, padding: "1px 4px", fontSize: 10, fontWeight: 600, color: ev.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                      {ev.emoji} {ev.name}
+                    <div key={ev.name} title={ev.name} style={{ background: ev.color + "20", borderLeft: `2px solid ${ev.color}`, borderRadius: 3, padding: isMobile ? "1px 2px" : "1px 4px", fontSize: isMobile ? 10 : 10, fontWeight: 600, color: ev.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                      {isMobile ? ev.emoji : `${ev.emoji} ${ev.name}`}
                     </div>
                   ))}
                   {dayPromos.map(p => (
-                    <div key={p.id} title={p.name} style={{ background: p.color + "20", borderLeft: `2px solid ${p.color}`, borderRadius: 4, padding: "1px 4px", fontSize: 10, fontWeight: 600, color: p.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                      {p.emoji} {p.name}
+                    <div key={p.id} title={p.name} style={{ background: p.color + "20", borderLeft: `2px solid ${p.color}`, borderRadius: 3, padding: isMobile ? "1px 2px" : "1px 4px", fontSize: 10, fontWeight: 600, color: p.color, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                      {isMobile ? p.emoji : `${p.emoji} ${p.name}`}
                     </div>
                   ))}
                 </div>
@@ -2317,15 +2319,44 @@ function EventCalendar({ promos }) {
           );
         })}
       </div>
-      {/* Legend */}
+      {/* Selected day popup */}
+      {selectedDay && selectedEvents && (selectedEvents.seasonal.length > 0 || selectedEvents.promos.length > 0) && (
+        <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, background: C.bg }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: C.dark, marginBottom: 8 }}>
+            {selectedDay} {MONTHS_FR[cur.month]}
+          </p>
+          {selectedEvents.seasonal.map(ev => (
+            <div key={ev.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: ev.color + "12", borderRadius: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 18 }}>{ev.emoji}</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: ev.color }}>{ev.name}</p>
+                <p style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.4 }}>{ev.msg}</p>
+              </div>
+            </div>
+          ))}
+          {selectedEvents.promos.map(p => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: p.color + "12", borderRadius: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 18 }}>{p.emoji}</span>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: p.color }}>{p.name}</p>
+                <p style={{ fontSize: 12, color: C.textSecondary }}>{p.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Monthly event list */}
       {(seasonalThisMonth.length > 0 || promoEvents.length > 0) && (
-        <div style={{ padding: "12px 20px", borderTop: `1px solid ${C.border}`, display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {seasonalThisMonth.map(ev => (
-            <span key={ev.name} style={{ fontSize: 11, background: ev.color + "15", color: ev.color, fontWeight: 600, padding: "3px 10px", borderRadius: 20 }}>{ev.emoji} {ev.name}</span>
-          ))}
-          {promoEvents.map(p => (
-            <span key={p.id} style={{ fontSize: 11, background: p.color + "15", color: p.color, fontWeight: 600, padding: "3px 10px", borderRadius: 20 }}>{p.emoji} {p.name}</span>
-          ))}
+        <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Ce mois</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {seasonalThisMonth.map(ev => (
+              <span key={ev.name} style={{ fontSize: 11, background: ev.color + "15", color: ev.color, fontWeight: 600, padding: "4px 10px", borderRadius: 20 }}>{ev.emoji} {ev.name} (j.{ev.day})</span>
+            ))}
+            {promoEvents.map(p => (
+              <span key={p.id} style={{ fontSize: 11, background: p.color + "15", color: p.color, fontWeight: 600, padding: "4px 10px", borderRadius: 20 }}>{p.emoji} {p.name}</span>
+            ))}
+          </div>
         </div>
       )}
     </Surface>
@@ -3162,7 +3193,7 @@ function ClientView({ restaurant, onBack }) {
       let { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
       if (!tbl) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}/r/${restaurant.slug}/t/${tableNum}` })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.slug}/t/${tableNum}` })
           .select("id").single();
         tbl = newTbl;
       }
@@ -3893,6 +3924,7 @@ function CRMTab({ restaurant, store }) {
     { id: "inactive", label: "Inactifs 30j", color: C.accentOrange },
     { id: "atrisk", label: "À risque 60j", color: C.accent },
     { id: "lost", label: "Perdus 90j+", color: "#888" },
+    { id: "relanced", label: "✅ Relancés", color: C.accentGreen },
   ];
 
   const filtered = withSegment
@@ -4078,6 +4110,9 @@ function CustomerPage({ slug, tableNum }) {
 
   const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
   const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  // Apply best active promo discount to all items
+  const bestDiscount = activePromos.reduce((max, p) => Math.max(max, p.discount_percent || 0), 0);
+  const filteredWithPromo = filtered.map(item => bestDiscount > 0 ? { ...item, _originalPrice: item.price, price: +(item.price * (1 - bestDiscount / 100)).toFixed(2) } : item);
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -4233,7 +4268,7 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           )}
           <div>
-            {filtered.map(item => {
+            {filteredWithPromo.map(item => {
               const inCart = cart.find(i => i.id === item.id);
               return (
                 <div key={item.id} style={{ display: "flex", gap: 12, padding: "16px", borderBottom: `1px solid ${C.border}` }}>
@@ -4246,7 +4281,10 @@ function CustomerPage({ slug, tableNum }) {
                         <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{item.name}</p>
                         {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block", marginTop: 3 }}>⭐ Populaire</span>}
                       </div>
-                      <p style={{ fontWeight: 800, fontSize: 16, color: C.dark, flexShrink: 0, marginLeft: 8 }}>{Number(item.price).toFixed(2)}€</p>
+                      <div style={{ flexShrink: 0, marginLeft: 8, textAlign: "right" }}>
+                        {item._originalPrice && <p style={{ fontSize: 12, color: C.textTertiary, textDecoration: "line-through" }}>{Number(item._originalPrice).toFixed(2)}€</p>}
+                        <p style={{ fontWeight: 800, fontSize: 16, color: item._originalPrice ? C.accentGreen : C.dark }}>{Number(item.price).toFixed(2)}€</p>
+                      </div>
                     </div>
                     {item.description && <p style={{ color: C.textSecondary, fontSize: 13, margin: "5px 0 10px", lineHeight: 1.4 }}>{item.description}</p>}
                     {inCart ? (
