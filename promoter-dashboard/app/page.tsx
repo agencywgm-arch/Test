@@ -23,12 +23,12 @@ const mockVIPRequests = [
 ];
 
 const mockActivity = [
-  { icon: "💬", text: "AI replied to 14 guests in the last hour", time: "2 min ago", type: "ai" },
-  { icon: "⭐", text: "New VIP request from Alexandre P. — €3,000 budget", time: "5 min ago", type: "vip" },
-  { icon: "✅", text: "Emma L. confirmed for Saturday Night", time: "12 min ago", type: "confirm" },
-  { icon: "📤", text: "Campaign sent to 48 profiles", time: "30 min ago", type: "campaign" },
-  { icon: "🎉", text: "Event 'Black Label Night' launched", time: "1 hr ago", type: "event" },
-  { icon: "💬", text: "AI handled 23 dress code inquiries", time: "2 hr ago", type: "ai" },
+  { icon: "💬", text: "AI replied to 14 guests in the last hour", time: "2 min ago" },
+  { icon: "⭐", text: "New VIP request from Alexandre P. — €3,000 budget", time: "5 min ago" },
+  { icon: "✅", text: "Emma L. confirmed for Saturday Night", time: "12 min ago" },
+  { icon: "📤", text: "Campaign sent to 48 profiles", time: "30 min ago" },
+  { icon: "🎉", text: "Event 'Black Label Night' launched", time: "1 hr ago" },
+  { icon: "💬", text: "AI handled 23 dress code inquiries", time: "2 hr ago" },
 ];
 
 const mockConversations = [
@@ -63,6 +63,7 @@ const Icon = ({ name, size = 20, className = "" }: { name: string; size?: number
     sparkle: <><path d="M12 3L9.27 9.27 3 12l6.27 2.73L12 21l2.73-6.27L21 12l-6.27-2.73z"/></>,
     instagram: <><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></>,
     target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
+    menu: <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -96,7 +97,13 @@ const GlobalStyles = () => (
       --text-muted: #4A4540;
     }
 
-    html, body { background: var(--bg); color: var(--text); font-family: 'Josefin Sans', sans-serif; overflow-x: hidden; }
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Josefin Sans', sans-serif;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
 
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -104,16 +111,12 @@ const GlobalStyles = () => (
 
     .font-display { font-family: 'Cormorant Garamond', serif; }
 
-    .gold-gradient { background: linear-gradient(135deg, #C9A84C 0%, #E8C96B 50%, #C9A84C 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-
-    .gold-border { border: 1px solid var(--border); }
-    .gold-border-bright { border: 1px solid var(--border-bright); }
-
-    .surface { background: var(--surface); }
-    .surface2 { background: var(--surface2); }
-    .surface3 { background: var(--surface3); }
-
-    .glow-gold { box-shadow: 0 0 30px rgba(201, 168, 76, 0.08), inset 0 0 30px rgba(201, 168, 76, 0.03); }
+    .gold-gradient {
+      background: linear-gradient(135deg, #C9A84C 0%, #E8C96B 50%, #C9A84C 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
 
     .btn-gold {
       background: linear-gradient(135deg, #C9A84C, #E8C96B);
@@ -130,6 +133,7 @@ const GlobalStyles = () => (
       border-radius: 2px;
     }
     .btn-gold:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(201, 168, 76, 0.3); }
+    .btn-gold:active { transform: translateY(0); }
 
     .btn-outline {
       background: transparent;
@@ -167,7 +171,7 @@ const GlobalStyles = () => (
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 24px;
+      padding: 20px;
       position: relative;
       overflow: hidden;
       transition: all 0.3s ease;
@@ -219,6 +223,7 @@ const GlobalStyles = () => (
       width: 100%;
       outline: none;
       transition: all 0.3s ease;
+      -webkit-appearance: none;
     }
     .input-luxury:focus { border-color: var(--gold-dim); background: rgba(26,26,26,0.9); }
     .input-luxury::placeholder { color: var(--text-muted); }
@@ -237,7 +242,7 @@ const GlobalStyles = () => (
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 11px 16px;
+      padding: 12px 16px;
       border-radius: 2px;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -248,6 +253,7 @@ const GlobalStyles = () => (
       color: var(--text-muted);
       border: 1px solid transparent;
       margin-bottom: 2px;
+      -webkit-tap-highlight-color: transparent;
     }
     .sidebar-item:hover { color: var(--text-dim); background: rgba(255,255,255,0.03); }
     .sidebar-item.active { color: var(--gold); background: var(--gold-glow); border-color: var(--border); }
@@ -256,7 +262,7 @@ const GlobalStyles = () => (
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 20px;
+      padding: 16px;
       transition: all 0.3s ease;
     }
     .vip-request:hover { border-color: var(--border-bright); }
@@ -264,7 +270,7 @@ const GlobalStyles = () => (
     .table-card {
       background: var(--surface2);
       border-radius: 4px;
-      padding: 28px;
+      padding: 24px;
       position: relative;
       overflow: hidden;
       transition: all 0.3s ease;
@@ -273,7 +279,6 @@ const GlobalStyles = () => (
 
     .noise-overlay {
       position: fixed; inset: 0; pointer-events: none; z-index: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
       opacity: 0.4;
     }
 
@@ -310,7 +315,54 @@ const GlobalStyles = () => (
     .tag-blue { background: rgba(96,165,250,0.08); color: #60A5FA; border: 1px solid rgba(96,165,250,0.15); }
     .tag-dim { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.06); }
 
-    .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border-bright), transparent); margin: 24px 0; }
+    .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border-bright), transparent); margin: 20px 0; }
+
+    /* ---- RESPONSIVE GRID UTILITIES ---- */
+    .rg-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .rg-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .rg-profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .rg-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .rg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .rg-qa { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    /* Mobile overlay */
+    .mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 99;
+      backdrop-filter: blur(2px);
+    }
+    .mobile-overlay.open { display: block; }
+
+    /* ---- TABLET (≤ 1024px) ---- */
+    @media (max-width: 1024px) {
+      .rg-metrics { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ---- MOBILE (≤ 768px) ---- */
+    @media (max-width: 768px) {
+      .rg-2 { grid-template-columns: 1fr; }
+      .rg-metrics { grid-template-columns: 1fr 1fr; }
+      .rg-qa { grid-template-columns: 1fr; }
+      .rg-actions { grid-template-columns: 1fr 1fr; }
+      .main-content { padding: 16px 14px 60px !important; }
+      .page-title { font-size: 28px !important; }
+      .metric-value { font-size: 32px !important; }
+      .ai-banner-stats { display: none !important; }
+      .hide-mobile { display: none !important; }
+      .metric-card { padding: 16px; }
+      .table-card { padding: 18px; }
+    }
+
+    /* ---- SMALL MOBILE (≤ 480px) ---- */
+    @media (max-width: 480px) {
+      .rg-metrics { grid-template-columns: 1fr 1fr; }
+      .rg-actions { grid-template-columns: 1fr 1fr; }
+      .vip-actions { flex-wrap: wrap; }
+      .chat-window-height { height: calc(100dvh - 180px) !important; }
+    }
   `}</style>
 );
 
@@ -322,11 +374,17 @@ const Sidebar = ({
   setActive,
   collapsed,
   setCollapsed,
+  isMobile,
+  mobileOpen,
+  setMobileOpen,
 }: {
   active: string;
   setActive: (p: string) => void;
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  isMobile: boolean;
+  mobileOpen: boolean;
+  setMobileOpen: (v: boolean) => void;
 }) => {
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -336,22 +394,41 @@ const Sidebar = ({
     { id: "vip", label: "VIP Tables", icon: "crown" },
   ];
 
-  return (
-    <motion.div
-      initial={false}
-      animate={{ width: collapsed ? 64 : 220 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      style={{
+  const handleNav = (id: string) => {
+    setActive(id);
+    if (isMobile) setMobileOpen(false);
+  };
+
+  const isExpanded = isMobile ? true : !collapsed;
+  const sidebarWidth = isExpanded ? 220 : 64;
+
+  const sidebarStyle: React.CSSProperties = isMobile
+    ? {
         position: "fixed", left: 0, top: 0, bottom: 0,
+        width: 220,
+        background: "linear-gradient(180deg, #080808 0%, #050505 100%)",
+        borderRight: "1px solid var(--border)",
+        zIndex: 200,
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+        transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.3s cubic-bezier(0.25,0.1,0.25,1)",
+      }
+    : {
+        position: "fixed", left: 0, top: 0, bottom: 0,
+        width: sidebarWidth,
         background: "linear-gradient(180deg, #080808 0%, #050505 100%)",
         borderRight: "1px solid var(--border)",
         zIndex: 100,
         display: "flex", flexDirection: "column",
         overflow: "hidden",
-      }}
-    >
+        transition: "width 0.3s cubic-bezier(0.25,0.1,0.25,1)",
+      };
+
+  return (
+    <div style={sidebarStyle}>
       {/* Logo */}
-      <div style={{ padding: "28px 20px 24px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid var(--border)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 28, height: 28, minWidth: 28,
@@ -363,11 +440,11 @@ const Sidebar = ({
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
           </div>
-          {!collapsed && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
+          {isExpanded && (
+            <div>
               <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold)", fontWeight: 700 }}>Nightlife</div>
               <div style={{ fontSize: 9, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 1 }}>Copilot</div>
-            </motion.div>
+            </div>
           )}
         </div>
       </div>
@@ -378,17 +455,13 @@ const Sidebar = ({
           <div
             key={item.id}
             className={`sidebar-item ${active === item.id ? "active" : ""}`}
-            onClick={() => setActive(item.id)}
-            style={{ justifyContent: collapsed ? "center" : "flex-start", padding: collapsed ? "11px" : "11px 16px" }}
-            title={collapsed ? item.label : ""}
+            onClick={() => handleNav(item.id)}
+            style={{ justifyContent: isExpanded ? "flex-start" : "center", padding: isExpanded ? "12px 16px" : "12px" }}
+            title={!isExpanded ? item.label : ""}
           >
             <Icon name={item.icon} size={16} />
-            {!collapsed && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}>
-                {item.label}
-              </motion.span>
-            )}
-            {!collapsed && active === item.id && (
+            {isExpanded && <span>{item.label}</span>}
+            {isExpanded && active === item.id && (
               <motion.div
                 layoutId="activeBar"
                 style={{ marginLeft: "auto", width: 3, height: 16, background: "var(--gold)", borderRadius: 2 }}
@@ -398,21 +471,23 @@ const Sidebar = ({
         ))}
       </div>
 
-      {/* Collapse toggle */}
-      <div style={{ padding: "16px 10px", borderTop: "1px solid var(--border)" }}>
-        <div
-          className="sidebar-item"
-          onClick={() => setCollapsed(!collapsed)}
-          style={{ justifyContent: "center", padding: "10px" }}
-        >
-          <motion.div animate={{ rotate: collapsed ? 0 : 180 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-          </motion.div>
+      {/* Collapse toggle (desktop only) */}
+      {!isMobile && (
+        <div style={{ padding: "16px 10px", borderTop: "1px solid var(--border)" }}>
+          <div
+            className="sidebar-item"
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ justifyContent: "center", padding: "10px" }}
+          >
+            <motion.div animate={{ rotate: collapsed ? 0 : 180 }} transition={{ duration: 0.2 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </motion.div>
+          </div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </div>
   );
 };
 
@@ -429,7 +504,7 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
 
   const quickActions = [
     { label: "Create Event", icon: "plus", page: "events", color: "var(--gold)" },
-    { label: "View Profiles", icon: "users", page: "profiles", color: "#60A5FA" },
+    { label: "Profiles", icon: "users", page: "profiles", color: "#60A5FA" },
     { label: "VIP Requests", icon: "crown", page: "vip", color: "var(--gold-light)" },
     { label: "AI Assistant", icon: "bot", page: "assistant", color: "#34D399" },
   ];
@@ -437,26 +512,24 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
   return (
     <div>
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 40 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 10, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>
+            <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>
               Sunday, 1 June 2026
             </div>
-            <h1 className="font-display" style={{ fontSize: 40, fontWeight: 300, color: "var(--text)", lineHeight: 1 }}>
+            <h1 className="font-display page-title" style={{ fontSize: 36, fontWeight: 300, color: "var(--text)", lineHeight: 1 }}>
               Good evening, <span className="gold-gradient">Promoter</span>
             </h1>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ padding: "8px 16px", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.15)", borderRadius: 2 }}>
-              <span style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "#34D399" }}>● AI Active</span>
-            </div>
+          <div style={{ padding: "8px 16px", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.15)", borderRadius: 2 }}>
+            <span style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "#34D399" }}>● AI Active</span>
           </div>
         </div>
       </motion.div>
 
       {/* Metrics */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div className="rg-metrics">
         {metrics.map((m, i) => (
           <motion.div
             key={m.label}
@@ -465,13 +538,13 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
             transition={{ delay: i * 0.08 }}
             className="metric-card"
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)" }}>{m.label}</div>
               <div style={{ color: m.color, opacity: 0.7 }}>
-                <Icon name={m.icon} size={16} />
+                <Icon name={m.icon} size={14} />
               </div>
             </div>
-            <div className="font-display" style={{ fontSize: 42, fontWeight: 300, color: m.color, lineHeight: 1, marginBottom: 8 }}>{m.value}</div>
+            <div className="font-display metric-value" style={{ fontSize: 38, fontWeight: 300, color: m.color, lineHeight: 1, marginBottom: 6 }}>{m.value}</div>
             <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em" }}>{m.delta}</div>
           </motion.div>
         ))}
@@ -486,35 +559,35 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
           background: "linear-gradient(135deg, rgba(201,168,76,0.06) 0%, rgba(232,201,107,0.03) 100%)",
           border: "1px solid rgba(201,168,76,0.2)",
           borderRadius: 4,
-          padding: "24px 28px",
-          marginBottom: 24,
+          padding: "20px 24px",
+          marginBottom: 20,
           position: "relative",
           overflow: "hidden",
         }}
       >
         <div style={{ position: "absolute", top: 0, right: 0, width: 200, height: 200, background: "radial-gradient(circle, rgba(201,168,76,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{
-              width: 44, height: 44,
+              width: 40, height: 40, minWidth: 40,
               background: "linear-gradient(135deg, rgba(201,168,76,0.2), rgba(201,168,76,0.08))",
               border: "1px solid rgba(201,168,76,0.3)",
               borderRadius: 2,
               display: "flex", alignItems: "center", justifyContent: "center",
             }} className="float">
-              <Icon name="bot" size={20} />
+              <Icon name="bot" size={18} />
             </div>
             <div>
               <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 4 }}>AI Assistant</div>
-              <div className="shimmer-text font-display" style={{ fontSize: 22, fontWeight: 400 }}>
+              <div className="shimmer-text font-display" style={{ fontSize: 20, fontWeight: 400 }}>
                 127 messages answered today
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 24 }}>
+          <div className="ai-banner-stats" style={{ display: "flex", gap: 20 }}>
             {[["87%", "Auto-handled"], ["2.1s", "Avg response"], ["99.2%", "Uptime"]].map(([val, lbl]) => (
               <div key={lbl} style={{ textAlign: "center" }}>
-                <div className="font-display" style={{ fontSize: 24, fontWeight: 300, color: "var(--gold)" }}>{val}</div>
+                <div className="font-display" style={{ fontSize: 22, fontWeight: 300, color: "var(--gold)" }}>{val}</div>
                 <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 2 }}>{lbl}</div>
               </div>
             ))}
@@ -522,11 +595,11 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
         </div>
       </motion.div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className="rg-2">
         {/* Activity Feed */}
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 24 }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 20 }}>Recent Activity</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 20 }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16 }}>Recent Activity</div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {mockActivity.map((item, i) => (
               <motion.div
                 key={i}
@@ -534,15 +607,15 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 + i * 0.06 }}
                 style={{
-                  display: "flex", alignItems: "flex-start", gap: 14,
-                  padding: "14px 0",
+                  display: "flex", alignItems: "flex-start", gap: 12,
+                  padding: "12px 0",
                   borderBottom: i < mockActivity.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                 }}
               >
-                <div style={{ fontSize: 16, minWidth: 24 }}>{item.icon}</div>
+                <div style={{ fontSize: 15, minWidth: 22 }}>{item.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5, letterSpacing: "0.03em" }}>{item.text}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, letterSpacing: "0.08em" }}>{item.time}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, letterSpacing: "0.08em" }}>{item.time}</div>
                 </div>
               </motion.div>
             ))}
@@ -550,9 +623,9 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
         </motion.div>
 
         {/* Quick Actions */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.45 }} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 24 }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 20 }}>Quick Actions</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.45 }} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 20 }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16 }}>Quick Actions</div>
+          <div className="rg-actions">
             {quickActions.map((a, i) => (
               <motion.div
                 key={a.label}
@@ -564,28 +637,28 @@ const DashboardPage = ({ setPage }: { setPage: (p: string) => void }) => {
                   background: "var(--surface3)",
                   border: "1px solid var(--border)",
                   borderRadius: 4,
-                  padding: "20px 16px",
+                  padding: "18px 12px",
                   cursor: "pointer",
-                  transition: "all 0.3s ease",
                   textAlign: "center",
+                  WebkitTapHighlightColor: "transparent",
                 }}
-                whileHover={{ scale: 1.03, borderColor: a.color + "55" } as never}
+                whileHover={{ scale: 1.03 } as never}
                 whileTap={{ scale: 0.97 } as never}
               >
-                <div style={{ color: a.color, marginBottom: 10, display: "flex", justifyContent: "center" }}>
-                  <Icon name={a.icon} size={22} />
+                <div style={{ color: a.color, marginBottom: 8, display: "flex", justifyContent: "center" }}>
+                  <Icon name={a.icon} size={20} />
                 </div>
-                <div style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 600 }}>{a.label}</div>
+                <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 600 }}>{a.label}</div>
               </motion.div>
             ))}
           </div>
 
-          {/* Next event preview */}
-          <div style={{ marginTop: 16, padding: 16, background: "var(--surface3)", border: "1px solid var(--border)", borderRadius: 2 }}>
-            <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>Next Event</div>
+          {/* Next event */}
+          <div style={{ marginTop: 16, padding: 14, background: "var(--surface3)", border: "1px solid var(--border)", borderRadius: 2 }}>
+            <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Next Event</div>
             <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 600, letterSpacing: "0.05em" }}>Black Label Night</div>
-            <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4, letterSpacing: "0.08em" }}>Tonight — Midnight — Le Baron Paris</div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4, letterSpacing: "0.06em" }}>Tonight — Midnight — Le Baron Paris</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               <span className="tag tag-green">62 confirmed</span>
               <span className="tag tag-gold">4 VIP tables</span>
             </div>
@@ -607,8 +680,7 @@ const AssistantPage = () => {
 
   const handleSend = () => {
     if (!input.trim()) return;
-    const newMsg = { from: "You", message: input, type: "guest" };
-    setConversations(prev => [...prev, newMsg]);
+    setConversations(prev => [...prev, { from: "You", message: input, type: "guest" }]);
     setInput("");
     setTyping(true);
     setTimeout(() => {
@@ -626,18 +698,18 @@ const AssistantPage = () => {
   }, [conversations, typing]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 100px)", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 120px)", minHeight: 400, gap: 14 }}>
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 className="font-display" style={{ fontSize: 36, fontWeight: 300 }}>AI <span className="gold-gradient">Assistant</span></h1>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", marginTop: 4 }}>Automated guest conversations in real-time</div>
+            <h1 className="font-display page-title" style={{ fontSize: 32, fontWeight: 300 }}>AI <span className="gold-gradient">Assistant</span></h1>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", marginTop: 4 }}>Automated guest conversations in real-time</div>
           </div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }} className="hide-mobile">
             {[["87%", "Auto-resolved"], ["127", "Today"], ["2.1s", "Avg reply"]].map(([v, l]) => (
               <div key={l} style={{ textAlign: "center" }}>
-                <div className="font-display" style={{ fontSize: 22, color: "var(--gold)", fontWeight: 300 }}>{v}</div>
+                <div className="font-display" style={{ fontSize: 20, color: "var(--gold)", fontWeight: 300 }}>{v}</div>
                 <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--text-muted)" }}>{l}</div>
               </div>
             ))}
@@ -655,16 +727,16 @@ const AssistantPage = () => {
           background: "linear-gradient(135deg, rgba(201,168,76,0.06), rgba(201,168,76,0.02))",
           border: "1px solid rgba(201,168,76,0.2)",
           borderRadius: 2,
-          padding: "14px 20px",
+          padding: "12px 16px",
           display: "flex",
           alignItems: "center",
           gap: 12,
           flexShrink: 0,
         }}
       >
-        <div className="pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#34D399" }} />
-        <span style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--text-dim)" }}>
-          <span style={{ color: "var(--gold)", fontWeight: 700 }}>87%</span> of all guest requests are handled automatically — no human intervention required.
+        <div className="pulse" style={{ width: 8, height: 8, minWidth: 8, borderRadius: "50%", background: "#34D399" }} />
+        <span style={{ fontSize: 11, letterSpacing: "0.08em", color: "var(--text-dim)", lineHeight: 1.5 }}>
+          <span style={{ color: "var(--gold)", fontWeight: 700 }}>87%</span> of all guest requests are handled automatically.
         </span>
       </motion.div>
 
@@ -685,48 +757,48 @@ const AssistantPage = () => {
         }}
       >
         {/* Chat header */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
           <div style={{
-            width: 32, height: 32, borderRadius: 2,
+            width: 30, height: 30, borderRadius: 2, minWidth: 30,
             background: "linear-gradient(135deg, #C9A84C, #E8C96B)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#000" stroke="none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#000" stroke="none">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", color: "var(--text)" }}>Nightlife Copilot AI</div>
-            <div style={{ fontSize: 10, color: "#34D399", letterSpacing: "0.1em" }}>● Online — Responding instantly</div>
+            <div style={{ fontSize: 10, color: "#34D399", letterSpacing: "0.08em" }}>● Online — Responding instantly</div>
           </div>
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 16 }}>
           {conversations.map((msg, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i * 0.06, 0.5) }}
+              transition={{ delay: Math.min(i * 0.05, 0.4) }}
               style={{ display: "flex", justifyContent: msg.type === "ai" ? "flex-start" : "flex-end" }}
             >
-              <div style={{ maxWidth: "70%" }}>
+              <div style={{ maxWidth: "80%" }}>
                 <div style={{
-                  fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6,
+                  fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 5,
                   color: msg.type === "ai" ? "var(--gold)" : msg.type === "vip" ? "var(--gold-light)" : "var(--text-muted)",
                   textAlign: msg.type === "ai" ? "left" : "right",
                 }}>
                   {msg.type === "ai" ? "🤖 AI Copilot" : msg.type === "vip" ? "⭐ " + msg.from : "👤 " + msg.from}
                 </div>
-                <div className={`chat-bubble-${msg.type}`} style={{ padding: "14px 18px" }}>
-                  <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6, letterSpacing: "0.03em" }}>{msg.message}</div>
+                <div className={`chat-bubble-${msg.type}`} style={{ padding: "12px 16px" }}>
+                  <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6, letterSpacing: "0.02em" }}>{msg.message}</div>
                 </div>
               </div>
             </motion.div>
           ))}
           {typing && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", justifyContent: "flex-start" }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex" }}>
               <div className="chat-bubble-ai" style={{ padding: "14px 18px" }}>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   {[0, 0.2, 0.4].map(d => (
@@ -741,7 +813,7 @@ const AssistantPage = () => {
         </div>
 
         {/* Input */}
-        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, flexShrink: 0 }}>
+        <div style={{ padding: "12px 14px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, flexShrink: 0 }}>
           <input
             className="input-luxury"
             placeholder="Type a test message..."
@@ -750,9 +822,9 @@ const AssistantPage = () => {
             onKeyDown={e => e.key === "Enter" && handleSend()}
             style={{ flex: 1 }}
           />
-          <button className="btn-gold" onClick={handleSend} style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <button className="btn-gold" onClick={handleSend} style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", flexShrink: 0 }}>
             <Icon name="send" size={12} />
-            Send
+            <span className="hide-mobile">Send</span>
           </button>
         </div>
       </motion.div>
@@ -779,7 +851,7 @@ const CreateEventPage = () => {
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 24, textAlign: "center" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 24, textAlign: "center", padding: "0 16px" }}
     >
       <motion.div
         animate={{ scale: [1, 1.1, 1] }}
@@ -795,12 +867,12 @@ const CreateEventPage = () => {
         <Icon name="sparkle" size={32} />
       </motion.div>
       <div>
-        <h2 className="font-display shimmer-text" style={{ fontSize: 36, fontWeight: 300, marginBottom: 12 }}>AI Recruitment Launched</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", letterSpacing: "0.08em", maxWidth: 400 }}>
+        <h2 className="font-display shimmer-text" style={{ fontSize: 30, fontWeight: 300, marginBottom: 12 }}>AI Recruitment Launched</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", letterSpacing: "0.06em", maxWidth: 380, lineHeight: 1.6 }}>
           The AI is now scanning profiles and finding the best matches for your event.
         </p>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
         <span className="tag tag-green">● Scanning 2,847 profiles</span>
         <span className="tag tag-gold">Expected: 40–60 matches</span>
       </div>
@@ -809,17 +881,17 @@ const CreateEventPage = () => {
 
   return (
     <div>
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32 }}>
-        <h1 className="font-display" style={{ fontSize: 36, fontWeight: 300, marginBottom: 6 }}>Create <span className="gold-gradient">Event</span></h1>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em" }}>Define your event and let AI recruit the perfect audience</p>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+        <h1 className="font-display page-title" style={{ fontSize: 34, fontWeight: 300, marginBottom: 6 }}>Create <span className="gold-gradient">Event</span></h1>
+        <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em" }}>Define your event and let AI recruit the perfect audience</p>
       </motion.div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+      <div className="rg-2" style={{ gap: 20 }}>
         {/* Left column */}
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
-          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 28, marginBottom: 16 }}>
-            <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 24 }}>Event Details</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 20 }}>Event Details</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               {[
                 { key: "name", label: "Event Name", placeholder: "Black Label Night" },
                 { key: "venue", label: "Restaurant / Dinner Venue", placeholder: "Le Cinq, George V" },
@@ -830,7 +902,7 @@ const CreateEventPage = () => {
                   <input className="input-luxury" placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />
                 </div>
               ))}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
                   <label className="label-luxury">Date</label>
                   <input className="input-luxury" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
@@ -840,9 +912,9 @@ const CreateEventPage = () => {
                   <input className="input-luxury" type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} />
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
-                  <label className="label-luxury">Female Guests (target)</label>
+                  <label className="label-luxury">Female Guests</label>
                   <input className="input-luxury" placeholder="e.g. 30" value={form.females} onChange={e => setForm({ ...form, females: e.target.value })} />
                 </div>
                 <div>
@@ -856,12 +928,12 @@ const CreateEventPage = () => {
 
         {/* Right column */}
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
-          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 28, marginBottom: 16 }}>
-            <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
               <Icon name="target" size={12} />
               AI Audience Targeting
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div>
                 <label className="label-luxury">Age Range</label>
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -872,13 +944,13 @@ const CreateEventPage = () => {
               </div>
               <div>
                 <label className="label-luxury">Languages</label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {["French", "English", "Spanish", "Italian"].map(lang => (
                     <div
                       key={lang}
                       onClick={() => setForm({ ...form, languages: form.languages === lang ? "" : lang })}
                       className={`tag ${form.languages === lang ? "tag-gold" : "tag-dim"}`}
-                      style={{ cursor: "pointer", padding: "6px 12px", fontSize: 10 }}
+                      style={{ cursor: "pointer", padding: "7px 14px", fontSize: 10, WebkitTapHighlightColor: "transparent" }}
                     >
                       {lang}
                     </div>
@@ -893,12 +965,12 @@ const CreateEventPage = () => {
           </div>
 
           {/* AI preview */}
-          <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.05), rgba(201,168,76,0.02))", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 4, padding: 20, marginBottom: 16 }}>
+          <div style={{ background: "linear-gradient(135deg, rgba(201,168,76,0.05), rgba(201,168,76,0.02))", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 4, padding: 18, marginBottom: 16 }}>
             <div style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 12 }}>AI Estimate</div>
-            <div style={{ display: "flex", gap: 20 }}>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
               {[["2,847", "Profiles scanned"], ["~52", "Expected matches"], ["68%", "Likely attendance"]].map(([v, l]) => (
                 <div key={l}>
-                  <div className="font-display" style={{ fontSize: 24, fontWeight: 300, color: "var(--gold)" }}>{v}</div>
+                  <div className="font-display" style={{ fontSize: 22, fontWeight: 300, color: "var(--gold)" }}>{v}</div>
                   <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 2 }}>{l}</div>
                 </div>
               ))}
@@ -908,9 +980,9 @@ const CreateEventPage = () => {
       </div>
 
       {/* CTA */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
         <button className="btn-ghost">Save Draft</button>
-        <button className="btn-gold" onClick={handleSubmit} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, padding: "12px 28px" }}>
+        <button className="btn-gold" onClick={handleSubmit} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, padding: "12px 24px" }}>
           <Icon name="zap" size={14} />
           Launch AI Recruitment
         </button>
@@ -939,15 +1011,15 @@ const ProfilesPage = () => {
 
   return (
     <div>
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32 }}>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 className="font-display" style={{ fontSize: 36, fontWeight: 300, marginBottom: 6 }}>Profile <span className="gold-gradient">Matching</span></h1>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em" }}>AI-curated guest profiles ranked by reliability</p>
+            <h1 className="font-display page-title" style={{ fontSize: 34, fontWeight: 300, marginBottom: 6 }}>Profile <span className="gold-gradient">Matching</span></h1>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em" }}>AI-curated guest profiles ranked by reliability</p>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {["all", "favorites", "invited"].map(f => (
-              <button key={f} className={filter === f ? "btn-outline" : "btn-ghost"} onClick={() => setFilter(f)} style={{ fontSize: 10, padding: "8px 14px" }}>
+              <button key={f} className={filter === f ? "btn-outline" : "btn-ghost"} onClick={() => setFilter(f)} style={{ fontSize: 10, padding: "8px 12px" }}>
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
@@ -956,7 +1028,7 @@ const ProfilesPage = () => {
         <div className="divider" />
       </motion.div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+      <div className="rg-profiles">
         {mockProfiles.map((p, i) => (
           <motion.div
             key={p.id}
@@ -967,62 +1039,58 @@ const ProfilesPage = () => {
           >
             <div style={{ height: 3, background: `linear-gradient(90deg, var(--gold-dim), var(--gold))`, opacity: p.reliability > 90 ? 1 : 0.4 }} />
 
-            <div style={{ padding: 20 }}>
-              {/* Avatar + score */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ padding: 18 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{
-                    width: 46, height: 46, borderRadius: 2,
+                    width: 44, height: 44, borderRadius: 2,
                     background: "linear-gradient(135deg, rgba(201,168,76,0.2), rgba(201,168,76,0.05))",
                     border: "1px solid rgba(201,168,76,0.2)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 13, fontWeight: 600, color: "var(--gold)", letterSpacing: "0.1em",
+                    fontSize: 12, fontWeight: 600, color: "var(--gold)", letterSpacing: "0.1em",
+                    flexShrink: 0,
                   }}>
                     {p.avatar}
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "0.06em", color: "var(--text)" }}>{p.name}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", marginTop: 2 }}>{p.age} ans · {p.city}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: "0.05em", color: "var(--text)" }}>{p.name}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.06em", marginTop: 2 }}>{p.age} ans · {p.city}</div>
                   </div>
                 </div>
-                <div style={{ textAlign: "center" }}>
+                <div style={{ textAlign: "center", flexShrink: 0 }}>
                   <div className="font-display" style={{ fontSize: 20, fontWeight: 300, color: p.reliability > 90 ? "var(--gold)" : p.reliability > 80 ? "#60A5FA" : "var(--text-dim)" }}>
                     {p.reliability}
                   </div>
-                  <div style={{ fontSize: 8, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--text-muted)" }}>score</div>
+                  <div style={{ fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>score</div>
                 </div>
               </div>
 
-              {/* Badge */}
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 12 }}>
                 <span className={`tag ${badgeColor(p.badge)}`}>★ {p.badge}</span>
               </div>
 
-              {/* Stats */}
-              <div style={{ display: "flex", gap: 0, marginBottom: 16, background: "var(--surface3)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ display: "flex", marginBottom: 14, background: "var(--surface3)", borderRadius: 2, overflow: "hidden" }}>
                 {[["Events", String(p.events)], ["Attendance", p.attendance + "%"]].map(([l, v], idx) => (
                   <div key={l} style={{
-                    flex: 1, padding: "10px 14px", textAlign: "center",
+                    flex: 1, padding: "10px 12px", textAlign: "center",
                     borderRight: idx === 0 ? "1px solid var(--border)" : "none",
                   }}>
-                    <div className="font-display" style={{ fontSize: 18, fontWeight: 300, color: "var(--text)" }}>{v}</div>
-                    <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 2 }}>{l}</div>
+                    <div className="font-display" style={{ fontSize: 17, fontWeight: 300, color: "var(--text)" }}>{v}</div>
+                    <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 2 }}>{l}</div>
                   </div>
                 ))}
               </div>
 
-              {/* Instagram */}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, color: "var(--text-muted)", fontSize: 11, letterSpacing: "0.05em" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, color: "var(--text-muted)", fontSize: 11, letterSpacing: "0.04em" }}>
                 <Icon name="instagram" size={12} />
                 <span>{p.instagram}</span>
               </div>
 
-              {/* Actions */}
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   className={states[p.id] === "invited" ? "btn-gold" : "btn-outline"}
                   onClick={() => toggle(p.id, "invited")}
-                  style={{ flex: 1, fontSize: 10, padding: "9px 8px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                  style={{ flex: 1, fontSize: 10, padding: "9px 6px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
                 >
                   <Icon name="send" size={11} />
                   {states[p.id] === "invited" ? "Invited ✓" : "Invite"}
@@ -1070,16 +1138,16 @@ const VIPPage = () => {
 
   return (
     <div>
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32 }}>
-        <h1 className="font-display" style={{ fontSize: 36, fontWeight: 300, marginBottom: 6 }}>VIP <span className="gold-gradient">Tables</span></h1>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em" }}>AI-qualified reservations and table management</p>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+        <h1 className="font-display page-title" style={{ fontSize: 34, fontWeight: 300, marginBottom: 6 }}>VIP <span className="gold-gradient">Tables</span></h1>
+        <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em" }}>AI-qualified reservations and table management</p>
         <div className="divider" />
       </motion.div>
 
       {/* Table packages */}
-      <div style={{ marginBottom: 36 }}>
-        <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16 }}>Table Packages</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 14 }}>Table Packages</div>
+        <div className="rg-tables">
           {tables.map((t, i) => (
             <motion.div
               key={t.name}
@@ -1088,26 +1156,20 @@ const VIPPage = () => {
               transition={{ delay: i * 0.1 }}
               className="table-card"
               style={{
-                border: t.tier === "diamond"
-                  ? "1px solid rgba(201,168,76,0.4)"
-                  : t.tier === "prestige"
-                    ? "1px solid rgba(201,168,76,0.25)"
-                    : "1px solid var(--border)",
-                background: t.tier === "diamond"
-                  ? "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(232,201,107,0.03))"
-                  : "var(--surface2)",
+                border: t.tier === "diamond" ? "1px solid rgba(201,168,76,0.4)" : t.tier === "prestige" ? "1px solid rgba(201,168,76,0.25)" : "1px solid var(--border)",
+                background: t.tier === "diamond" ? "linear-gradient(135deg, rgba(201,168,76,0.08), rgba(232,201,107,0.03))" : "var(--surface2)",
               }}
             >
               {t.tier === "diamond" && (
                 <div style={{ position: "absolute", top: 0, right: 0, left: 0, height: 1, background: "linear-gradient(90deg, transparent, var(--gold), transparent)" }} />
               )}
-              <div style={{ fontSize: 24, marginBottom: 12 }}>{t.icon}</div>
+              <div style={{ fontSize: 22, marginBottom: 10 }}>{t.icon}</div>
               <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 6 }}>{t.name}</div>
-              <div className="font-display" style={{ fontSize: 32, fontWeight: 300, color: "var(--gold)", marginBottom: 4 }}>{t.price}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 18, letterSpacing: "0.08em" }}>Up to {t.people} guests</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+              <div className="font-display" style={{ fontSize: 30, fontWeight: 300, color: "var(--gold)", marginBottom: 4 }}>{t.price}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 16, letterSpacing: "0.06em" }}>Up to {t.people} guests</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                 {t.features.map(f => (
-                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text-dim)", letterSpacing: "0.04em" }}>
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text-dim)" }}>
                     <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--gold-dim)", flexShrink: 0 }} />
                     {f}
                   </div>
@@ -1123,11 +1185,11 @@ const VIPPage = () => {
 
       {/* Incoming requests */}
       <div>
-        <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
           Incoming VIP Requests
           <span className="tag tag-gold">{mockVIPRequests.filter(r => r.status === "pending").length} pending</span>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {mockVIPRequests.map((req, i) => {
             const state = reqStates[req.id] || req.status;
             return (
@@ -1143,37 +1205,37 @@ const VIPPage = () => {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
                     <div>
-                      <div style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 3 }}>Request {req.id}</div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", letterSpacing: "0.05em" }}>{req.name}</div>
+                      <div style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold-dim)", marginBottom: 3 }}>Request {req.id}</div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", letterSpacing: "0.04em" }}>{req.name}</div>
                     </div>
-                    <div style={{ display: "flex", gap: 12 }}>
+                    <div style={{ display: "flex", gap: 14 }}>
                       <div style={{ textAlign: "center" }}>
                         <div className="font-display" style={{ fontSize: 20, fontWeight: 300, color: "var(--text)" }}>{req.people}</div>
-                        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>guests</div>
+                        <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>guests</div>
                       </div>
                       <div style={{ textAlign: "center" }}>
                         <div className="font-display" style={{ fontSize: 20, fontWeight: 300, color: "var(--gold)" }}>{req.budget}</div>
-                        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>budget</div>
+                        <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>budget</div>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                       <span className={`tag ${qualColor(req.qualification)}`}>AI: {req.qualification}</span>
                       {state === "accepted" && <span className="tag tag-green">✓ Accepted</span>}
                       {state === "rejected" && <span className="tag tag-red">✗ Rejected</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em" }}>{req.time}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{req.time}</div>
                   </div>
                   {state === "pending" && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn-gold" onClick={() => handleAction(req.id, "accepted")} style={{ fontSize: 10, padding: "8px 16px", display: "flex", alignItems: "center", gap: 4 }}>
+                    <div className="vip-actions" style={{ display: "flex", gap: 8 }}>
+                      <button className="btn-gold" onClick={() => handleAction(req.id, "accepted")} style={{ fontSize: 10, padding: "8px 14px", display: "flex", alignItems: "center", gap: 4 }}>
                         <Icon name="check" size={12} /> Accept
                       </button>
-                      <button className="btn-outline" onClick={() => handleAction(req.id, "contact")} style={{ fontSize: 10, padding: "8px 14px", display: "flex", alignItems: "center", gap: 4 }}>
+                      <button className="btn-outline" onClick={() => handleAction(req.id, "contact")} style={{ fontSize: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 4 }}>
                         <Icon name="phone" size={12} /> Contact
                       </button>
-                      <button className="btn-ghost" onClick={() => handleAction(req.id, "rejected")} style={{ fontSize: 10, padding: "8px 14px", display: "flex", alignItems: "center", gap: 4 }}>
+                      <button className="btn-ghost" onClick={() => handleAction(req.id, "rejected")} style={{ fontSize: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 4 }}>
                         <Icon name="x" size={12} /> Reject
                       </button>
                     </div>
@@ -1194,7 +1256,23 @@ const VIPPage = () => {
 export default function App() {
   const [page, setPage] = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
-  const sidebarWidth = collapsed ? 64 : 220;
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  // Close mobile menu on page change
+  useEffect(() => {
+    if (mobileOpen) setMobileOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  const sidebarWidth = isMobile ? 0 : (collapsed ? 64 : 220);
 
   const pageComponents: Record<string, React.ReactNode> = {
     dashboard: <DashboardPage setPage={setPage} />,
@@ -1215,7 +1293,6 @@ export default function App() {
   return (
     <>
       <GlobalStyles />
-      <div className="noise-overlay" />
 
       {/* Ambient gradient */}
       <div style={{
@@ -1224,24 +1301,58 @@ export default function App() {
         pointerEvents: "none", zIndex: 0,
       }} />
 
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <Sidebar active={page} setActive={setPage} collapsed={collapsed} setCollapsed={setCollapsed} />
+      {/* Mobile overlay */}
+      <div
+        className={`mobile-overlay ${mobileOpen ? "open" : ""}`}
+        onClick={() => setMobileOpen(false)}
+      />
 
-        <motion.div
-          animate={{ marginLeft: sidebarWidth }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          style={{ minHeight: "100vh", padding: "40px 40px 60px" }}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <Sidebar
+          active={page}
+          setActive={setPage}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          isMobile={isMobile}
+          mobileOpen={mobileOpen}
+          setMobileOpen={setMobileOpen}
+        />
+
+        <div
+          className="main-content"
+          style={{
+            marginLeft: sidebarWidth,
+            minHeight: "100vh",
+            padding: "32px 32px 60px",
+            transition: "margin-left 0.3s cubic-bezier(0.25,0.1,0.25,1)",
+          }}
         >
           {/* Topbar */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 32, paddingBottom: 20,
+            marginBottom: 28, paddingBottom: 18,
             borderBottom: "1px solid var(--border)",
           }}>
-            <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-              {pageTitles[page]}
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              {/* Hamburger — mobile only */}
+              {isMobile && (
+                <button
+                  onClick={() => setMobileOpen(true)}
+                  style={{
+                    background: "none", border: "1px solid var(--border)",
+                    borderRadius: 2, padding: "8px", cursor: "pointer",
+                    color: "var(--text-dim)", display: "flex", alignItems: "center",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  <Icon name="menu" size={16} />
+                </button>
+              )}
+              <div style={{ fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                {pageTitles[page]}
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <div style={{
                 width: 32, height: 32, borderRadius: 2,
                 background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.05))",
@@ -1261,12 +1372,12 @@ export default function App() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+              transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
             >
               {pageComponents[page]}
             </motion.div>
           </AnimatePresence>
-        </motion.div>
+        </div>
       </div>
     </>
   );
