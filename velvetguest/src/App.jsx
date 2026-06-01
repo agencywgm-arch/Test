@@ -3573,6 +3573,190 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CRM TAB
+// ─────────────────────────────────────────────────────────────────────────────
+function CRMTab({ restaurant, store }) {
+  const isDemo = restaurant.id === "demo";
+  const [customers, setCustomers] = useState([]);
+  const [segment, setSegment] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null); // customer detail modal
+
+  useEffect(() => {
+    if (isDemo) { setCustomers(DEMO_CUSTOMERS); return; }
+    supabase.from("customers").select("*").eq("restaurant_id", restaurant.id)
+      .order("last_visit", { ascending: false })
+      .then(({ data }) => setCustomers(data ?? []));
+  }, [restaurant.id]);
+
+  const now = new Date();
+  function daysSince(dateStr) {
+    if (!dateStr) return 999;
+    return Math.floor((now - new Date(dateStr)) / 86400000);
+  }
+
+  // Compute segments
+  const withSegment = customers.map(c => {
+    const days = daysSince(c.last_visit);
+    const avgTicket = c.order_count > 0 ? c.total_spent / c.order_count : 0;
+    let seg = "active";
+    if (days >= 90) seg = "lost";
+    else if (days >= 60) seg = "atrisk";
+    else if (days >= 30) seg = "inactive";
+    const loyal = c.order_count >= 5;
+    const highValue = avgTicket >= 25;
+    return { ...c, days, avgTicket, seg, loyal, highValue };
+  });
+
+  const SEGMENTS = [
+    { id: "all", label: "Tous", color: C.dark },
+    { id: "active", label: "Actifs", color: C.accentGreen },
+    { id: "loyal", label: "Fidèles", color: C.accentBlue },
+    { id: "highvalue", label: "Haute valeur", color: C.accentPurple },
+    { id: "inactive", label: "Inactifs 30j", color: C.accentOrange },
+    { id: "atrisk", label: "À risque 60j", color: C.accent },
+    { id: "lost", label: "Perdus 90j+", color: "#888" },
+  ];
+
+  const filtered = withSegment
+    .filter(c => {
+      if (segment === "loyal") return c.loyal;
+      if (segment === "highvalue") return c.highValue;
+      if (segment === "all") return true;
+      return c.seg === segment;
+    })
+    .filter(c => !search || c.first_name?.toLowerCase().includes(search.toLowerCase()) || c.email?.toLowerCase().includes(search.toLowerCase()));
+
+  const avgTicket = customers.length ? (customers.reduce((s, c) => s + (c.order_count > 0 ? c.total_spent / c.order_count : 0), 0) / customers.length) : 0;
+  const activeCount = withSegment.filter(c => c.seg === "active").length;
+  const inactiveCount = withSegment.filter(c => c.seg !== "active" && c.seg !== "lost").length;
+
+  const segColor = SEGMENTS.find(s => s.id === segment)?.color ?? C.dark;
+
+  return (
+    <div>
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+        {[
+          { label: "Total clients", value: customers.length, color: C.dark },
+          { label: "Actifs (30j)", value: activeCount, color: C.accentGreen },
+          { label: "À relancer", value: inactiveCount, color: C.accentOrange },
+          { label: "Panier moyen", value: `${avgTicket.toFixed(2)}€`, color: C.accentPurple },
+        ].map(k => (
+          <Surface key={k.label} style={{ padding: "16px 18px" }}>
+            <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 8, fontWeight: 500 }}>{k.label}</p>
+            <p style={{ fontSize: 26, fontWeight: 800, color: k.color, letterSpacing: "-0.03em" }}>{k.value}</p>
+          </Surface>
+        ))}
+      </div>
+
+      {/* Segment tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {SEGMENTS.map(s => {
+          const cnt = s.id === "all" ? customers.length
+            : s.id === "loyal" ? withSegment.filter(c => c.loyal).length
+            : s.id === "highvalue" ? withSegment.filter(c => c.highValue).length
+            : withSegment.filter(c => c.seg === s.id).length;
+          return (
+            <button key={s.id} onClick={() => setSegment(s.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${segment === s.id ? s.color : C.border}`, background: segment === s.id ? s.color + "15" : C.white, color: segment === s.id ? s.color : C.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
+              {s.label} <span style={{ opacity: 0.7 }}>({cnt})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search */}
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un client..." style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 14, marginBottom: 16, outline: "none", ...FF }} />
+
+      {/* Customer list */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+        {filtered.map(c => {
+          const statusColor = c.seg === "active" ? C.accentGreen : c.seg === "atrisk" ? C.accent : c.seg === "lost" ? "#aaa" : C.accentOrange;
+          const statusLabel = c.seg === "active" ? "Actif" : c.seg === "atrisk" ? "À risque" : c.seg === "lost" ? "Perdu" : "Inactif";
+          return (
+            <Surface key={c.id} style={{ padding: "16px 18px", cursor: "pointer" }} onClick={() => setSelected(c)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: segColor + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: segColor, flexShrink: 0 }}>
+                  {(c.first_name || "?")[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{c.first_name}</p>
+                    {c.loyal && <span style={{ fontSize: 10, background: C.accentBlue + "15", color: C.accentBlue, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>FIDÈLE</span>}
+                    {c.highValue && <span style={{ fontSize: 10, background: C.accentPurple + "15", color: C.accentPurple, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>VIP</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: C.textTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email}</p>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, background: statusColor + "15", padding: "3px 8px", borderRadius: 8, flexShrink: 0 }}>{statusLabel}</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Commandes", value: c.order_count },
+                  { label: "Total", value: `${(c.total_spent || 0).toFixed(0)}€` },
+                  { label: "Dernier", value: c.days < 1 ? "Aujourd'hui" : `J-${c.days}` },
+                ].map(stat => (
+                  <div key={stat.label} style={{ background: C.bg, borderRadius: 8, padding: "6px 8px", textAlign: "center" }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{stat.value}</p>
+                    <p style={{ fontSize: 10, color: C.textTertiary, marginTop: 1 }}>{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            </Surface>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 20px" }}>
+          <p style={{ fontSize: 40, marginBottom: 12 }}>👥</p>
+          <p style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Aucun client dans ce segment</p>
+          <p style={{ fontSize: 14, color: C.textSecondary }}>Les clients apparaîtront automatiquement après leurs premières commandes.</p>
+        </div>
+      )}
+
+      {/* Customer detail modal */}
+      {selected && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setSelected(null)}>
+          <div style={{ background: C.white, borderRadius: 20, width: "100%", maxWidth: 440, overflow: "hidden", ...FF }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: C.dark, padding: "20px 22px", display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700, color: "#fff" }}>
+                {(selected.first_name || "?")[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 17, fontWeight: 700, color: "#fff" }}>{selected.first_name}</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{selected.email}</p>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 20, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ padding: "20px 22px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: "Commandes", value: selected.order_count },
+                  { label: "Total dépensé", value: `${(selected.total_spent || 0).toFixed(2)}€` },
+                  { label: "Panier moyen", value: `${selected.avgTicket?.toFixed(2) ?? "0.00"}€` },
+                  { label: "Dernière visite", value: `J-${selected.days}` },
+                  { label: "1ère visite", value: selected.first_visit ? new Date(selected.first_visit).toLocaleDateString("fr-FR") : "—" },
+                  { label: "Téléphone", value: selected.phone || "—" },
+                ].map(r => (
+                  <div key={r.label} style={{ background: C.bg, borderRadius: 10, padding: "10px 12px" }}>
+                    <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 3 }}>{r.label}</p>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{r.value}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {selected.loyal && <span style={{ fontSize: 12, background: C.accentBlue + "15", color: C.accentBlue, padding: "4px 10px", borderRadius: 8, fontWeight: 700 }}>⭐ Client fidèle</span>}
+                {selected.highValue && <span style={{ fontSize: 12, background: C.accentPurple + "15", color: C.accentPurple, padding: "4px 10px", borderRadius: 8, fontWeight: 700 }}>💎 Haute valeur</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER PAGE — public, no auth, opened by scanning QR code
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerPage({ slug, tableNum }) {
