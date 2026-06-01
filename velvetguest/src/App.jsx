@@ -1013,6 +1013,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const first = (user.name || user.email).split(" ")[0];
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
+  const [moreOpen, setMoreOpen] = useState(false);
   const TABS = [
     { id: "setup", label: "⚡ Setup", icon: "⚡" },
     { id: "overview", label: "Résumé", icon: "🏠" },
@@ -1024,13 +1025,19 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     { id: "crm", label: "CRM", icon: "👥" },
     { id: "menu", label: "Carte", icon: "🍽️" },
   ];
-  // Bottom nav tabs on mobile (most used)
+  // Main 5 bottom nav tabs + "more" drawer for rest
   const MOBILE_TABS = [
     { id: "overview", icon: "🏠", label: "Accueil" },
-    { id: "orders", icon: "📋", label: "Commandes" },
+    { id: "orders", icon: "📋", label: "Cmds" },
     { id: "caisse", icon: "💰", label: "Caisse" },
-    { id: "promos", icon: "🎁", label: "Promos" },
     { id: "crm", icon: "👥", label: "CRM" },
+    { id: "promos", icon: "🎁", label: "Promos" },
+  ];
+  const MORE_TABS = [
+    { id: "menu", icon: "🍽️", label: "Carte" },
+    { id: "qrcode", icon: "📷", label: "QR Codes" },
+    { id: "inventory", icon: "📦", label: "Inventaire" },
+    { id: "setup", icon: "⚡", label: "Setup" },
   ];
   const demoBanner = restaurant.id === "demo";
   return (
@@ -1113,17 +1120,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
             </div>
           </header>
         )}
-        <div style={{ padding: isMobile ? "16px 14px" : "28px 32px" }}>
-          {isMobile && (
-            <div style={{ marginBottom: 16, overflowX: "auto", display: "flex", gap: 8, WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
-              {TABS.map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 20, border: "none", background: tab === t.id ? C.dark : C.surface, color: tab === t.id ? "#fff" : C.textSecondary, fontSize: 13, fontWeight: tab === t.id ? 700 : 500, cursor: "pointer", ...FF }}>
-                  {t.icon} {t.label}
-                  {t.id === "orders" && active.length > 0 && <span style={{ background: C.accent, color: "#fff", fontSize: 10, fontWeight: 700, padding: "0px 5px", borderRadius: 10, marginLeft: 2 }}>{active.length}</span>}
-                </button>
-              ))}
-            </div>
-          )}
+        <div style={{ padding: isMobile ? "12px 12px" : "28px 32px" }}>
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
           {tab === "orders" && <OrdersTab store={store} />}
           {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
@@ -1137,16 +1134,39 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
       </main>
       {/* Mobile bottom nav */}
       {isMobile && (
-        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 600, background: "rgba(245,245,247,0.96)", backdropFilter: "blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "stretch", height: 64 }}>
-          {MOBILE_TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", position: "relative", ...FF }}>
-              <span style={{ fontSize: 20 }}>{t.icon}</span>
-              <span style={{ fontSize: 10, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.dark : C.textTertiary }}>{t.label}</span>
-              {tab === t.id && <div style={{ position: "absolute", top: 0, left: "20%", right: "20%", height: 2, background: C.dark, borderRadius: 2 }} />}
-              {t.id === "orders" && active.length > 0 && <div style={{ position: "absolute", top: 6, right: "20%", width: 16, height: 16, background: C.accent, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 9, color: "#fff", fontWeight: 700 }}>{active.length}</span></div>}
+        <>
+          {/* More drawer backdrop */}
+          {moreOpen && <div style={{ position: "fixed", inset: 0, zIndex: 590 }} onClick={() => setMoreOpen(false)} />}
+          {/* More drawer */}
+          {moreOpen && (
+            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 595, background: C.surface, borderTop: `1px solid ${C.border}`, borderRadius: "16px 16px 0 0", padding: "12px 8px 4px", boxShadow: "0 -8px 32px rgba(0,0,0,0.12)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+                {MORE_TABS.map(t => (
+                  <button key={t.id} onClick={() => { setTab(t.id); setMoreOpen(false); }} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: "12px 4px", border: "none", background: tab === t.id ? C.bg : "none", borderRadius: 12, cursor: "pointer", ...FF }}>
+                    <span style={{ fontSize: 22 }}>{t.icon}</span>
+                    <span style={{ fontSize: 11, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.dark : C.textSecondary }}>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 600, background: "rgba(250,250,252,0.97)", backdropFilter: "blur(20px)", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "stretch", height: 64 }}>
+            {MOBILE_TABS.map(t => (
+              <button key={t.id} onClick={() => { setTab(t.id); setMoreOpen(false); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, border: "none", background: "none", cursor: "pointer", position: "relative", ...FF }}>
+                <span style={{ fontSize: 22 }}>{t.icon}</span>
+                <span style={{ fontSize: 9, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.dark : C.textTertiary }}>{t.label}</span>
+                {tab === t.id && <div style={{ position: "absolute", top: 0, left: "25%", right: "25%", height: 2, background: C.dark, borderRadius: 2 }} />}
+                {t.id === "orders" && active.length > 0 && <div style={{ position: "absolute", top: 5, right: "18%", width: 16, height: 16, background: C.accent, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 9, color: "#fff", fontWeight: 700 }}>{active.length}</span></div>}
+              </button>
+            ))}
+            {/* More button */}
+            <button onClick={() => setMoreOpen(p => !p)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, border: "none", background: "none", cursor: "pointer", position: "relative", ...FF }}>
+              <span style={{ fontSize: 22 }}>{moreOpen ? "✕" : "···"}</span>
+              <span style={{ fontSize: 9, fontWeight: 400, color: MORE_TABS.some(t => t.id === tab) ? C.dark : C.textTertiary }}>Plus</span>
+              {MORE_TABS.some(t => t.id === tab) && <div style={{ position: "absolute", top: 0, left: "25%", right: "25%", height: 2, background: C.dark, borderRadius: 2 }} />}
             </button>
-          ))}
-        </nav>
+          </nav>
+        </>
       )}
     </div>
   );
@@ -3601,6 +3621,7 @@ const QUICK_SUGGESTIONS = [
 ];
 
 function AgentChat({ restaurant, store }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(true);
   const [messages, setMessages] = useState([
@@ -3698,7 +3719,7 @@ function AgentChat({ restaurant, store }) {
         onClick={() => setOpen(p => !p)}
         className="btn-press"
         title={open ? "Fermer l'assistant" : "Ouvrir l'assistant IA"}
-        style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1010, width: 52, height: 52, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 22, transition: "background 0.2s ease", ...FF }}
+        style={{ position: "fixed", bottom: isMobile ? 80 : 24, right: 16, zIndex: 1010, width: 48, height: 48, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 20, transition: "background 0.2s ease", ...FF }}
       >
         <span style={{ transition: "transform 0.2s ease", display: "block", transform: open ? "rotate(45deg)" : "none" }}>
           {open ? "✕" : "✨"}
@@ -3712,7 +3733,7 @@ function AgentChat({ restaurant, store }) {
 
       {/* Panel */}
       {open && (
-        <div style={{ position: "fixed", bottom: 88, right: 24, zIndex: 1009, width: 360, height: 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
+        <div style={{ position: "fixed", bottom: isMobile ? 140 : 88, right: isMobile ? 8 : 24, left: isMobile ? 8 : "auto", zIndex: 1009, width: isMobile ? "auto" : 360, height: isMobile ? 420 : 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
 
           {/* Header */}
           <div style={{ padding: "14px 18px", background: C.dark, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
