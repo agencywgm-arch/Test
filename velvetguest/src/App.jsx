@@ -593,7 +593,27 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
   const [form, setForm] = useState({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null); // restaurant to delete
+  const [deleteStep, setDeleteStep] = useState(1); // 1 = confirm, 2 = type "supprimer"
+  const [deleteInput, setDeleteInput] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  function openDelete(e, r) {
+    e.stopPropagation();
+    setDeleteTarget(r);
+    setDeleteStep(1);
+    setDeleteInput("");
+  }
+
+  async function confirmDelete() {
+    if (deleteStep === 1) { setDeleteStep(2); return; }
+    if (deleteInput.trim().toLowerCase() !== "supprimer") return;
+    setDeleting(true);
+    await supabase.from("restaurants").delete().eq("id", deleteTarget.id);
+    setRestaurants(p => p.filter(r => r.id !== deleteTarget.id));
+    setDeleteTarget(null); setDeleting(false); setDeleteInput("");
+  }
 
   useEffect(() => {
     supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
@@ -656,10 +676,18 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
             {restaurants.map(r => {
               const mapped = mapRestaurant(r);
               return (
-                <Surface key={r.id} className="hover-lift" onClick={() => onSelect(mapped)} style={{ padding: 24, cursor: "pointer", transition: "all 0.2s" }}>
+                <Surface key={r.id} className="hover-lift" onClick={() => onSelect(mapped)} style={{ padding: 24, cursor: "pointer", transition: "all 0.2s", position: "relative" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
                     <div style={{ width: 52, height: 52, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>{r.logo_emoji}</div>
-                    <Tag color={C.accentGreen}><Dot color={C.accentGreen} />Actif</Tag>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Tag color={C.accentGreen}><Dot color={C.accentGreen} />Actif</Tag>
+                      <button onClick={e => openDelete(e, r)} title="Supprimer ce restaurant"
+                        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.textTertiary, fontSize: 14, flexShrink: 0, transition: "all 0.15s" }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textTertiary; }}>
+                        🗑
+                      </button>
+                    </div>
                   </div>
                   <h3 style={{ fontSize: 18, fontWeight: 700, color: C.dark, marginBottom: 4, letterSpacing: "-0.02em" }}>{r.name}</h3>
                   <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>{r.address || "—"}</p>
@@ -696,6 +724,57 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
           </div>
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) { setDeleteTarget(null); setDeleteStep(1); setDeleteInput(""); } }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 420 }}>
+            {deleteStep === 1 ? (
+              <>
+                <div style={{ textAlign: "center", marginBottom: 24 }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>⚠️</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 8 }}>Supprimer ce restaurant ?</h2>
+                  <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
+                    Vous êtes sur le point de supprimer <strong style={{ color: C.dark }}>{deleteTarget.name}</strong>.<br />
+                    Toutes les données (menu, commandes, tables) seront <strong style={{ color: C.accent }}>définitivement perdues</strong>.
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn variant="ghost" full onClick={() => { setDeleteTarget(null); setDeleteStep(1); }}>Annuler</Btn>
+                  <Btn variant="primary" full onClick={confirmDelete} style={{ background: C.accent }}>Oui, continuer →</Btn>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ textAlign: "center", marginBottom: 24 }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: C.dark, marginBottom: 8 }}>Confirmation finale</h2>
+                  <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+                    Pour confirmer, tapez <strong style={{ color: C.accent, fontFamily: "monospace" }}>supprimer</strong> ci-dessous :
+                  </p>
+                  <input
+                    autoFocus
+                    value={deleteInput}
+                    onChange={e => setDeleteInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && deleteInput.trim().toLowerCase() === "supprimer" && confirmDelete()}
+                    placeholder="supprimer"
+                    style={{ width: "100%", textAlign: "center", background: C.bg, border: `2px solid ${deleteInput.trim().toLowerCase() === "supprimer" ? C.accentGreen : C.border}`, borderRadius: 12, padding: "14px 16px", fontSize: 16, color: C.dark, outline: "none", letterSpacing: "0.05em", ...FF, transition: "border-color 0.2s" }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn variant="ghost" full onClick={() => { setDeleteTarget(null); setDeleteStep(1); setDeleteInput(""); }}>Annuler</Btn>
+                  <Btn variant="primary" full disabled={deleteInput.trim().toLowerCase() !== "supprimer" || deleting}
+                    onClick={confirmDelete}
+                    style={{ background: deleteInput.trim().toLowerCase() === "supprimer" ? C.accent : C.border, transition: "background 0.2s" }}>
+                    {deleting ? "Suppression..." : "🗑 Supprimer définitivement"}
+                  </Btn>
+                </div>
+              </>
+            )}
+          </Surface>
+        </div>
+      )}
 
       {showCreate && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24 }}>
