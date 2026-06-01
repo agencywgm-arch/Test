@@ -3617,6 +3617,58 @@ function ClientViewChat({ menuItems, restaurant, tableNum }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CAMPAIGN PROPOSAL CARD — rendered inside AgentChat when AI suggests a campaign
+// ─────────────────────────────────────────────────────────────────────────────
+function CampaignProposalCard({ proposal, restaurant, store }) {
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const customers = store.customers ?? [];
+  const now = new Date();
+  const recipients = customers.filter(c => {
+    if (!c.email) return false;
+    const days = c.last_visit ? Math.floor((now - new Date(c.last_visit)) / 86400000) : 999;
+    const avgTicket = c.order_count > 0 ? c.total_spent / c.order_count : 0;
+    if (proposal.segment === "inactive") return days >= 30;
+    if (proposal.segment === "top") return c.order_count >= 5 || avgTicket >= 25;
+    return true;
+  }).map(c => c.email);
+
+  async function handleSend() {
+    setSending(true);
+    setError("");
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke("send-campaign", {
+        body: { restaurant_id: restaurant.id, subject: proposal.subject, html_body: proposal.body, recipients },
+      });
+      if (fnErr) { setError(fnErr.message); }
+      else if (data?.error) { setError(data.error); }
+      else { setSent(true); }
+    } catch (e) { setError(e.message); }
+    finally { setSending(false); }
+  }
+
+  if (sent) return (
+    <div style={{ background: C.accentGreen + "15", border: `1px solid ${C.accentGreen}30`, borderRadius: 12, padding: "10px 14px", fontSize: 12, color: C.accentGreen, fontWeight: 700 }}>
+      ✅ Campagne envoyée à {recipients.length} client{recipients.length !== 1 ? "s" : ""}
+    </div>
+  );
+
+  return (
+    <div style={{ background: C.accentBlue + "10", border: `1.5px solid ${C.accentBlue}30`, borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: C.accentBlue, textTransform: "uppercase", letterSpacing: "0.05em" }}>📨 Campagne proposée</p>
+      <p style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{proposal.subject}</p>
+      <p style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.5 }}>{proposal.segment === "inactive" ? "Clients inactifs 30j+" : proposal.segment === "top" ? "Meilleurs clients" : "Tous les clients"} · {recipients.length} destinataire{recipients.length !== 1 ? "s" : ""}</p>
+      {error && <p style={{ fontSize: 12, color: C.accent }}>{error}</p>}
+      <button onClick={handleSend} disabled={sending || recipients.length === 0} style={{ padding: "9px 16px", background: C.dark, color: C.white, border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (sending || recipients.length === 0) ? 0.5 : 1, ...FF }}>
+        {sending ? "Envoi…" : "Envoyer cette campagne"}
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AGENT CHAT — floating AI assistant
 // ─────────────────────────────────────────────────────────────────────────────
 const QUICK_SUGGESTIONS = [
@@ -3816,16 +3868,31 @@ function AgentChat({ restaurant, store }) {
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {messages.map((m, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 7 }}>
-                {m.role === "assistant" && (
-                  <div style={{ width: 26, height: 26, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginBottom: 2 }}>✨</div>
-                )}
-                <div style={{ maxWidth: "82%", padding: "10px 14px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                  {m.content}
+            {messages.map((m, i) => {
+              // Detect email_campaign JSON proposal in assistant messages
+              let campaignProposal = null;
+              if (m.role === "assistant") {
+                const match = m.content.match(/```(?:json)?\s*(\{[\s\S]*?"action"\s*:\s*"email_campaign"[\s\S]*?\})\s*```/);
+                if (match) {
+                  try { campaignProposal = JSON.parse(match[1]); } catch {}
+                }
+              }
+              return (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 7 }}>
+                  {m.role === "assistant" && (
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginBottom: 2 }}>✨</div>
+                  )}
+                  <div style={{ maxWidth: "82%", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ padding: "10px 14px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {m.content}
+                    </div>
+                    {campaignProposal && (
+                      <CampaignProposalCard proposal={campaignProposal} restaurant={restaurant} store={store} />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {loading && (
               <div style={{ display: "flex", alignItems: "flex-end", gap: 7 }}>
@@ -4065,6 +4132,190 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 // ─────────────────────────────────────────────────────────────────────────────
 // CRM TAB
 // ─────────────────────────────────────────────────────────────────────────────
+function GmailConnectSection({ restaurant }) {
+  const isDemo = restaurant.id === "demo";
+  const [conn, setConn] = useState(null); // null=loading, false=not connected, object=connected
+  const [loading, setLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    if (isDemo) { setConn(false); return; }
+    supabase.from("email_connections").select("email,token_expiry").eq("restaurant_id", restaurant.id).maybeSingle()
+      .then(({ data }) => setConn(data || false));
+  }, [restaurant.id, isDemo]);
+
+  function handleConnect() {
+    if (!GOOGLE_CLIENT_ID) { alert("VITE_GOOGLE_CLIENT_ID non configuré."); return; }
+    const oauthUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: `${window.location.origin}${BASE_PATH}/oauth/gmail`,
+      response_type: "code",
+      scope: "https://www.googleapis.com/auth/gmail.send email profile",
+      access_type: "offline",
+      prompt: "consent",
+      state: restaurant.id,
+    }).toString();
+    window.location.href = oauthUrl;
+  }
+
+  async function handleDisconnect() {
+    if (!confirm("Déconnecter Gmail ?")) return;
+    setDisconnecting(true);
+    await supabase.from("email_connections").delete().eq("restaurant_id", restaurant.id);
+    setConn(false);
+    setDisconnecting(false);
+  }
+
+  if (conn === null) return <div style={{ padding: "12px 0", color: C.textTertiary, fontSize: 13 }}>Vérification Gmail…</div>;
+
+  return (
+    <Surface style={{ padding: "16px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ width: 40, height: 40, borderRadius: 12, background: conn ? "#EA433515" : C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+        📧
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Gmail</p>
+        {conn
+          ? <p style={{ fontSize: 12, color: C.accentGreen, marginTop: 2 }}>✅ Connecté : {conn.email}</p>
+          : <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Connectez votre Gmail pour envoyer des campagnes email.</p>
+        }
+      </div>
+      {conn ? (
+        <button onClick={handleDisconnect} disabled={disconnecting} style={{ padding: "8px 16px", background: C.accent + "12", color: C.accent, border: `1px solid ${C.accent}30`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF }}>
+          {disconnecting ? "…" : "Déconnecter"}
+        </button>
+      ) : (
+        <button onClick={handleConnect} disabled={isDemo} style={{ padding: "8px 16px", background: C.dark, color: C.white, border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: isDemo ? "default" : "pointer", opacity: isDemo ? 0.5 : 1, ...FF }}>
+          Connecter mon Gmail
+        </button>
+      )}
+    </Surface>
+  );
+}
+
+function CampaignSender({ restaurant, customers }) {
+  const isDemo = restaurant.id === "demo";
+  const [open, setOpen] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [htmlBody, setHtmlBody] = useState("");
+  const [recipientFilter, setRecipientFilter] = useState("all");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const now = new Date();
+  const filteredRecipients = customers.filter(c => {
+    if (!c.email) return false;
+    const days = c.last_visit ? Math.floor((now - new Date(c.last_visit)) / 86400000) : 999;
+    const avgTicket = c.order_count > 0 ? c.total_spent / c.order_count : 0;
+    if (recipientFilter === "all") return true;
+    if (recipientFilter === "inactive") return days >= 30;
+    if (recipientFilter === "top") return c.order_count >= 5 || avgTicket >= 25;
+    return true;
+  }).map(c => c.email);
+
+  async function sendCampaign() {
+    setConfirmOpen(false);
+    setSending(true);
+    setResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-campaign", {
+        body: { restaurant_id: restaurant.id, subject, html_body: htmlBody, recipients: filteredRecipients },
+      });
+      if (error) { setResult({ error: error.message }); }
+      else { setResult(data); }
+    } catch (e) {
+      setResult({ error: e.message });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const FILTERS = [
+    { id: "all", label: "Tous les clients" },
+    { id: "inactive", label: "Clients inactifs 30j+" },
+    { id: "top", label: "Meilleurs clients" },
+  ];
+
+  return (
+    <Surface style={{ padding: "16px 18px", marginBottom: 16 }}>
+      <button onClick={() => setOpen(p => !p)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer", padding: 0, ...FF }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 20 }}>📨</span>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Envoyer une campagne email</p>
+        </div>
+        <span style={{ fontSize: 13, color: C.textTertiary }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Recipient filter */}
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Destinataires</p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {FILTERS.map(f => (
+                <button key={f.id} onClick={() => setRecipientFilter(f.id)} style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${recipientFilter === f.id ? C.accentBlue : C.border}`, background: recipientFilter === f.id ? C.accentBlue + "12" : C.white, color: recipientFilter === f.id ? C.accentBlue : C.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 6 }}>
+              {filteredRecipients.length} destinataire{filteredRecipients.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+
+          {/* Subject */}
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Objet</p>
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Ex : Offre spéciale ce week-end 🎉" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 13, outline: "none", ...FF }} />
+          </div>
+
+          {/* Body */}
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Corps du message (HTML accepté)</p>
+            <textarea value={htmlBody} onChange={e => setHtmlBody(e.target.value)} placeholder="<p>Bonjour,</p><p>Nous avons une offre spéciale pour vous…</p>" rows={5} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 13, outline: "none", resize: "vertical", ...FF }} />
+          </div>
+
+          {/* Result */}
+          {result && (
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: result.error ? C.accent + "12" : C.accentGreen + "12", color: result.error ? C.accent : C.accentGreen, fontSize: 13, fontWeight: 600 }}>
+              {result.error ? `❌ Erreur : ${result.error}` : `✅ ${result.sent} envoyé${result.sent !== 1 ? "s" : ""}${result.failed > 0 ? `, ${result.failed} échoué(s)` : ""}`}
+            </div>
+          )}
+
+          {/* Send button */}
+          <button
+            onClick={() => setConfirmOpen(true)}
+            disabled={sending || !subject.trim() || !htmlBody.trim() || filteredRecipients.length === 0 || isDemo}
+            style={{ padding: "12px 20px", background: C.dark, color: C.white, border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: (sending || !subject.trim() || !htmlBody.trim() || filteredRecipients.length === 0 || isDemo) ? 0.45 : 1, ...FF }}
+          >
+            {sending ? "Envoi en cours…" : `Envoyer à ${filteredRecipients.length} client${filteredRecipients.length !== 1 ? "s" : ""}`}
+          </button>
+          {isDemo && <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center" }}>Désactivé en mode démo</p>}
+        </div>
+      )}
+
+      {/* Confirm modal */}
+      {confirmOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setConfirmOpen(false)}>
+          <div style={{ background: C.white, borderRadius: 20, padding: "28px 24px", maxWidth: 380, width: "100%", ...FF }} onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize: 20, marginBottom: 8 }}>📨</p>
+            <p style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 8 }}>Confirmer l'envoi</p>
+            <p style={{ fontSize: 14, color: C.textSecondary, marginBottom: 4 }}>Objet : <strong>{subject}</strong></p>
+            <p style={{ fontSize: 14, color: C.textSecondary, marginBottom: 20 }}>
+              {filteredRecipients.length} destinataire{filteredRecipients.length !== 1 ? "s" : ""} · filtre : {FILTERS.find(f => f.id === recipientFilter)?.label}
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmOpen(false)} style={{ flex: 1, padding: "11px 0", background: C.bg, border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", color: C.dark, ...FF }}>Annuler</button>
+              <button onClick={sendCampaign} style={{ flex: 1, padding: "11px 0", background: C.dark, border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", color: C.white, ...FF }}>Envoyer</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Surface>
+  );
+}
+
 function CRMTab({ restaurant, store }) {
   const isDemo = restaurant.id === "demo";
   const isMobile = useIsMobile();
@@ -4122,6 +4373,10 @@ function CRMTab({ restaurant, store }) {
 
   return (
     <div>
+      {/* Gmail + Campaign */}
+      <GmailConnectSection restaurant={restaurant} />
+      <CampaignSender restaurant={restaurant} customers={withSegment} />
+
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 14, marginBottom: isMobile ? 14 : 24 }}>
         {[
