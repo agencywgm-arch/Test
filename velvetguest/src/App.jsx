@@ -1,6 +1,22 @@
-import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext, Component } from "react";
 import { supabase } from "./lib/supabase";
 import QRCode from "qrcode";
+
+class ErrorBoundary extends Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(e) { return { err: e }; }
+  render() {
+    if (this.state.err) return (
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, fontFamily: "sans-serif", background: "#F5F5F7" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+        <p style={{ fontSize: 18, fontWeight: 700, color: "#1D1D1F", marginBottom: 8 }}>Erreur au démarrage</p>
+        <pre style={{ fontSize: 12, color: "#FF375F", background: "#FFF", padding: 16, borderRadius: 10, maxWidth: 480, wordBreak: "break-all", whiteSpace: "pre-wrap", marginBottom: 16 }}>{this.state.err?.message || String(this.state.err)}</pre>
+        <button onClick={() => window.location.reload()} style={{ padding: "10px 24px", background: "#1D1D1F", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, cursor: "pointer" }}>🔄 Recharger</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL STORE — demo orders + real Supabase restaurants
@@ -4585,12 +4601,16 @@ function CustomerPage({ slug, tableNum }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // APP ROOT — Supabase session restore
 // ─────────────────────────────────────────────────────────────────────────────
-export default function App() {
+function AppInner() {
   const customerMatch = window.location.pathname.match(/\/r\/([^/]+)\/t\/(\d+)/);
   if (customerMatch) {
     return <CustomerPage slug={customerMatch[1]} tableNum={Number(customerMatch[2])} />;
   }
   return <Dashboard />;
+}
+
+export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
 }
 
 function Dashboard() {
