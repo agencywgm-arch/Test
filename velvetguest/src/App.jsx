@@ -3633,6 +3633,28 @@ function AgentChat({ restaurant, store }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Draggable position for the chat button
+  const [pos, setPos] = useState(null); // null = default position
+  const dragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0, px: 0, py: 0 });
+
+  function onPointerDown(e) {
+    dragging.current = false;
+    const cur = pos || { x: window.innerWidth - (isMobile ? 64 : 80), y: window.innerHeight - (isMobile ? 144 : 88) };
+    dragStart.current = { x: e.clientX, y: e.clientY, px: cur.x, py: cur.y };
+    const move = ev => {
+      const dx = ev.clientX - dragStart.current.x;
+      const dy = ev.clientY - dragStart.current.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) dragging.current = true;
+      const nx = Math.max(8, Math.min(window.innerWidth - 64, dragStart.current.px + dx));
+      const ny = Math.max(8, Math.min(window.innerHeight - 80, dragStart.current.py + dy));
+      setPos({ x: nx, y: ny });
+    };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   useEffect(() => {
     if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -3712,14 +3734,26 @@ function AgentChat({ restaurant, store }) {
 
   const showSuggestions = messages.length <= 1;
 
+  const btnX = pos ? pos.x : null;
+  const btnY = pos ? pos.y : null;
+  const btnStyle = pos
+    ? { left: btnX, top: btnY, right: "auto", bottom: "auto" }
+    : { bottom: isMobile ? 80 : 24, right: 16 };
+
+  // Panel position: above/beside the button
+  const panelStyle = pos
+    ? { left: Math.min(btnX, window.innerWidth - (isMobile ? window.innerWidth - 16 : 376)), top: Math.max(8, btnY - (isMobile ? 440 : 540)), bottom: "auto", right: "auto" }
+    : { bottom: isMobile ? 140 : 88, right: isMobile ? 8 : 24, left: isMobile ? 8 : "auto" };
+
   return (
     <>
-      {/* Toggle button */}
+      {/* Toggle button — draggable */}
       <button
-        onClick={() => setOpen(p => !p)}
+        onPointerDown={onPointerDown}
+        onClick={() => { if (!dragging.current) setOpen(p => !p); }}
         className="btn-press"
-        title={open ? "Fermer l'assistant" : "Ouvrir l'assistant IA"}
-        style={{ position: "fixed", bottom: isMobile ? 80 : 24, right: 16, zIndex: 1010, width: 48, height: 48, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 20, transition: "background 0.2s ease", ...FF }}
+        title={open ? "Fermer l'assistant" : "Ouvrir l'assistant IA (glissez pour déplacer)"}
+        style={{ position: "fixed", ...btnStyle, zIndex: 1010, width: 48, height: 48, borderRadius: "50%", background: open ? C.textSecondary : C.dark, border: "none", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", fontSize: 20, transition: "background 0.2s ease", touchAction: "none", ...FF }}
       >
         <span style={{ transition: "transform 0.2s ease", display: "block", transform: open ? "rotate(45deg)" : "none" }}>
           {open ? "✕" : "✨"}
@@ -3733,7 +3767,7 @@ function AgentChat({ restaurant, store }) {
 
       {/* Panel */}
       {open && (
-        <div style={{ position: "fixed", bottom: isMobile ? 140 : 88, right: isMobile ? 8 : 24, left: isMobile ? 8 : "auto", zIndex: 1009, width: isMobile ? "auto" : 360, height: isMobile ? 420 : 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
+        <div style={{ position: "fixed", ...panelStyle, zIndex: 1009, width: isMobile ? (pos ? Math.min(360, window.innerWidth - 16) : "auto") : 360, height: isMobile ? 420 : 520, background: C.surface, borderRadius: 20, boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", animation: "slideUp 0.25s ease", overflow: "hidden", ...FF }}>
 
           {/* Header */}
           <div style={{ padding: "14px 18px", background: C.dark, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
@@ -4251,6 +4285,14 @@ function CustomerPage({ slug, tableNum }) {
   useEffect(() => {
     async function load() {
       try {
+        // demo slug — use local data without Supabase
+        if (slug === "demo") {
+          setRestaurant(DEMO_RESTAURANT);
+          setMenuItems(DEMO_MENU);
+          setTableId(`demo-t${tableNum}`);
+          setStep("menu");
+          return;
+        }
         const { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq("slug", slug).single();
         if (restoErr || !resto) { setStep("error"); return; }
         setRestaurant(resto);
