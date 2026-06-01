@@ -4133,16 +4133,25 @@ function CustomerPage({ slug, tableNum }) {
 
   useEffect(() => {
     async function load() {
-      const { data: resto } = await supabase.from("restaurants").select("*").eq("slug", slug).single();
-      if (!resto) { setStep("error"); return; }
-      setRestaurant(resto);
-      const { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", resto.id).eq("number", tableNum).single();
-      setTableId(tbl?.id ?? null);
-      const { data: items } = await supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name");
-      setMenuItems(items ?? []);
-      const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
-      setActivePromos(promos ?? []);
-      setStep("menu");
+      try {
+        const { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq("slug", slug).single();
+        if (restoErr || !resto) { setStep("error"); return; }
+        setRestaurant(resto);
+        const [tblRes, itemsRes] = await Promise.all([
+          supabase.from("tables").select("id").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
+          supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name"),
+        ]);
+        setTableId(tblRes.data?.id ?? null);
+        setMenuItems(itemsRes.data ?? []);
+        // promos optional — table may not exist yet
+        try {
+          const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
+          setActivePromos(promos ?? []);
+        } catch {}
+        setStep("menu");
+      } catch {
+        setStep("error");
+      }
     }
     load();
   }, [slug, tableNum]);
