@@ -4586,11 +4586,14 @@ function CustomerPage({ slug, tableNum }) {
 // APP ROOT — Supabase session restore
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  // Route public customer pages before any auth check
   const customerMatch = window.location.pathname.match(/\/r\/([^/]+)\/t\/(\d+)/);
   if (customerMatch) {
     return <CustomerPage slug={customerMatch[1]} tableNum={Number(customerMatch[2])} />;
   }
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const [page, setPage] = useState("loading");
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
