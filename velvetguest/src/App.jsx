@@ -76,6 +76,11 @@ const DEMO_INGREDIENTS = [
   { id: "ing8", restaurant_id: "demo", name: "Chocolat noir", unit: "kg", emoji: "🍫", stock: 0.4, alert_threshold: 0.3 },
 ];
 // recipes: { menu_item_id → [{ ingredient_id, qty_per_portion }] }
+const DEMO_PROMOS = [
+  { id: "promo1", restaurant_id: "demo", name: "Happy Hour", description: "Boissons à -30% de 17h à 19h", discount_percent: 30, emoji: "🍹", color: "#FF9F0A", type: "happy_hour", start_date: null, end_date: null, active: true, send_count: 47, created_at: new Date().toISOString() },
+  { id: "promo2", restaurant_id: "demo", name: "Menu Saint-Valentin", description: "Menu spécial pour 2 personnes à -20%", discount_percent: 20, emoji: "❤️", color: "#FF375F", type: "seasonal", start_date: "2026-02-14", end_date: "2026-02-14", active: false, send_count: 0, created_at: new Date().toISOString() },
+  { id: "promo3", restaurant_id: "demo", name: "Midi Express", description: "Plat + boisson à 12€ le midi", discount_percent: 0, emoji: "⚡", color: "#34C759", type: "event", start_date: null, end_date: null, active: true, send_count: 123, created_at: new Date().toISOString() },
+];
 const DEMO_RECIPES = {
   dm3: [{ ingredient_id: "ing1", qty_per_portion: 0.25 }, { ingredient_id: "ing5", qty_per_portion: 0.30 }],
   dm4: [{ ingredient_id: "ing6", qty_per_portion: 0.40 }],
@@ -116,6 +121,7 @@ function useStore(restaurantId) {
   const [orders, setOrders] = useState([]);
   const [doneOrders, setDoneOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
 
   const pushNotif = useCallback((msg, type = "info") => {
     const n = { id: Date.now(), msg, type };
@@ -128,8 +134,12 @@ function useStore(restaurantId) {
     if (restaurantId === "demo") {
       setOrders(DEMO_ORDERS);
       setDoneOrders(DEMO_DONE_ORDERS);
+      setIngredients(DEMO_INGREDIENTS);
       return;
     }
+
+    supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId)
+      .then(({ data }) => setIngredients(data ?? []));
 
     supabase.from("orders").select(ORDER_QUERY)
       .eq("restaurant_id", restaurantId).neq("status", "DONE")
@@ -174,7 +184,7 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue };
+  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -547,6 +557,73 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ALERT BUBBLES — floating alert cards fixed to top-right
+// ─────────────────────────────────────────────────────────────────────────────
+function AlertBubbles({ store }) {
+  const [dismissed, setDismissed] = useState(new Set());
+
+  const ingredients = store.ingredients ?? [];
+  const orders = store.orders ?? [];
+
+  const allAlerts = [
+    ...orders.filter(o => o.status !== "served" && o.elapsed >= 20).map(o => ({
+      id: `urgent-${o.id}`,
+      icon: "🔴",
+      label: "Commande urgente",
+      text: `Table ${o.table} — ${o.elapsed} min`,
+      color: C.accent,
+    })),
+    ...orders.filter(o => o.status === "new").map(o => ({
+      id: `new-${o.id}`,
+      icon: "🟡",
+      label: "Nouvelle commande",
+      text: `Table ${o.table} · ${o.total.toFixed(2)}€`,
+      color: C.accentBlue,
+    })),
+    ...ingredients.filter(i => i.stock > 0 && i.alert_threshold != null && i.stock <= i.alert_threshold).map(i => ({
+      id: `low-${i.id}`,
+      icon: "🟠",
+      label: "Stock bas",
+      text: `${i.emoji} ${i.name} (${+i.stock.toFixed(2)} ${i.unit})`,
+      color: C.accentOrange,
+    })),
+    ...ingredients.filter(i => i.stock === 0).map(i => ({
+      id: `out-${i.id}`,
+      icon: "🔴",
+      label: "Rupture de stock",
+      text: `${i.emoji} ${i.name}`,
+      color: C.accent,
+    })),
+  ].filter(a => !dismissed.has(a.id));
+
+  if (allAlerts.length === 0) return null;
+
+  return (
+    <div style={{ position: "fixed", top: 72, right: 80, zIndex: 500, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
+      {allAlerts.map(alert => (
+        <div key={alert.id} style={{
+          minWidth: 240, maxWidth: 300, background: C.white, borderRadius: 12,
+          padding: "10px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+          borderLeft: `3px solid ${alert.color}`,
+          display: "flex", alignItems: "center", gap: 10,
+          animation: "slideDown 0.2s ease",
+          pointerEvents: "all",
+          ...FF,
+        }}>
+          <span style={{ fontSize: 14, flexShrink: 0 }}>{alert.icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: alert.color, marginBottom: 1 }}>{alert.label}</p>
+            <p style={{ fontSize: 12, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alert.text}</p>
+          </div>
+          <button onClick={() => setDismissed(prev => new Set([...prev, alert.id]))}
+            style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
@@ -559,7 +636,8 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     { id: "setup", label: "⚡ Setup" },
     { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
     { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
-    { id: "inventory", label: "Inventaire" }, { id: "menu", label: "Carte" },
+    { id: "inventory", label: "Inventaire" }, { id: "promos", label: "🎁 Promos" },
+    { id: "menu", label: "Carte" },
   ];
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
@@ -611,6 +689,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         </div>
       </aside>
       <AgentChat restaurant={restaurant} store={store} />
+      <AlertBubbles store={store} />
       <main style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
         <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
           <div>
@@ -629,6 +708,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
           {tab === "setup" && <SetupTab restaurant={restaurant} onDone={() => setTab("overview")} />}
           {tab === "inventory" && <InventoryTab restaurant={restaurant} />}
+          {tab === "promos" && <PromosTab restaurant={restaurant} store={store} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
       </main>
