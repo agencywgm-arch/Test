@@ -81,6 +81,23 @@ const DEMO_PROMOS = [
   { id: "promo2", restaurant_id: "demo", name: "Menu Saint-Valentin", description: "Menu spécial pour 2 personnes à -20%", discount_percent: 20, emoji: "❤️", color: "#FF375F", type: "seasonal", start_date: "2026-02-14", end_date: "2026-02-14", active: false, send_count: 0, created_at: new Date().toISOString() },
   { id: "promo3", restaurant_id: "demo", name: "Midi Express", description: "Plat + boisson à 12€ le midi", discount_percent: 0, emoji: "⚡", color: "#34C759", type: "event", start_date: null, end_date: null, active: true, send_count: 123, created_at: new Date().toISOString() },
 ];
+const DEMO_CUSTOMERS = [
+  { id:"c1", restaurant_id:"demo", first_name:"Sophie", email:"sophie.martin@gmail.com", phone:"06 12 34 56 78", first_visit:"2025-10-15", last_visit:"2026-05-28", order_count:14, total_spent:287.40, created_at:"2025-10-15T12:00:00Z" },
+  { id:"c2", restaurant_id:"demo", first_name:"Thomas", email:"thomas.dupont@hotmail.fr", phone:"06 98 76 54 32", first_visit:"2025-11-02", last_visit:"2026-05-30", order_count:9, total_spent:198.50, created_at:"2025-11-02T12:00:00Z" },
+  { id:"c3", restaurant_id:"demo", first_name:"Camille", email:"camille.bernard@gmail.com", phone:"07 11 22 33 44", first_visit:"2025-09-20", last_visit:"2026-04-10", order_count:22, total_spent:512.80, created_at:"2025-09-20T12:00:00Z" },
+  { id:"c4", restaurant_id:"demo", first_name:"Lucas", email:"lucas.petit@gmail.com", phone:"", first_visit:"2026-01-08", last_visit:"2026-02-15", order_count:3, total_spent:54.90, created_at:"2026-01-08T12:00:00Z" },
+  { id:"c5", restaurant_id:"demo", first_name:"Emma", email:"emma.robert@gmail.com", phone:"06 55 66 77 88", first_visit:"2025-12-01", last_visit:"2026-05-25", order_count:11, total_spent:241.60, created_at:"2025-12-01T12:00:00Z" },
+  { id:"c6", restaurant_id:"demo", first_name:"Hugo", email:"hugo.moreau@yahoo.fr", phone:"07 44 55 66 77", first_visit:"2025-08-14", last_visit:"2025-12-20", order_count:6, total_spent:128.40, created_at:"2025-08-14T12:00:00Z" },
+  { id:"c7", restaurant_id:"demo", first_name:"Léa", email:"lea.simon@gmail.com", phone:"06 33 44 55 66", first_visit:"2026-02-20", last_visit:"2026-05-10", order_count:5, total_spent:97.50, created_at:"2026-02-20T12:00:00Z" },
+  { id:"c8", restaurant_id:"demo", first_name:"Antoine", email:"antoine.laurent@gmail.com", phone:"", first_visit:"2025-07-10", last_visit:"2025-10-05", order_count:4, total_spent:79.80, created_at:"2025-07-10T12:00:00Z" },
+  { id:"c9", restaurant_id:"demo", first_name:"Chloé", email:"chloe.lefebvre@gmail.com", phone:"06 77 88 99 00", first_visit:"2026-03-05", last_visit:"2026-05-29", order_count:7, total_spent:154.30, created_at:"2026-03-05T12:00:00Z" },
+  { id:"c10", restaurant_id:"demo", first_name:"Nathan", email:"nathan.garcia@outlook.fr", phone:"07 22 33 44 55", first_visit:"2025-11-18", last_visit:"2026-04-22", order_count:8, total_spent:176.00, created_at:"2025-11-18T12:00:00Z" },
+  { id:"c11", restaurant_id:"demo", first_name:"Manon", email:"manon.david@gmail.com", phone:"06 10 20 30 40", first_visit:"2026-01-30", last_visit:"2026-05-01", order_count:4, total_spent:88.20, created_at:"2026-01-30T12:00:00Z" },
+  { id:"c12", restaurant_id:"demo", first_name:"Romain", email:"romain.bertrand@gmail.com", phone:"", first_visit:"2025-06-05", last_visit:"2025-09-18", order_count:3, total_spent:63.70, created_at:"2025-06-05T12:00:00Z" },
+  { id:"c13", restaurant_id:"demo", first_name:"Julie", email:"julie.thomas@gmail.com", phone:"06 66 77 88 99", first_visit:"2026-04-01", last_visit:"2026-05-31", order_count:6, total_spent:118.40, created_at:"2026-04-01T12:00:00Z" },
+  { id:"c14", restaurant_id:"demo", first_name:"Pierre", email:"pierre.henry@gmail.com", phone:"07 55 44 33 22", first_visit:"2025-10-28", last_visit:"2026-01-14", order_count:5, total_spent:102.50, created_at:"2025-10-28T12:00:00Z" },
+  { id:"c15", restaurant_id:"demo", first_name:"Sarah", email:"sarah.blanc@gmail.com", phone:"06 88 99 00 11", first_visit:"2026-02-14", last_visit:"2026-05-20", order_count:9, total_spent:201.60, created_at:"2026-02-14T12:00:00Z" },
+];
 // Calendrier événements saisonniers (mois 1-12, jour)
 const SEASONAL_EVENTS = [
   { emoji: "❤️", name: "Saint-Valentin", month: 2, day: 14, color: "#FF375F", msg: "Proposez un menu spécial pour les amoureux." },
@@ -765,6 +782,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     { id: "overview", label: "Résumé" }, { id: "orders", label: "Commandes" },
     { id: "caisse", label: "Caisse" }, { id: "qrcode", label: "QR Codes" },
     { id: "inventory", label: "Inventaire" }, { id: "promos", label: "🎁 Promos" },
+    { id: "crm", label: "👥 CRM" },
     { id: "menu", label: "Carte" },
   ];
   return (
@@ -837,6 +855,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "setup" && <SetupTab restaurant={restaurant} onDone={() => setTab("overview")} />}
           {tab === "inventory" && <InventoryTab restaurant={restaurant} />}
           {tab === "promos" && <PromosTab restaurant={restaurant} store={store} />}
+          {tab === "crm" && <CRMTab restaurant={restaurant} store={store} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
         </div>
       </main>
@@ -3569,6 +3588,8 @@ function CustomerPage({ slug, tableNum }) {
   const [payMode, setPayMode] = useState(null);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [profileSkipped, setProfileSkipped] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Je suis là pour répondre à vos questions sur les allergènes, ingrédients ou plats. Comment puis-je vous aider ?" }]);
   const [chatInput, setChatInput] = useState("");
@@ -3655,6 +3676,19 @@ function CustomerPage({ slug, tableNum }) {
       } catch {}
       setOrderId(order.id);
       setStep("done");
+      // Upsert customer profile
+      try {
+        if (customerEmail.trim()) {
+          await supabase.from("customers").upsert({
+            restaurant_id: restaurant.id,
+            email: customerEmail.trim().toLowerCase(),
+            first_name: customerName.trim() || "Client",
+            phone: customerPhone.trim() || "",
+            last_visit: new Date().toISOString().split("T")[0],
+            last_order_total: total,
+          }, { onConflict: "restaurant_id,email", ignoreDuplicates: false });
+        }
+      } catch {}
     } catch (e) {
       setConfirmError("Une erreur inattendue est survenue. Veuillez réessayer.");
     } finally {
@@ -3804,7 +3838,42 @@ function CustomerPage({ slug, tableNum }) {
             <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>Total</span>
             <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
           </div>
-          <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+          <button onClick={() => setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+        </div>
+      )}
+
+      {step === "profile" && (
+        <div style={{ padding: "40px 20px 100px", minHeight: "100vh", background: "#fff" }}>
+          <button onClick={() => setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 24, ...FF }}>← Retour</button>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>🎟️</div>
+            <p style={{ fontSize: 24, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em", marginBottom: 8 }}>Votre ticket numérique</p>
+            <p style={{ fontSize: 14, color: C.textSecondary, lineHeight: 1.6 }}>Recevez votre ticket de caisse par email et profitez des offres et avantages exclusifs du restaurant.</p>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Prénom *</label>
+            <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Votre prénom" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Email *</label>
+            <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="votre@email.fr" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
+          </div>
+          <div style={{ marginBottom: 28 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Téléphone <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel)</span></label>
+            <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="06 XX XX XX XX" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
+          </div>
+          <button
+            onClick={() => { if (!customerEmail.trim()) return; setStep("payment"); }}
+            disabled={!customerEmail.trim()}
+            style={{ width: "100%", padding: "16px", background: customerEmail.trim() ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: customerEmail.trim() ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
+            Continuer vers le paiement →
+          </button>
+          <button onClick={() => { setProfileSkipped(true); setStep("payment"); }} style={{ width: "100%", padding: "12px", background: "none", color: C.textTertiary, border: "none", fontSize: 14, cursor: "pointer", ...FF }}>
+            Passer cette étape
+          </button>
+          <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
+            🔒 Vos données sont protégées et utilisées uniquement pour votre ticket et les offres du restaurant.
+          </p>
         </div>
       )}
 
@@ -3943,13 +4012,13 @@ function CustomerPage({ slug, tableNum }) {
               {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 14 }}>Merci pour votre avis ! 🙏</p>}
             </div>
 
-            <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
+            <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
           </div>
         );
       })()}
 
       {/* Allergen chat — visible on menu and cart steps */}
-      {(step === "menu" || step === "cart" || step === "payment") && (
+      {(step === "menu" || step === "cart" || step === "payment" || step === "profile") && (
         <CustomerChat
           open={chatOpen}
           onOpen={() => setChatOpen(true)}
