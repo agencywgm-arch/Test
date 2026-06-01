@@ -4333,7 +4333,7 @@ function CustomerPage({ slug, tableNum }) {
       let tid = tableId;
       if (!tid) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: window.location.href })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.slug}/t/${tableNum}` })
           .select("id").single();
         tid = newTbl?.id ?? null;
       }
