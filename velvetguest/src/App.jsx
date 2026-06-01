@@ -3932,6 +3932,7 @@ function CRMTab({ restaurant, store }) {
       if (segment === "loyal") return c.loyal;
       if (segment === "highvalue") return c.highValue;
       if (segment === "all") return true;
+      if (segment === "relanced") return !!c._relanced;
       return c.seg === segment;
     })
     .filter(c => !search || c.first_name?.toLowerCase().includes(search.toLowerCase()) || c.email?.toLowerCase().includes(search.toLowerCase()));
@@ -3973,6 +3974,25 @@ function CRMTab({ restaurant, store }) {
           );
         })}
       </div>
+
+      {/* Relances récentes */}
+      {store.promotions && store.promotions.filter(p => p.type === "event" && p.send_count > 0).length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Relances récentes</p>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
+            {store.promotions.filter(p => p.type === "event" && p.send_count > 0).slice(0, 5).map(p => (
+              <div key={p.id} style={{ flexShrink: 0, background: p.color + "12", border: `1px solid ${p.color}25`, borderRadius: 12, padding: "10px 14px", minWidth: 160 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 16 }}>{p.emoji}</span>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: p.color }}>{p.name}</p>
+                </div>
+                <p style={{ fontSize: 11, color: C.textSecondary }}>{p.send_count} clients contactés</p>
+                <p style={{ fontSize: 10, color: C.textTertiary, marginTop: 2 }}>{new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Rechercher un client..." style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 14, marginBottom: 16, outline: "none", ...FF }} />
