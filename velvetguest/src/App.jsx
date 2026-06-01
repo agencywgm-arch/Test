@@ -634,7 +634,7 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
     // Create table records
     const tableRows = Array.from({ length: Number(form.tables_count) }, (_, i) => ({
       restaurant_id: data.id, number: i + 1,
-      qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${slug}/t/${i + 1}`,
+      qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${data.id}/t/${i + 1}`,
     }));
     await supabase.from("tables").insert(tableRows);
     setRestaurants(p => [data, ...p]);
@@ -1369,7 +1369,7 @@ function QRTab({ restaurant }) {
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const baseUrl = customBase || window.location.origin;
   const basePath = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test";
-  const url = `${baseUrl}${basePath}/r/${restaurant.slug}/t/${sel}`;
+  const url = `${baseUrl}${basePath}/r/${restaurant.id}/t/${sel}`;
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
@@ -3327,7 +3327,7 @@ function ClientView({ restaurant, onBack }) {
       let { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
       if (!tbl) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.slug}/t/${tableNum}` })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.id}/t/${tableNum}` })
           .select("id").single();
         tbl = newTbl;
       }
@@ -4293,7 +4293,9 @@ function CustomerPage({ slug, tableNum }) {
           setStep("menu");
           return;
         }
-        const { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq("slug", slug).single();
+        // slug may be a UUID (durable QR) or a slug string (legacy)
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+        const { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq(isUuid ? "id" : "slug", slug).single();
         if (restoErr || !resto) { setStep("error"); return; }
         setRestaurant(resto);
         const [tblRes, itemsRes] = await Promise.all([
@@ -4333,7 +4335,7 @@ function CustomerPage({ slug, tableNum }) {
       let tid = tableId;
       if (!tid) {
         const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.slug}/t/${tableNum}` })
+          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "" : "/Test"}/r/${restaurant.id}/t/${tableNum}` })
           .select("id").single();
         tid = newTbl?.id ?? null;
       }
