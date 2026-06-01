@@ -3310,6 +3310,7 @@ function ClientView({ restaurant, onBack }) {
   }
 
   useEffect(() => {
+    if (restaurant.id === "demo") { setMenuItems(DEMO_MENU); setLoadingMenu(false); return; }
     supabase.from("menu_items").select("*")
       .eq("restaurant_id", restaurant.id).eq("available", true)
       .order("category").order("name")
@@ -3479,7 +3480,16 @@ function ClientView({ restaurant, onBack }) {
       <div style={{ padding: "48px 20px 0" }}>
         <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 0, marginBottom: 16, ...FF }}>← Retour</button>
         <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 4 }}>Paiement</p>
-        <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>Table {tableNum} · {restaurant.name}</p>
+        <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: restaurant.id === "demo" ? 10 : 20 }}>Table {tableNum} · {restaurant.name}</p>
+        {restaurant.id === "demo" && (
+          <div style={{ background: "#FFF9E6", border: "1.5px solid #F5C542", borderRadius: 12, padding: "9px 12px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>🎭</span>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#92700A", margin: 0 }}>Mode démo — paiement fictif</p>
+              <p style={{ fontSize: 11, color: "#B8860B", margin: 0 }}>Aucun prélèvement ne sera effectué.</p>
+            </div>
+          </div>
+        )}
         {ordering && <div style={{ textAlign: "center", padding: "20px 0" }}><div style={{ width: 28, height: 28, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite", margin: "0 auto 10px" }} /><p style={{ fontSize: 13, color: C.textSecondary }}>Enregistrement…</p></div>}
         {orderError && <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.accent }}>{orderError}</div>}
         {!ordering && !payMode && (
@@ -4644,6 +4654,15 @@ function CustomerPage({ slug, tableNum }) {
 
   async function confirm(paymentMethod = "cash") {
     setConfirming(true); setConfirmError("");
+    // Demo mode: simulate order without Supabase
+    if (restaurant.id === "demo") {
+      await new Promise(r => setTimeout(r, 1200));
+      setOrderId("demo-" + Date.now().toString(36).toUpperCase());
+      setPayMode(paymentMethod === "cash" ? null : "card");
+      setStep("done");
+      setConfirming(false);
+      return;
+    }
     try {
       // Auto-create table if not found
       let tid = tableId;
@@ -4913,7 +4932,16 @@ function CustomerPage({ slug, tableNum }) {
             <>
               <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
               <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
-              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 24 }}>Table {tableNum} · {restaurant?.name}</p>
+              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: restaurant?.id === "demo" ? 12 : 24 }}>Table {tableNum} · {restaurant?.name}</p>
+              {restaurant?.id === "demo" && (
+                <div style={{ background: "#FFF9E6", border: "1.5px solid #F5C542", borderRadius: 12, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🎭</span>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#92700A", margin: 0 }}>Mode démo — paiement fictif</p>
+                    <p style={{ fontSize: 12, color: "#B8860B", margin: 0 }}>Aucun prélèvement ne sera effectué.</p>
+                  </div>
+                </div>
+              )}
               {confirmError && (
                 <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: C.accent, fontWeight: 500 }}>
                   ⚠️ {confirmError}
