@@ -150,6 +150,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+// Simple in-memory rate limiter: max 20 req/min per IP
+const rateLimiter = new Map<string, { count: number; resetAt: number }>();
+function isRateLimited(ip: string, limit = 20): boolean {
+  const now = Date.now();
+  const entry = rateLimiter.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimiter.set(ip, { count: 1, resetAt: now + 60_000 });
+    return false;
+  }
+  if (entry.count >= limit) return true;
+  entry.count++;
+  return false;
+}
+
 async function callOpenAI(body: object): Promise<Response> {
   return fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -164,6 +178,14 @@ async function callOpenAI(body: object): Promise<Response> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting by IP
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: "Too many requests" }), {
+      status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
   }
 
   try {

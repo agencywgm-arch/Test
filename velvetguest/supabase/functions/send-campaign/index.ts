@@ -10,6 +10,27 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
   try {
+    // Verify caller is an authenticated Supabase user
+    const authHeader = req.headers.get("Authorization")
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    )
+
+    const token = authHeader.replace("Bearer ", "")
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
+
     const { restaurant_id, restaurant_name, subject, html_body, recipients } = await req.json()
 
     if (!subject || !html_body || !Array.isArray(recipients) || recipients.length === 0) {
@@ -17,6 +38,28 @@ serve(async (req) => {
         JSON.stringify({ error: "Missing required fields: subject, html_body, recipients" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
+    }
+
+    // Verify the restaurant belongs to the authenticated user
+    if (restaurant_id) {
+      const { data: resto, error: restoErr } = await supabase
+        .from("restaurants")
+        .select("id")
+        .eq("id", restaurant_id)
+        .eq("owner_id", user.id)
+        .single()
+      if (restoErr || !resto) {
+        return new Response(JSON.stringify({ error: "Forbidden: restaurant not owned by user" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        })
+      }
+    }
+
+    // Cap recipients to avoid abuse
+    if (recipients.length > 500) {
+      return new Response(JSON.stringify({ error: "Too many recipients (max 500)" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
     }
 
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
@@ -54,18 +97,13 @@ serve(async (req) => {
       }
     }
 
-    // Log campaign in DB if restaurant_id provided
     if (restaurant_id) {
-      const supabase = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-      )
       await supabase.from("campaign_logs").insert({
         restaurant_id,
         subject,
         sent_count: sent,
         failed_count: failed,
-      }).throwOnError().catch(() => {}) // table optional — ignore if not migrated
+      }).throwOnError().catch(() => {})
     }
 
     return new Response(
