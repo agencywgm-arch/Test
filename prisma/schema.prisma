@@ -65,3 +65,33 @@ model OrderItem {
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
+
+model Prospect {
+  id           String     @id @default(cuid())
+  businessName String
+  contactName  String?
+  email        String?
+  phone        String?
+  website      String?
+  businessType String
+  city         String?
+  country      String     @default("France")
+  status       String     @default("NEW")
+  score        Int?
+  aiAnalysis   String?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  outreaches   Outreach[]
+}
+
+model Outreach {
+  id         String    @id @default(cuid())
+  prospectId String
+  prospect   Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  type       String    @default("EMAIL")
+  subject    String?
+  content    String
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+}

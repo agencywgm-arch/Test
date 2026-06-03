@@ -15,12 +15,20 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="border-b border-gray-100 px-6 py-4 flex items-center justify-between max-w-6xl mx-auto">
         <span className="text-xl font-bold text-red-500">🍔 QuickBite</span>
-        <Link
-          href="/burger-palace"
-          className="text-sm font-medium text-gray-600 hover:text-red-500 transition-colors"
-        >
-          Voir la démo →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/prospecting"
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-3 py-1.5 rounded-lg"
+          >
+            🎯 Prospection IA
+          </Link>
+          <Link
+            href="/burger-palace"
+            className="text-sm font-medium text-gray-600 hover:text-red-500 transition-colors"
+          >
+            Voir la démo →
+          </Link>
+        </div>
       </nav>
 
       {/* Hero */}
