@@ -63,7 +63,7 @@ export default function AuthPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-10">
-          <span className="text-3xl font-bold text-apple-black tracking-tight">VelvetGuest</span>
+          <span className="text-3xl font-bold text-apple-black tracking-tight">Wegemo</span>
           <p className="text-apple-gray text-sm mt-1">La table connectée pour votre restaurant</p>
         </div>
 

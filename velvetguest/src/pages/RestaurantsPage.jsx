@@ -71,7 +71,7 @@ export default function RestaurantsPage() {
       {/* Nav */}
       <header className="bg-white/80 backdrop-blur-xl border-b border-apple-border sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <span className="text-lg font-bold text-apple-black tracking-tight">VelvetGuest</span>
+          <span className="text-lg font-bold text-apple-black tracking-tight">Wegemo</span>
           <button
             onClick={signOut}
             className="text-sm text-apple-gray hover:text-apple-black transition"

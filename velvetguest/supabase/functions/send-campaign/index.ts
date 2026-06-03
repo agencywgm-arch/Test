@@ -27,7 +27,7 @@ serve(async (req) => {
       )
     }
 
-    const fromName = restaurant_name || "VelvetGuest"
+    const fromName = restaurant_name || "Wegemo"
     const fromEmail = Deno.env.get("RESEND_FROM") || "onboarding@resend.dev"
     const from = `${fromName} <${fromEmail}>`
 

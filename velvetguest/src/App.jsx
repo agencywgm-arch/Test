@@ -949,7 +949,7 @@ function CampaignModal({ campaign, restaurant, store, onClose }) {
           <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 10 }}>✏️ Personnalisez votre message</p>
           <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
             <div style={{ background: C.bg, padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 4 }}>De : {restaurant?.name ?? "Votre restaurant"} &lt;contact@velvetguest.fr&gt;</p>
+              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 4 }}>De : {restaurant?.name ?? "Votre restaurant"} &lt;contact@wegemo.fr&gt;</p>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <p style={{ fontSize: 11, color: C.textTertiary, flexShrink: 0 }}>Objet :</p>
                 <input value={subject} onChange={e => setSubject(e.target.value)}
@@ -2993,7 +2993,7 @@ function PromosTab({ restaurant, store }) {
             <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 24 }}>Aperçu de l'email qui sera envoyé à vos clients</p>
             {/* Phone preview */}
             <div style={{ background: C.bg, borderRadius: 16, padding: 20, marginBottom: 20, border: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 8 }}>De : votre-restaurant@velvetguest.fr</p>
+              <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 8 }}>De : votre-restaurant@wegemo.fr</p>
               <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Objet : {relancePromo.emoji} {relancePromo.name} — Offre exclusive pour vous !</p>
               <div style={{ background: C.white, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
                 <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{restaurant.name}</p>
@@ -3998,7 +3998,7 @@ function AgentChat({ restaurant, store }) {
   const [open, setOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", content: `Bonjour ! Je suis Velvet, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de VelvetGuest et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
+    { role: "assistant", content: `Bonjour ! Je suis Velvet, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de Wegemo et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -5402,7 +5402,7 @@ function Dashboard() {
   return (
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
-      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@velvetguest.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
+      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}

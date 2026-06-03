@@ -1,4 +1,4 @@
--- VelvetGuest — Supabase schema
+-- Wegemo — Supabase schema
 -- Run this in: Supabase Dashboard > SQL Editor > New query
 
 -- Enable UUID extension (already enabled by default on Supabase)
