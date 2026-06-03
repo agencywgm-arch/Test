@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nightlife Paris — AI Automation Stack</title>
+  <meta name="description" content="3 agents IA qui automatisent 80% des tâches d'un promoteur nightlife parisien. Stack 100% gratuite. MVP 30 jours." />
+  <meta property="og:title" content="Nightlife Paris — AI Automation Stack" />
+  <meta property="og:description" content="3 agents IA, stack 100% gratuite, MVP 30 jours. Contenu, DMs Instagram, staff — validation humaine obligatoire." />
+  <meta property="og:type" content="website" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    body { background-color: #09090b; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .gradient-text { background: linear-gradient(135deg, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .agent-card:hover { transform: translateY(-2px); transition: transform 0.2s ease; }
+  </style>
+</head>
+<body class="text-white" style="font-family: 'Inter', system-ui, sans-serif;">
+
+  <!-- Hero -->
+  <section class="relative overflow-hidden border-b border-zinc-800">
+    <div class="absolute inset-0" style="background: radial-gradient(ellipse at 30% 50%, rgba(109,40,217,0.15) 0%, transparent 60%), radial-gradient(ellipse at 70% 50%, rgba(219,39,119,0.12) 0%, transparent 60%);"></div>
+    <div class="relative max-w-5xl mx-auto px-6 py-24 text-center">
+
+      <div class="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-1.5 text-xs text-zinc-400 mb-8">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400" style="animation: pulse 2s infinite;"></span>
+        MVP 30 jours &nbsp;·&nbsp; Stack 100% gratuite &nbsp;·&nbsp; 0–5€/mois
+      </div>
+
+      <h1 class="text-5xl font-bold tracking-tight mb-4 leading-tight">
+        Nightlife Paris
+        <span class="block gradient-text">AI Automation Stack</span>
+      </h1>
+
+      <p class="text-zinc-400 text-lg max-w-2xl mx-auto leading-relaxed mt-6">
+        3 agents IA qui automatisent 80% des tâches d'un promoteur nightlife parisien —
+        création de contenu, DMs Instagram, gestion du staff.
+        <strong class="text-zinc-300">Validation humaine obligatoire</strong> à chaque étape clé.
+      </p>
+
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a href="https://github.com/agencywgm-arch/Test/tree/claude/nightlife-paris-ai-automation-fLc0d/nightlife-automation"
+           target="_blank"
+           class="inline-flex items-center gap-2 bg-white text-zinc-900 font-semibold px-5 py-2.5 rounded-lg hover:bg-zinc-100 transition-colors text-sm">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          Voir le code source
+        </a>
+        <a href="#setup"
+           class="inline-flex items-center gap-2 border border-zinc-700 text-zinc-300 font-medium px-5 py-2.5 rounded-lg hover:border-zinc-500 hover:text-white transition-colors text-sm">
+          Guide setup →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Règle globale -->
+  <section class="max-w-5xl mx-auto px-6 py-10">
+    <div class="bg-zinc-900 border border-amber-500/30 rounded-xl p-6 flex gap-4 items-start">
+      <span class="text-amber-400 text-2xl">⚡</span>
+      <div>
+        <h3 class="font-semibold text-amber-400 mb-1">Règle globale — Validation promoteur obligatoire</h3>
+        <p class="text-zinc-400 text-sm leading-relaxed">
+          Aucun message sortant, aucune publication, aucune décision finale ne part sans validation explicite du promoteur.
+          Il reçoit toujours sur Telegram : contenu ou résumé +
+          <span class="text-green-400 font-medium">Valider ✅</span>
+          <span class="text-red-400 font-medium">Refuser ❌</span>
+          <span class="text-blue-400 font-medium">Plus d'infos ℹ️</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 Agents -->
+  <section class="max-w-5xl mx-auto px-6 pb-16">
+    <h2 class="text-2xl font-bold mb-8 text-center text-zinc-100">Les 3 agents</h2>
+    <div class="grid md:grid-cols-3 gap-6">
+
+      <!-- Agent 1 -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden agent-card hover:border-zinc-600 transition-all">
+        <div style="background: linear-gradient(135deg, #7c3aed, #6d28d9);" class="p-5">
+          <div class="flex items-start justify-between">
+            <span class="text-white/60 text-xs font-mono">AGENT 01</span>
+            <span class="text-white/40 text-xl">✦</span>
+          </div>
+          <h3 class="text-white font-bold text-lg mt-2">Content Automation</h3>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">⬡</span><p class="text-zinc-400 text-sm">Apify scrape restaurants tendance Paris</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◈</span><p class="text-zinc-400 text-sm">Gemini score les photos — top 5 retenues</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◉</span><p class="text-zinc-400 text-sm">Génère textes carrousel + CTA fixe</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◎</span><p class="text-zinc-400 text-sm">Preview envoyée au promoteur via Telegram</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◆</span><p class="text-zinc-400 text-sm">Publication Instagram + TikTok après validation</p></div>
+        </div>
+      </div>
+
+      <!-- Agent 2 -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden agent-card hover:border-zinc-600 transition-all">
+        <div style="background: linear-gradient(135deg, #db2777, #be185d);" class="p-5">
+          <div class="flex items-start justify-between">
+            <span class="text-white/60 text-xs font-mono">AGENT 02</span>
+            <span class="text-white/40 text-xl">◈</span>
+          </div>
+          <h3 class="text-white font-bold text-lg mt-2">Client DM Automation</h3>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">⬡</span><p class="text-zinc-400 text-sm">ManyChat capte chaque nouveau DM Instagram</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◈</span><p class="text-zinc-400 text-sm">Bot répond aux FAQ : gratuit ?, critères ?, amie ?</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◉</span><p class="text-zinc-400 text-sm">Collecte profil : prénom, âge, Instagram, email</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◎</span><p class="text-zinc-400 text-sm">n8n qualifie le profil automatiquement</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◆</span><p class="text-zinc-400 text-sm">Décision promoteur sur Telegram → réponse finale</p></div>
+        </div>
+      </div>
+
+      <!-- Agent 3 -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden agent-card hover:border-zinc-600 transition-all">
+        <div style="background: linear-gradient(135deg, #d97706, #b45309);" class="p-5">
+          <div class="flex items-start justify-between">
+            <span class="text-white/60 text-xs font-mono">AGENT 03</span>
+            <span class="text-white/40 text-xl">◉</span>
+          </div>
+          <h3 class="text-white font-bold text-lg mt-2">Staff Automation</h3>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">⬡</span><p class="text-zinc-400 text-sm">Briefing automatique J-2 (adresse, horaires, dress code)</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◈</span><p class="text-zinc-400 text-sm">Staff confirme présence OUI/NON</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◉</span><p class="text-zinc-400 text-sm">Relance automatique si pas de réponse 12h</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◎</span><p class="text-zinc-400 text-sm">Escalade promoteur : absences, retards, incidents</p></div>
+          <div class="flex gap-3 items-start"><span class="text-zinc-600 text-sm mt-0.5">◆</span><p class="text-zinc-400 text-sm">Rapport post-événement J+1 → Google Sheets</p></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Architecture ASCII -->
+  <section class="border-t border-zinc-800" style="background: rgba(24,24,27,0.5);">
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h2 class="text-2xl font-bold mb-8 text-center text-zinc-100">Architecture</h2>
+      <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-6 overflow-x-auto">
+        <pre class="font-mono text-xs text-zinc-400 leading-relaxed">┌──────────────────────────────────────────────────────────────┐
+│                     PROMOTEUR TELEGRAM                       │
+│             Valider ✅  /  Refuser ❌  /  Plus d'infos ℹ️    │
+└───────────────────────┬──────────────────────────────────────┘
+                        │  Validation humaine obligatoire
+          ┌─────────────┼─────────────┐
+          │             │             │
+    AGENT 1        AGENT 2        AGENT 3
+    Contenu          DMs            Staff
+      │               │               │
+   Apify           ManyChat       Telegram
+   Gemini          n8n webhook    n8n scheduler
+   Canva           Google Sheets  Google Sheets
+   Instagram/TikTok
+          │             │               │
+          └─────────────┴───────────────┘
+                        │
+                  GOOGLE SHEETS CRM
+               (source de vérité centrale)</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stack technique -->
+  <section class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-bold mb-2 text-center text-zinc-100">Stack technique</h2>
+    <p class="text-center text-zinc-500 text-sm mb-8">100% gratuite · 0–5€/mois</p>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">n8n self-hosted</div>
+          <div class="text-zinc-500 text-xs mt-0.5">Orchestration workflows</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">Railway free tier</div>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">Google Sheets</div>
+          <div class="text-zinc-500 text-xs mt-0.5">CRM central</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">Gratuit</div>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">ManyChat Free</div>
+          <div class="text-zinc-500 text-xs mt-0.5">DM Instagram automation</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">Jusqu'à 1 000 contacts</div>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">Apify Free</div>
+          <div class="text-zinc-500 text-xs mt-0.5">Scraping restaurants Paris</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">5€ crédits offerts/mois</div>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">Gemini 1.5 Flash</div>
+          <div class="text-zinc-500 text-xs mt-0.5">Génération textes + scoring photos</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">Quasi gratuit</div>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-start gap-3">
+        <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></span>
+        <div>
+          <div class="font-medium text-zinc-200 text-sm">Telegram Bot API</div>
+          <div class="text-zinc-500 text-xs mt-0.5">Alertes + validations promoteur</div>
+          <div class="text-green-400 text-xs mt-1" style="opacity:0.7;">Gratuit</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Timeline MVP -->
+  <section id="setup" class="border-t border-zinc-800" style="background: rgba(24,24,27,0.5);">
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h2 class="text-2xl font-bold mb-2 text-center text-zinc-100">MVP — 4 semaines</h2>
+      <p class="text-center text-zinc-500 text-sm mb-10">Plan d'implémentation semaine par semaine</p>
+      <div class="space-y-4 max-w-2xl mx-auto">
+
+        <div class="flex gap-5 items-start">
+          <div class="shrink-0 w-14 h-14 rounded-lg bg-zinc-800 border border-zinc-700 flex flex-col items-center justify-center">
+            <span class="text-violet-400 text-sm font-mono font-semibold">S1</span>
+          </div>
+          <div class="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div class="font-semibold text-zinc-200 mb-1">Infrastructure</div>
+            <p class="text-zinc-400 text-sm">n8n sur Railway + Google Sheets CRM + structure données</p>
+          </div>
+        </div>
+
+        <div class="flex gap-5 items-start">
+          <div class="shrink-0 w-14 h-14 rounded-lg bg-zinc-800 border border-zinc-700 flex flex-col items-center justify-center">
+            <span class="text-pink-400 text-sm font-mono font-semibold">S2</span>
+          </div>
+          <div class="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div class="font-semibold text-zinc-200 mb-1">Agent DM</div>
+            <p class="text-zinc-400 text-sm">ManyChat flows + connexion Google Sheets + alertes Telegram promoteur</p>
+          </div>
+        </div>
+
+        <div class="flex gap-5 items-start">
+          <div class="shrink-0 w-14 h-14 rounded-lg bg-zinc-800 border border-zinc-700 flex flex-col items-center justify-center">
+            <span class="text-purple-400 text-sm font-mono font-semibold">S3</span>
+          </div>
+          <div class="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div class="font-semibold text-zinc-200 mb-1">Agent Contenu</div>
+            <p class="text-zinc-400 text-sm">Apify + Gemini + Canva + validation Telegram avant publication</p>
+          </div>
+        </div>
+
+        <div class="flex gap-5 items-start">
+          <div class="shrink-0 w-14 h-14 rounded-lg bg-zinc-800 border border-zinc-700 flex flex-col items-center justify-center">
+            <span class="text-amber-400 text-sm font-mono font-semibold">S4</span>
+          </div>
+          <div class="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div class="font-semibold text-zinc-200 mb-1">Agent Staff + Go Live</div>
+            <p class="text-zinc-400 text-sm">Agent Staff + tests end-to-end des 3 agents + mise en production</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Fichiers inclus -->
+  <section class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-bold mb-8 text-center text-zinc-100">Fichiers inclus dans le repo</h2>
+    <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-6 overflow-x-auto">
+      <div class="font-mono text-sm space-y-1 text-zinc-400">
+        <div class="text-blue-400">nightlife-automation/</div>
+        <div class="pl-5 text-blue-400">├── n8n/</div>
+        <div class="pl-10"><span class="text-zinc-300">├── agent1-content.json</span> <span class="text-zinc-600 text-xs">— Apify → Gemini → validation → Instagram/TikTok</span></div>
+        <div class="pl-10"><span class="text-zinc-300">├── agent2-dm.json</span> <span class="text-zinc-600 text-xs">— DM → qualification → décision promoteur</span></div>
+        <div class="pl-10"><span class="text-zinc-300">├── agent3-staff.json</span> <span class="text-zinc-600 text-xs">— Briefing J-2 → confirmations → feedback J+1</span></div>
+        <div class="pl-10"><span class="text-zinc-300">└── promoteur-webhook.json</span> <span class="text-zinc-600 text-xs">— Router Telegram → workflows</span></div>
+        <div class="pl-5 text-blue-400 mt-1">├── sheets/</div>
+        <div class="pl-10"><span class="text-zinc-300">└── crm-structure.md</span> <span class="text-zinc-600 text-xs">— 6 onglets Google Sheets avec formules Dashboard</span></div>
+        <div class="pl-5 text-blue-400 mt-1">├── manychat/</div>
+        <div class="pl-10"><span class="text-zinc-300">└── flows.md</span> <span class="text-zinc-600 text-xs">— 7 flows complets en français + RGPD</span></div>
+        <div class="pl-5 text-blue-400 mt-1">├── config/</div>
+        <div class="pl-10"><span class="text-zinc-300">├── env.example</span> <span class="text-zinc-600 text-xs">— Toutes les variables d'environnement</span></div>
+        <div class="pl-10"><span class="text-zinc-300">├── railway.toml</span> <span class="text-zinc-600 text-xs">— Config déploiement Railway</span></div>
+        <div class="pl-10"><span class="text-zinc-300">└── Dockerfile.n8n</span> <span class="text-zinc-600 text-xs">— Image Docker n8n</span></div>
+        <div class="pl-5 text-blue-400 mt-1">├── scripts/</div>
+        <div class="pl-10"><span class="text-zinc-300">├── setup-sheets.js</span> <span class="text-zinc-600 text-xs">— Auto-crée les 6 onglets Google Sheets</span></div>
+        <div class="pl-10"><span class="text-zinc-300">├── test-telegram.js</span> <span class="text-zinc-600 text-xs">— Teste le bot et les boutons de validation</span></div>
+        <div class="pl-10"><span class="text-zinc-300">└── test-gemini.js</span> <span class="text-zinc-600 text-xs">— Teste scoring photos + génération carrousel</span></div>
+        <div class="pl-5"><span class="text-zinc-300">└── README.md</span> <span class="text-zinc-600 text-xs">— Guide setup complet S1→S4</span></div>
+      </div>
+    </div>
+    <div class="mt-4 text-center">
+      <a href="https://github.com/agencywgm-arch/Test/tree/claude/nightlife-paris-ai-automation-fLc0d/nightlife-automation"
+         target="_blank"
+         class="inline-flex items-center gap-2 text-violet-400 hover:text-violet-300 text-sm font-medium transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        Voir tous les fichiers sur GitHub →
+      </a>
+    </div>
+  </section>
+
+  <!-- Risques -->
+  <section class="border-t border-zinc-800" style="background: rgba(24,24,27,0.5);">
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h2 class="text-2xl font-bold mb-8 text-center text-zinc-100">Risques &amp; conformité</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+          <div class="flex gap-3 items-start">
+            <span class="text-xl shrink-0">🔒</span>
+            <div>
+              <div class="font-medium text-zinc-200 mb-1">Meta officiel uniquement</div>
+              <p class="text-zinc-500 text-sm leading-relaxed">Utiliser uniquement ManyChat (partenaire Meta officiel) pour les DMs — jamais d'outil non approuvé</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+          <div class="flex gap-3 items-start">
+            <span class="text-xl shrink-0">🇪🇺</span>
+            <div>
+              <div class="font-medium text-zinc-200 mb-1">RGPD dès le départ</div>
+              <p class="text-zinc-500 text-sm leading-relaxed">Mention RGPD dans le bot DM dès le premier contact avec collecte de consentement explicite</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+          <div class="flex gap-3 items-start">
+            <span class="text-xl shrink-0">👤</span>
+            <div>
+              <div class="font-medium text-zinc-200 mb-1">Validation humaine systématique</div>
+              <p class="text-zinc-500 text-sm leading-relaxed">Aucun message sortant ni publication sans feu vert explicite du promoteur via Telegram</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+          <div class="flex gap-3 items-start">
+            <span class="text-xl shrink-0">💰</span>
+            <div>
+              <div class="font-medium text-zinc-200 mb-1">Cap de dépenses IA</div>
+              <p class="text-zinc-500 text-sm leading-relaxed">Configurer une alerte budget dans Google Cloud Console dès le début pour Gemini</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Roadmap 90j -->
+  <section class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-bold mb-8 text-center text-zinc-100">Roadmap 90 jours</h2>
+    <div class="grid md:grid-cols-3 gap-4">
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+        <div class="text-violet-400 font-mono text-sm font-semibold mb-2">MOIS 1</div>
+        <div class="font-semibold text-zinc-200 mb-3">MVP opérationnel</div>
+        <p class="text-zinc-400 text-sm leading-relaxed">3 agents à 70%, validation promoteur sur tout, premiers événements automatisés</p>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+        <div class="text-pink-400 font-mono text-sm font-semibold mb-2">MOIS 2</div>
+        <div class="font-semibold text-zinc-200 mb-3">Optimisation IA</div>
+        <p class="text-zinc-400 text-sm leading-relaxed">Scoring photos amélioré, qualification DM plus fine, dashboard Google Sheets promoteur</p>
+      </div>
+
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+        <div class="text-amber-400 font-mono text-sm font-semibold mb-2">MOIS 3</div>
+        <div class="font-semibold text-zinc-200 mb-3">Scale</div>
+        <p class="text-zinc-400 text-sm leading-relaxed">Multi-événements en parallèle, stats de conversion automatiques, A/B test contenus</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-zinc-800 py-8 text-center text-zinc-600 text-sm">
+    <p>Nightlife Paris AI Automation Stack &nbsp;·&nbsp; Coût total : 0–5€/mois &nbsp;·&nbsp;
+      <a href="https://github.com/agencywgm-arch/Test" target="_blank" class="hover:text-zinc-400 transition-colors">GitHub</a>
+    </p>
+  </footer>
+
+</body>
+</html>
