@@ -527,7 +527,7 @@ function Logo({ dark = true, size = 18 }) {
         <span style={{ fontSize: size * 0.7 }}>🍽</span>
       </div>
       <span style={{ fontSize: size, fontWeight: 800, color: dark ? C.dark : C.white, letterSpacing: "-0.03em", ...FF }}>
-        Velvet<span style={{ color: C.accent }}>Guest</span>
+        We<span style={{ color: C.accent }}>gemo</span>
       </span>
     </div>
   );
@@ -3893,7 +3893,7 @@ function ClientViewChat({ menuItems, restaurant, tableNum }) {
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <span style={{ fontSize: 18 }}>🤖</span>
               <div>
-                <p style={{ color: C.white, fontWeight: 700, fontSize: 13, margin: 0 }}>Assistant Velvet</p>
+                <p style={{ color: C.white, fontWeight: 700, fontSize: 13, margin: 0 }}>Assistant Gémo</p>
                 <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, margin: 0 }}>Allergènes & ingrédients</p>
               </div>
             </div>
@@ -3998,7 +3998,7 @@ function AgentChat({ restaurant, store }) {
   const [open, setOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", content: `Bonjour ! Je suis Velvet, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de Wegemo et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
+    { role: "assistant", content: `Bonjour ! Je suis Gémo, votre assistant IA 👋\n\nJe connais toutes les fonctionnalités de Wegemo et je peux vous conseiller sur votre carte, vos stocks, votre caisse et bien plus.\n\nComment puis-je vous aider ?` }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -4146,7 +4146,7 @@ function AgentChat({ restaurant, store }) {
           <div style={{ padding: "14px 18px", background: C.dark, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>✨</div>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: C.white, letterSpacing: "-0.01em" }}>Velvet — Assistant IA</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.white, letterSpacing: "-0.01em" }}>Gémo — Assistant IA</p>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
                 <Dot color={C.accentGreen} pulse />
                 <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Prêt à vous aider</p>
@@ -4331,7 +4331,7 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 42, height: 42, borderRadius: 14, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🤖</div>
                 <div>
-                  <p style={{ fontSize: 16, fontWeight: 800, color: C.dark, letterSpacing: "-0.02em" }}>Assistant Velvet</p>
+                  <p style={{ fontSize: 16, fontWeight: 800, color: C.dark, letterSpacing: "-0.02em" }}>Assistant Gémo</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 1 }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accentGreen, display: "inline-block" }} />
                     <p style={{ fontSize: 11, color: C.textSecondary }}>Allergènes · Ingrédients · Conseils</p>
