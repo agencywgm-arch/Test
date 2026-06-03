@@ -1,0 +1,321 @@
+{
+  "name": "Agent 2 — Client DM Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "agent2-dm",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "a2-webhook",
+      "name": "Webhook — Nouveau profil ManyChat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "agent2-dm"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json;\n\n// Normaliser les données reçues depuis ManyChat\nconst profil = {\n  id: body.subscriber_id || body.id || `mc_${Date.now()}`,\n  prenom: body.first_name || body.prenom || '',\n  age: parseInt(body.age || body.custom_age || '0', 10),\n  instagram: body.instagram || body.custom_instagram || '',\n  telephone: body.phone || body.custom_phone || '',\n  email: body.email || body.custom_email || '',\n  manychat_id: body.subscriber_id || '',\n  date_contact: new Date().toLocaleDateString('fr-FR'),\n  source: 'Instagram DM'\n};\n\nreturn [{ json: { profil } }];"
+      },
+      "id": "a2-parse-profile",
+      "name": "Parser profil ManyChat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { profil } = $input.item.json;\nconst errors = [];\n\n// Vérifications critères\nif (!profil.prenom || profil.prenom.trim().length < 2) {\n  errors.push('Prénom manquant ou invalide');\n}\n\nif (!profil.age || profil.age < 18 || profil.age > 45) {\n  errors.push(`Age invalide: ${profil.age} (doit être entre 18 et 45 ans)`);\n}\n\nif (!profil.instagram || !profil.instagram.includes('@') && !profil.instagram.includes('instagram.com')) {\n  errors.push('Lien Instagram invalide ou manquant');\n}\n\nif (!profil.email || !profil.email.includes('@')) {\n  errors.push('Email invalide ou manquant');\n}\n\nconst qualifie = errors.length === 0;\n\nreturn [{\n  json: {\n    profil,\n    qualifie,\n    erreurs: errors,\n    raison_refus: errors.join(', ')\n  }\n}];"
+      },
+      "id": "a2-qualify",
+      "name": "Qualifier le profil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.qualifie }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a2-if-qualifie",
+      "name": "Profil qualifié ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.manychat.com/fb/sending/sendContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MANYCHAT_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subscriber_id",
+              "value": "={{ $json.profil.manychat_id }}"
+            },
+            {
+              "name": "data",
+              "value": "={\"version\": \"v2\", \"content\": {\"messages\": [{\"type\": \"text\", \"text\": \"Merci {{ $json.profil.prenom }} pour ta réponse ! 🙏\\n\\nMalheureusement, ton profil ne correspond pas tout à fait à nos critères pour le moment.\\n\\nN'hésite pas à nous suivre sur Instagram pour rester informée de nos prochains événements ! ✨\"}]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a2-refus-auto",
+      "name": "ManyChat — Envoyer refus automatique",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 460]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "CRM Participants",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $json.profil.id }}",
+            "Prénom": "={{ $json.profil.prenom }}",
+            "Age": "={{ $json.profil.age }}",
+            "Instagram": "={{ $json.profil.instagram }}",
+            "Téléphone": "={{ $json.profil.telephone }}",
+            "Email": "={{ $json.profil.email }}",
+            "Date contact": "={{ $json.profil.date_contact }}",
+            "Statut": "EN ATTENTE VALIDATION",
+            "Source": "={{ $json.profil.source }}"
+          }
+        }
+      },
+      "id": "a2-sheets-crm",
+      "name": "Google Sheets — Ajouter au CRM",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_PROMOTEUR_CHAT_ID }}",
+        "text": "=👤 *NOUVEAU PROFIL À VALIDER*\n\n*{{ $json.profil.prenom }}*, {{ $json.profil.age }} ans\n\n📸 Instagram : {{ $json.profil.instagram }}\n📱 Téléphone : {{ $json.profil.telephone }}\n📧 Email : {{ $json.profil.email }}\n\n📅 Contact le : {{ $json.profil.date_contact }}\n🔗 Source : {{ $json.profil.source }}\n\n_Décide d'accepter ou refuser cette participante :_",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "={\"inline_keyboard\": [[{\"text\": \"✅ Accepter\", \"callback_data\": \"agent2_accepter_{{ $json.profil.id }}\"}, {\"text\": \"❌ Refuser\", \"callback_data\": \"agent2_refuser_{{ $json.profil.id }}\"}], [{\"text\": \"ℹ️ Plus d'infos\", \"callback_data\": \"agent2_info_{{ $json.profil.id }}\"}]]}"
+        }
+      },
+      "id": "a2-telegram-alerte",
+      "name": "Telegram — Alerte promoteur",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-creds",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "agent2-decision",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "a2-webhook-decision",
+      "name": "Webhook — Décision promoteur",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [1560, 200],
+      "webhookId": "agent2-decision"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.decision }}",
+              "operation": "equals",
+              "value2": "accepter"
+            }
+          ]
+        }
+      },
+      "id": "a2-if-accepter",
+      "name": "Décision : Accepter ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.manychat.com/fb/sending/sendContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MANYCHAT_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subscriber_id",
+              "value": "={{ $('Webhook — Décision promoteur').item.json.body.manychat_id }}"
+            },
+            {
+              "name": "data",
+              "value": "={\"version\": \"v2\", \"content\": {\"messages\": [{\"type\": \"text\", \"text\": \"🎉 Félicitations ! Tu es sélectionnée pour nos prochains événements exclusifs !\\n\\nNotre équipe va te contacter très bientôt avec tous les détails. ✨\\n\\nEn attendant, partage notre page avec tes amies qui adoreraient rejoindre notre communauté ! 💃\"}]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a2-acceptation",
+      "name": "ManyChat — Envoyer message acceptation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.manychat.com/fb/sending/sendContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MANYCHAT_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subscriber_id",
+              "value": "={{ $('Webhook — Décision promoteur').item.json.body.manychat_id }}"
+            },
+            {
+              "name": "data",
+              "value": "={\"version\": \"v2\", \"content\": {\"messages\": [{\"type\": \"text\", \"text\": \"Merci pour ton intérêt ! 🙏\\n\\nTon profil ne correspond malheureusement pas à notre sélection pour le moment.\\n\\nContinue à nous suivre pour nos prochains événements ! ✨\"}]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a2-refus-promoteur",
+      "name": "ManyChat — Envoyer refus promoteur",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 280]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "CRM Participants",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Webhook — Décision promoteur').item.json.body.profil_id }}",
+            "Statut": "=ACCEPTÉE"
+          }
+        }
+      },
+      "id": "a2-sheets-accept",
+      "name": "Google Sheets — Mettre à jour statut ACCEPTÉE",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2220, 120],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Nouveau profil ManyChat": {
+      "main": [[{"node": "Parser profil ManyChat", "type": "main", "index": 0}]]
+    },
+    "Parser profil ManyChat": {
+      "main": [[{"node": "Qualifier le profil", "type": "main", "index": 0}]]
+    },
+    "Qualifier le profil": {
+      "main": [[{"node": "Profil qualifié ?", "type": "main", "index": 0}]]
+    },
+    "Profil qualifié ?": {
+      "main": [
+        [{"node": "Google Sheets — Ajouter au CRM", "type": "main", "index": 0}],
+        [{"node": "ManyChat — Envoyer refus automatique", "type": "main", "index": 0}]
+      ]
+    },
+    "Google Sheets — Ajouter au CRM": {
+      "main": [[{"node": "Telegram — Alerte promoteur", "type": "main", "index": 0}]]
+    },
+    "Telegram — Alerte promoteur": {
+      "main": [[{"node": "Webhook — Décision promoteur", "type": "main", "index": 0}]]
+    },
+    "Webhook — Décision promoteur": {
+      "main": [[{"node": "Décision : Accepter ?", "type": "main", "index": 0}]]
+    },
+    "Décision : Accepter ?": {
+      "main": [
+        [
+          {"node": "ManyChat — Envoyer message acceptation", "type": "main", "index": 0},
+          {"node": "Google Sheets — Mettre à jour statut ACCEPTÉE", "type": "main", "index": 0}
+        ],
+        [{"node": "ManyChat — Envoyer refus promoteur", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": ["agent2", "dm", "automation"],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-03T00:00:00.000Z",
+  "versionId": "1"
+}

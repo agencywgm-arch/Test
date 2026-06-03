@@ -1,0 +1,22 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "nightlife-automation/config/Dockerfile.n8n"
+
+[deploy]
+startCommand = "n8n start"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+
+[environments.production.variables]
+N8N_BASIC_AUTH_ACTIVE = "true"
+N8N_HOST = "0.0.0.0"
+N8N_PORT = "5678"
+N8N_PROTOCOL = "https"
+EXECUTIONS_PROCESS = "main"
+EXECUTIONS_DATA_PRUNE = "true"
+EXECUTIONS_DATA_MAX_AGE = "720"
+N8N_METRICS = "false"
+N8N_LOG_LEVEL = "info"
+GENERIC_TIMEZONE = "Europe/Paris"

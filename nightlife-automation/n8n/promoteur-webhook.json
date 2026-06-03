@@ -1,0 +1,333 @@
+{
+  "name": "Promoteur — Webhook Validation Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "telegram-webhook",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "pw-webhook",
+      "name": "Webhook — Telegram callback_query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "telegram-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json;\n\n// Telegram envoie callback_query pour les boutons inline\nconst callbackQuery = body.callback_query;\nif (!callbackQuery) {\n  return [{ json: { valid: false, error: 'Not a callback_query' } }];\n}\n\nconst data = callbackQuery.data || '';\n// Format: agent1_valider_ID | agent1_refuser_ID | agent1_info_ID\n//         agent2_accepter_ID | agent2_refuser_ID | agent2_info_ID\n//         staff_oui_ID_EVTID | staff_non_ID_EVTID\n\nconst parts = data.split('_');\nconst agent = parts[0];   // agent1, agent2, staff\nconst action = parts[1];  // valider, refuser, accepter, info, oui, non\nconst itemId = parts.slice(2).join('_');\n\nconst chatId = callbackQuery.message?.chat?.id;\nconst messageId = callbackQuery.message?.message_id;\nconst userId = callbackQuery.from?.id;\nconst callbackId = callbackQuery.id;\n\nreturn [{\n  json: {\n    valid: true,\n    agent,\n    action,\n    item_id: itemId,\n    chat_id: chatId,\n    message_id: messageId,\n    user_id: userId,\n    callback_query_id: callbackId,\n    raw: callbackQuery\n  }\n}];"
+      },
+      "id": "pw-parse",
+      "name": "Parser callback_query Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "callback_query_id",
+              "value": "={{ $json.callback_query_id }}"
+            },
+            {
+              "name": "text",
+              "value": "=✅ Reçu ! Action en cours..."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-ack",
+      "name": "Telegram — Acquitter callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value2": "agent1"
+            },
+            {
+              "value2": "agent2"
+            },
+            {
+              "value2": "staff"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      },
+      "id": "pw-switch",
+      "name": "Router par agent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageText",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.message_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.action === 'valider' ? '✅ VALIDÉ — Publication en cours...' : ($json.action === 'refuser' ? '❌ REFUSÉ — Contenu archivé.' : '⏳ En attente de plus d\\'infos...') }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-edit-agent1",
+      "name": "Telegram — Éditer message Agent 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageText",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.message_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.action === 'accepter' ? '✅ ACCEPTÉE — Message d\\'invitation envoyé.' : ($json.action === 'refuser' ? '❌ REFUSÉE — Message de refus envoyé.' : '⏳ En attente de plus d\\'infos...') }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-edit-agent2",
+      "name": "Telegram — Éditer message Agent 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageText",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.message_id }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.action === 'oui' ? '✅ Présence confirmée — Google Sheets mis à jour.' : '❌ Absence enregistrée — Escalade promoteur en cours.' }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-edit-staff",
+      "name": "Telegram — Éditer message Staff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/agent1-decision",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "decision",
+              "value": "={{ $json.action }}"
+            },
+            {
+              "name": "item_id",
+              "value": "={{ $json.item_id }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-resume-agent1",
+      "name": "Résumer workflow Agent 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/agent2-decision",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "decision",
+              "value": "={{ $json.action }}"
+            },
+            {
+              "name": "profil_id",
+              "value": "={{ $json.item_id }}"
+            },
+            {
+              "name": "manychat_id",
+              "value": "={{ $json.item_id }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-resume-agent2",
+      "name": "Résumer workflow Agent 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/agent3-staff-confirm",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "data",
+              "value": "={{ 'staff_' + $json.action + '_' + $json.item_id }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pw-resume-staff",
+      "name": "Résumer workflow Staff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 440]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Log Décisions",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Agent": "={{ $('Parser callback_query Telegram').item.json.agent }}",
+            "Action": "={{ $('Parser callback_query Telegram').item.json.action }}",
+            "Item ID": "={{ $('Parser callback_query Telegram').item.json.item_id }}",
+            "Date": "={{ new Date().toLocaleDateString('fr-FR') }}",
+            "Heure": "={{ new Date().toLocaleTimeString('fr-FR') }}"
+          }
+        }
+      },
+      "id": "pw-log-decision",
+      "name": "Google Sheets — Logger décision",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1560, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Telegram callback_query": {
+      "main": [[{"node": "Parser callback_query Telegram", "type": "main", "index": 0}]]
+    },
+    "Parser callback_query Telegram": {
+      "main": [[{"node": "Telegram — Acquitter callback", "type": "main", "index": 0}]]
+    },
+    "Telegram — Acquitter callback": {
+      "main": [[{"node": "Router par agent", "type": "main", "index": 0}]]
+    },
+    "Router par agent": {
+      "main": [
+        [{"node": "Telegram — Éditer message Agent 1", "type": "main", "index": 0}],
+        [{"node": "Telegram — Éditer message Agent 2", "type": "main", "index": 0}],
+        [{"node": "Telegram — Éditer message Staff", "type": "main", "index": 0}]
+      ]
+    },
+    "Telegram — Éditer message Agent 1": {
+      "main": [[{"node": "Résumer workflow Agent 1", "type": "main", "index": 0}]]
+    },
+    "Telegram — Éditer message Agent 2": {
+      "main": [[{"node": "Résumer workflow Agent 2", "type": "main", "index": 0}]]
+    },
+    "Telegram — Éditer message Staff": {
+      "main": [[{"node": "Résumer workflow Staff", "type": "main", "index": 0}]]
+    },
+    "Résumer workflow Agent 2": {
+      "main": [[{"node": "Google Sheets — Logger décision", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": ["promoteur", "webhook", "validation"],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-03T00:00:00.000Z",
+  "versionId": "1"
+}

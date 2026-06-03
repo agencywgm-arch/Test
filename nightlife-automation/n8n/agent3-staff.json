@@ -1,0 +1,421 @@
+{
+  "name": "Agent 3 — Staff Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a3-trigger",
+      "name": "Déclencheur quotidien 9h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Événements",
+        "options": {}
+      },
+      "id": "a3-get-events",
+      "name": "Google Sheets — Lire événements",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst today = new Date();\nconst j2 = new Date(today);\nj2.setDate(today.getDate() + 2);\n\nconst j2str = j2.toLocaleDateString('fr-FR');\n\nconst evenementsJ2 = items.filter(item => {\n  const evt = item.json;\n  return evt.Date === j2str && evt.Statut === 'CONFIRMÉ';\n});\n\nreturn evenementsJ2.map(item => ({ json: item.json }));"
+      },
+      "id": "a3-filter-events",
+      "name": "Filtrer événements J-2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Staff",
+        "options": {}
+      },
+      "id": "a3-get-staff",
+      "name": "Google Sheets — Lire staff assigné",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staffItems = $input.all();\nconst event = $('Filtrer événements J-2').item.json;\n\n// Filtrer le staff assigné à cet événement\nconst staffAssigne = staffItems.filter(item => {\n  const membre = item.json;\n  const evenements = membre['Événements assignés'] || '';\n  return evenements.includes(event.ID) || evenements.includes(event['Nom événement']);\n});\n\nreturn staffAssigne.map(item => ({\n  json: {\n    ...item.json,\n    evenement: event\n  }\n}));"
+      },
+      "id": "a3-match-staff",
+      "name": "Associer staff à l'événement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a3-loop-staff",
+      "name": "Boucle sur chaque membre staff",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json['Telegram ID'] }}",
+        "text": "=📋 *BRIEFING ÉVÉNEMENT — {{ $json.evenement['Nom événement'] }}*\n\nBonjour {{ $json.Prénom }} ! Voici ton briefing pour dans 2 jours.\n\n📅 *Date :* {{ $json.evenement.Date }}\n⏰ *Horaires :* {{ $json.evenement['Heure début'] }} → {{ $json.evenement['Heure fin'] }}\n📍 *Lieu :* {{ $json.evenement.Lieu }}\n🗺️ *Adresse :* {{ $json.evenement.Adresse }}\n👗 *Dress code :* {{ $json.evenement['Dress code'] }}\n\n🎯 *Ton rôle :* {{ $json.Rôle }}\n\n_Confirme ta présence en répondant à ce message :_",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "={\"inline_keyboard\": [[{\"text\": \"✅ OUI, je serai là !\", \"callback_data\": \"staff_oui_{{ $json.ID }}_{{ $json.evenement.ID }}\"}, {\"text\": \"❌ Je ne peux pas\", \"callback_data\": \"staff_non_{{ $json.ID }}_{{ $json.evenement.ID }}\"}]]}"
+        }
+      },
+      "id": "a3-telegram-briefing",
+      "name": "Telegram — Envoyer briefing staff",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-creds",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 12,
+        "unit": "hours"
+      },
+      "id": "a3-wait-12h",
+      "name": "Attendre 12h",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Staff",
+        "options": {}
+      },
+      "id": "a3-check-confirm",
+      "name": "Google Sheets — Vérifier confirmations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2000, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staffItems = $input.all();\nconst currentMembre = $('Boucle sur chaque membre staff').item.json;\n\nconst membre = staffItems.find(item => item.json.ID === currentMembre.ID);\nif (!membre) return [{ json: { ...currentMembre, confirme: false } }];\n\nconst confirme = membre.json['Statut confirmation'] === 'OUI';\nreturn [{ json: { ...membre.json, evenement: currentMembre.evenement, confirme } }];"
+      },
+      "id": "a3-check-status",
+      "name": "Vérifier statut confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.confirme }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "a3-if-not-confirmed",
+      "name": "Pas encore confirmé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json['Telegram ID'] }}",
+        "text": "=⚠️ *RAPPEL — {{ $json.evenement['Nom événement'] }}*\n\nHey {{ $json.Prénom }}, tu n'as pas encore confirmé ta présence pour l'événement du {{ $json.evenement.Date }}.\n\nMerci de confirmer dès que possible !"
+      },
+      "id": "a3-relance",
+      "name": "Telegram — Envoyer relance",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2660, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-creds",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "agent3-staff-confirm",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "a3-webhook-confirm",
+      "name": "Webhook — Confirmation staff",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 600],
+      "webhookId": "agent3-staff-confirm"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body || $input.item.json;\n// Format: staff_oui_STAFFID_EVENTID ou staff_non_STAFFID_EVENTID\nconst callbackData = body.callback_query?.data || body.data || '';\nconst parts = callbackData.split('_');\n\nconst decision = parts[1]; // 'oui' ou 'non'\nconst staffId = parts[2];\nconst eventId = parts[3];\n\nreturn [{\n  json: {\n    decision,\n    staff_id: staffId,\n    event_id: eventId,\n    telegram_user: body.callback_query?.from || body.from,\n    message_id: body.callback_query?.message?.message_id\n  }\n}];"
+      },
+      "id": "a3-parse-confirm",
+      "name": "Parser réponse confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Staff",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $json.staff_id }}",
+            "Statut confirmation": "={{ $json.decision === 'oui' ? 'OUI' : 'NON' }}"
+          }
+        }
+      },
+      "id": "a3-update-confirm",
+      "name": "Google Sheets — Mettre à jour confirmation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.decision }}",
+              "operation": "equals",
+              "value2": "non"
+            }
+          ]
+        }
+      },
+      "id": "a3-if-absence",
+      "name": "Absence signalée ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_PROMOTEUR_CHAT_ID }}",
+        "text": "=🚨 *ABSENCE STAFF — ACTION REQUISE*\n\nUn membre de ton staff ne peut pas venir à l'événement du {{ $json.event_id }}.\n\n*Staff ID :* {{ $json.staff_id }}\n\n⚠️ Tu dois trouver un remplaçant ou ajuster l'organisation.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a3-escalade-absence",
+      "name": "Telegram — Escalade absence promoteur",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-creds",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a3-trigger-feedback",
+      "name": "Déclencheur J+1 feedback 10h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "value": "={{ $env.GOOGLE_SHEETS_SPREADSHEET_ID }}"
+        },
+        "sheetName": "Événements",
+        "options": {}
+      },
+      "id": "a3-get-yesterday-events",
+      "name": "Google Sheets — Événements d'hier",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "sheets-creds",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst today = new Date();\nconst yesterday = new Date(today);\nyesterday.setDate(today.getDate() - 1);\nconst yesterdayStr = yesterday.toLocaleDateString('fr-FR');\n\nreturn items\n  .filter(item => item.json.Date === yesterdayStr)\n  .map(item => ({ json: item.json }));"
+      },
+      "id": "a3-filter-yesterday",
+      "name": "Filtrer événements hier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 900]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_STAFF_GROUP_ID }}",
+        "text": "=📊 *FEEDBACK POST-ÉVÉNEMENT — {{ $json['Nom événement'] }}*\n\nBonjour l'équipe ! Merci pour hier soir 🙏\n\nMerci de remplir le formulaire de feedback (2 min) :\nhttps://forms.gle/VOTRE_FORM_ID\n\nVos retours nous aident à améliorer chaque événement !",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a3-send-feedback",
+      "name": "Telegram — Envoyer formulaire feedback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 900],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-creds",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Déclencheur quotidien 9h": {
+      "main": [[{"node": "Google Sheets — Lire événements", "type": "main", "index": 0}]]
+    },
+    "Google Sheets — Lire événements": {
+      "main": [[{"node": "Filtrer événements J-2", "type": "main", "index": 0}]]
+    },
+    "Filtrer événements J-2": {
+      "main": [[{"node": "Google Sheets — Lire staff assigné", "type": "main", "index": 0}]]
+    },
+    "Google Sheets — Lire staff assigné": {
+      "main": [[{"node": "Associer staff à l'événement", "type": "main", "index": 0}]]
+    },
+    "Associer staff à l'événement": {
+      "main": [[{"node": "Boucle sur chaque membre staff", "type": "main", "index": 0}]]
+    },
+    "Boucle sur chaque membre staff": {
+      "main": [[{"node": "Telegram — Envoyer briefing staff", "type": "main", "index": 0}]]
+    },
+    "Telegram — Envoyer briefing staff": {
+      "main": [[{"node": "Attendre 12h", "type": "main", "index": 0}]]
+    },
+    "Attendre 12h": {
+      "main": [[{"node": "Google Sheets — Vérifier confirmations", "type": "main", "index": 0}]]
+    },
+    "Google Sheets — Vérifier confirmations": {
+      "main": [[{"node": "Vérifier statut confirmation", "type": "main", "index": 0}]]
+    },
+    "Vérifier statut confirmation": {
+      "main": [[{"node": "Pas encore confirmé ?", "type": "main", "index": 0}]]
+    },
+    "Pas encore confirmé ?": {
+      "main": [
+        [{"node": "Telegram — Envoyer relance", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Webhook — Confirmation staff": {
+      "main": [[{"node": "Parser réponse confirmation", "type": "main", "index": 0}]]
+    },
+    "Parser réponse confirmation": {
+      "main": [[{"node": "Google Sheets — Mettre à jour confirmation", "type": "main", "index": 0}]]
+    },
+    "Google Sheets — Mettre à jour confirmation": {
+      "main": [[{"node": "Absence signalée ?", "type": "main", "index": 0}]]
+    },
+    "Absence signalée ?": {
+      "main": [
+        [{"node": "Telegram — Escalade absence promoteur", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Déclencheur J+1 feedback 10h": {
+      "main": [[{"node": "Google Sheets — Événements d'hier", "type": "main", "index": 0}]]
+    },
+    "Google Sheets — Événements d'hier": {
+      "main": [[{"node": "Filtrer événements hier", "type": "main", "index": 0}]]
+    },
+    "Filtrer événements hier": {
+      "main": [[{"node": "Telegram — Envoyer formulaire feedback", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": ["agent3", "staff", "automation"],
+  "triggerCount": 2,
+  "updatedAt": "2026-06-03T00:00:00.000Z",
+  "versionId": "1"
+}
