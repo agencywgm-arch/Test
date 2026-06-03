@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        id: '2498171544132422',
+        id: process.env.PHANTOMBUSTER_AGENT_ID ?? '2498171544132422',
         argument: JSON.stringify({
           sessionCookie: igSession,
           usernames: targets.map(t => `https://www.instagram.com/${t.username}/`),

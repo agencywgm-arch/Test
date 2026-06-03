@@ -1,6 +1,7 @@
 import { AccountProfile } from '@/types'
 
-const PB_AGENT_ID = '2498171544132422'
+// Configurable via PHANTOMBUSTER_AGENT_ID en env — correspond à "Instagram Direct Message Sender"
+const PB_AGENT_ID = process.env.PHANTOMBUSTER_AGENT_ID ?? '2498171544132422'
 
 export async function launchAgent(params: {
   igSession: string

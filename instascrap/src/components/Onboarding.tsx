@@ -295,29 +295,23 @@ function Step3({ value, onChange }: { value: string; onChange: (v: string) => vo
       <div>
         <h2 className="text-lg font-bold mb-1" style={{ color: '#e8e8f0' }}>Clé Phantombuster</h2>
         <p className="text-sm" style={{ color: '#6b7280' }}>
-          Utilisée pour lancer des campagnes de DMs automatisées sur Instagram.
+          Utilisée pour lancer des campagnes de DMs automatisées. Le phantom <strong style={{ color: '#e8e8f0' }}>Instagram Direct Message Sender</strong> est préconfiguré.
         </p>
       </div>
 
+      {/* Étape 1 — Clé API */}
       <div
         className="rounded-xl p-4 space-y-2"
         style={{ background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.15)' }}
       >
-        <p className="text-xs font-semibold mb-2" style={{ color: '#8b5cf6' }}>Comment obtenir votre clé :</p>
+        <p className="text-xs font-semibold mb-2" style={{ color: '#8b5cf6' }}>① Récupérer votre clé API :</p>
         <p className="text-xs" style={{ color: '#9ca3af' }}>
           1. Créez un compte sur{' '}
-          <a
-            href="https://phantombuster.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-            style={{ color: '#8b5cf6' }}
-          >
+          <a href="https://phantombuster.com" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: '#8b5cf6' }}>
             phantombuster.com
           </a>
         </p>
-        <p className="text-xs" style={{ color: '#9ca3af' }}>2. Allez dans Dashboard → Settings (icône engrenage)</p>
-        <p className="text-xs" style={{ color: '#9ca3af' }}>3. Section "API Key" → copiez votre clé</p>
+        <p className="text-xs" style={{ color: '#9ca3af' }}>2. Dashboard → icône engrenage (Settings) → <strong style={{ color: '#e8e8f0' }}>API Key</strong> → copier</p>
       </div>
 
       <div>
@@ -338,6 +332,30 @@ function Step3({ value, onChange }: { value: string; onChange: (v: string) => vo
           onFocus={e => { e.currentTarget.style.border = '1px solid rgba(139,92,246,0.5)' }}
           onBlur={e => { e.currentTarget.style.border = '1px solid rgba(139,92,246,0.2)' }}
         />
+      </div>
+
+      {/* Étape 2 — Agent ID */}
+      <div
+        className="rounded-xl p-4 space-y-2"
+        style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.15)' }}
+      >
+        <p className="text-xs font-semibold mb-2" style={{ color: '#34d399' }}>② Agent préconfigé — rien à faire ici ✓</p>
+        <p className="text-xs" style={{ color: '#9ca3af' }}>
+          L&apos;agent <strong style={{ color: '#e8e8f0' }}>Instagram Direct Message Sender</strong> est déjà configuré dans <code style={{ color: '#8b5cf6' }}>.env.local</code>.
+        </p>
+        <p className="text-xs" style={{ color: '#9ca3af' }}>
+          Si vous voulez utiliser votre propre agent :{' '}
+          <a
+            href="https://phantombuster.com/phantoms/instagram-direct-message-sender/2498171544132422"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+            style={{ color: '#34d399' }}
+          >
+            ouvrir le phantom →
+          </a>{' '}
+          copiez l&apos;ID depuis l&apos;URL → modifiez <code style={{ color: '#8b5cf6' }}>PHANTOMBUSTER_AGENT_ID</code> dans <code style={{ color: '#8b5cf6' }}>.env.local</code>
+        </p>
       </div>
     </div>
   )
