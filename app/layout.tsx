@@ -5,14 +5,16 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "QuickBite – SaaS commande restauration rapide",
-  description: "Gérez les commandes de votre restaurant en temps réel.",
+  title: "Nightlife Paris — Dashboard",
+  description: "Gestion participants, événements, contenu et staff.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className} style={{ background: "#09090b", color: "white", minHeight: "100vh" }}>
+        {children}
+      </body>
     </html>
   );
 }

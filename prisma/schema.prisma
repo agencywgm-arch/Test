@@ -7,61 +7,82 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Restaurant {
-  id         String     @id @default(cuid())
-  name       String
-  slug       String     @unique
-  password   String
-  logoEmoji  String     @default("🍔")
-  primaryColor String   @default("#ef4444")
-  createdAt  DateTime   @default(now())
-
-  categories Category[]
-  orders     Order[]
+model Promoteur {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  nom       String
+  createdAt DateTime @default(now())
 }
 
-model Category {
-  id           String     @id @default(cuid())
-  name         String
-  position     Int        @default(0)
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  menuItems    MenuItem[]
+model Participant {
+  id          String     @id @default(cuid())
+  prenom      String
+  age         Int
+  instagram   String
+  telephone   String?
+  email       String?
+  statut      String     @default("EN_ATTENTE")
+  manychatId  String?
+  source      String     @default("Instagram DM")
+  notes       String?
+  evenementId String?
+  evenement   Evenement? @relation(fields: [evenementId], references: [id])
+  createdAt   DateTime   @default(now())
 }
 
-model MenuItem {
-  id          String      @id @default(cuid())
-  name        String
-  description String?
-  price       Float
-  available   Boolean     @default(true)
-  emoji       String      @default("🍽️")
-  categoryId  String
-  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  orderItems  OrderItem[]
+model Evenement {
+  id              String           @id @default(cuid())
+  nom             String
+  date            DateTime
+  lieu            String
+  adresse         String
+  heureDebut      String
+  heureFin        String
+  dressCode       String?
+  maxParticipants Int              @default(50)
+  statut          String           @default("PLANIFIE")
+  participants    Participant[]
+  staffAssignes   StaffEvenement[]
+  createdAt       DateTime         @default(now())
 }
 
-model Order {
-  id           String      @id @default(cuid())
-  number       Int
-  customerName String
-  status       String      @default("PENDING")
-  total        Float
-  note         String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  restaurantId String
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  items        OrderItem[]
+model Staff {
+  id         String           @id @default(cuid())
+  prenom     String
+  nom        String
+  telegramId String?
+  whatsapp   String?
+  email      String?
+  role       String
+  fiabilite  Int              @default(5)
+  evenements StaffEvenement[]
+  createdAt  DateTime         @default(now())
 }
 
-model OrderItem {
-  id         String   @id @default(cuid())
-  quantity   Int
-  price      Float
-  name       String
-  menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+model StaffEvenement {
+  id          String    @id @default(cuid())
+  staffId     String
+  evenementId String
+  statut      String    @default("EN_ATTENTE")
+  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  evenement   Evenement @relation(fields: [evenementId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, evenementId])
+}
+
+model Contenu {
+  id           String    @id @default(cuid())
+  restaurant   String
+  scoreGlobal  Float     @default(0)
+  scoreViral   Float     @default(0)
+  scoreLuxe    Float     @default(0)
+  slides       String
+  caption      String?
+  hashtags     String?
+  statut       String    @default("EN_ATTENTE")
+  instagramUrl String?
+  tiktokUrl    String?
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
 }
