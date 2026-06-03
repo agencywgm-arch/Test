@@ -1104,16 +1104,16 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SettingsTab({ restaurant }) {
   const store = useContext(StoreCtx);
-  const emptySettings = { resend_api_key: "", resend_from: "", openai_api_key: "", stripe_publishable_key: "", stripe_secret_key: "" };
+  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "" };
   const [settings, setSettings] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
-  const [show, setShow] = useState({ resend_api_key: false, openai_api_key: false, stripe_secret_key: false });
+  const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
 
   useEffect(() => {
     if (restaurant.id === "demo") return;
     supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
       .then(({ data, error }) => {
-        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", openai_api_key: data.openai_api_key || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "" });
+        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "" });
         else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
@@ -1183,7 +1183,6 @@ function SettingsTab({ restaurant }) {
   }
 
   const emailOk = !!settings.resend_api_key;
-  const aiOk = !!settings.openai_api_key;
   const stripeOk = !!(settings.stripe_publishable_key && settings.stripe_secret_key);
 
   return (
@@ -1195,14 +1194,6 @@ function SettingsTab({ restaurant }) {
         <PwField label="Clé API Resend" field="resend_api_key" placeholder="re_xxxx..." />
         <TxtField label="Email expéditeur" field="resend_from" placeholder="contact@monresto.fr" />
         <ExtLink href="https://resend.com">Obtenir une clé API Resend</ExtLink>
-      </Surface>
-
-      {/* OpenAI */}
-      <Surface style={{ padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🤖 Intelligence Artificielle — OpenAI</h3>
-        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Utilisé par l'assistant IA pour répondre à vos questions.</p>
-        <PwField label="Clé API OpenAI" field="openai_api_key" placeholder="sk-..." />
-        <ExtLink href="https://platform.openai.com/api-keys">Obtenir une clé API OpenAI</ExtLink>
       </Surface>
 
       {/* Stripe */}
@@ -1219,8 +1210,7 @@ function SettingsTab({ restaurant }) {
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>📊 Statut de configuration</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <StatusBadge label="Email" ok={emailOk} hint={emailOk ? "Clé Resend configurée — campagnes actives." : "Renseignez votre clé Resend pour activer les campagnes email."} />
-          <StatusBadge label="IA" ok={aiOk} hint={aiOk ? "Clé OpenAI configurée — assistant actif." : "Renseignez votre clé OpenAI pour activer l'assistant IA."} />
-          <StatusBadge label="Stripe" ok={stripeOk} hint={stripeOk ? "Clés Stripe configurées — paiement en ligne actif." : "Renseignez les deux clés Stripe pour activer le paiement en ligne."} />
+<StatusBadge label="Stripe" ok={stripeOk} hint={stripeOk ? "Clés Stripe configurées — paiement en ligne actif." : "Renseignez les deux clés Stripe pour activer le paiement en ligne."} />
         </div>
       </Surface>
 
