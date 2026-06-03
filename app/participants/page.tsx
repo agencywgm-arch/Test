@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { updateParticipantStatut } from "@/lib/actions";
@@ -14,8 +13,6 @@ const STATUT_LABEL: Record<string, string> = {
 };
 
 export default async function Participants({ searchParams }: { searchParams: { filtre?: string } }) {
-  const session = await getSession();
-  if (!session) redirect("/login");
 
   const filtre = searchParams.filtre || "TOUS";
 

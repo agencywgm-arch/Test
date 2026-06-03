@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 
@@ -9,8 +8,6 @@ const ROLE_COLOR: Record<string, string> = {
 };
 
 export default async function Staff() {
-  const session = await getSession();
-  if (!session) redirect("/login");
 
   const staff = await prisma.staff.findMany({
     orderBy: { prenom: "asc" },

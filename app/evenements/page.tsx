@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { updateEvenementStatut } from "@/lib/actions";
@@ -12,8 +11,6 @@ const STATUT_LABEL: Record<string, string> = {
 };
 
 export default async function Evenements() {
-  const session = await getSession();
-  if (!session) redirect("/login");
 
   const evenements = await prisma.evenement.findMany({
     orderBy: { date: "asc" },

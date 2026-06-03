@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { logout } from "@/lib/actions";
 
 const nav = [
   { href: "/dashboard", icon: "◈", label: "Dashboard" },
@@ -59,18 +58,6 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Logout */}
-        <div style={{ padding: "16px 12px", borderTop: "1px solid #1f1f23" }}>
-          <form action={logout}>
-            <button type="submit" style={{
-              width: "100%", padding: "8px 12px", background: "transparent",
-              border: "1px solid #27272a", borderRadius: 8, color: "#71717a",
-              fontSize: 13, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8
-            }}>
-              <span>↩</span> Déconnexion
-            </button>
-          </form>
-        </div>
       </aside>
 
       {/* Mobile bottom nav */}
