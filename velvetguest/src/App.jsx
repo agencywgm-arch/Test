@@ -12,11 +12,11 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const TRANSLATIONS = {
   fr: {
     // Nav tabs
-    tab_setup: "⚡ Setup", tab_overview: "Résumé", tab_orders: "Commandes",
+    tab_setup: "⚡ Setup", tab_overview: "Dashboard", tab_orders: "Commandes",
     tab_caisse: "Caisse", tab_qrcode: "QR Codes", tab_inventory: "Inventaire",
     tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carte",
     // Mobile labels
-    m_overview: "Accueil", m_orders: "Cmds", m_caisse: "Caisse",
+    m_overview: "Dashboard", m_orders: "Cmds", m_caisse: "Caisse",
     m_crm: "CRM", m_promos: "Promos", m_menu: "Carte",
     m_qrcode: "QR", m_inventory: "Stock", m_setup: "Setup",
     // Sidebar / header
@@ -275,7 +275,9 @@ function fmtStatus(s) {
 function fmtOrder(o) {
   return {
     id: o.id,
+    shortId: o.id.slice(0, 6).toUpperCase(),
     table: o.tables?.number ?? "?",
+    customerName: o.customer_name || "",
     note: o.note || "",
     total: Number(o.total || 0),
     payment_method: o.payment_method || "cash",
@@ -389,7 +391,7 @@ function useStore(restaurantId) {
           if (!data) return;
           const o = fmtOrder(data);
           setOrders(prev => [o, ...prev]);
-          pushNotif(`Nouvelle commande — Table ${o.table}`, "new");
+          pushNotif(`Commande #${o.shortId} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new");
         }
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
@@ -3015,7 +3017,7 @@ function useLiveOrders(restaurantId, pushNotif) {
           if (!data) return;
           const order = fmt(data);
           setOrders(prev => [order, ...prev]);
-          pushNotif(`Nouvelle commande — Table ${order.table}`, "new");
+          pushNotif(`Commande #${order.id.slice(0,6).toUpperCase()} — Table ${order.table}${order.customerName ? ` · ${order.customerName}` : ""}`, "new");
         }
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
