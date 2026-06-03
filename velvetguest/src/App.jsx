@@ -665,6 +665,7 @@ function SignupPage({ onDone, onDemo }) {
 // RESTAURANTS PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
 function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
+  const { lang, setLang } = useContext(LangCtx);
   const first = (user.name || user.email).split(" ")[0];
   const h = new Date().getHours();
   const greet = h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : "Bonsoir";
@@ -735,9 +736,20 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
       <style>{css}</style>
       <nav style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", position: "sticky", top: 0, zIndex: 100 }}>
         <Logo size={17} />
-        <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={onLogout}>
-          <span style={{ color: C.textSecondary, fontSize: 14 }}>{user.email}</span>
-          <Avatar name={user.name || user.email} size={30} />
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* Language switcher */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {LANG_OPTIONS.map(l => (
+              <button key={l.code} onClick={() => setLang(l.code)} title={l.name}
+                style={{ width: 32, height: 28, borderRadius: 8, border: `1.5px solid ${lang === l.code ? C.dark : C.border}`, background: lang === l.code ? C.dark : "transparent", fontSize: 15, cursor: "pointer", lineHeight: 1, transition: "all 0.15s" }}>
+                {l.flag}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={onLogout}>
+            <span style={{ color: C.textSecondary, fontSize: 14 }}>{user.email}</span>
+            <Avatar name={user.name || user.email} size={30} />
+          </div>
         </div>
       </nav>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
@@ -1096,10 +1108,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const [moreOpen, setMoreOpen] = useState(false);
-
-  const [lang, setLangState] = useState(() => localStorage.getItem("vg_lang") || "fr");
-  const setLang = code => { setLangState(code); localStorage.setItem("vg_lang", code); };
-  const T = TRANSLATIONS[lang] || TRANSLATIONS.fr;
+  const { lang, setLang, T } = useContext(LangCtx);
 
   const TABS = [
     { id: "setup", label: T.tab_setup, icon: "⚡" },
@@ -1128,7 +1137,6 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   ];
   const demoBanner = restaurant.id === "demo";
   return (
-    <LangCtx.Provider value={{ lang, setLang, T }}>
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
@@ -1266,7 +1274,6 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         </>
       )}
     </div>
-    </LangCtx.Provider>
   );
 }
 
@@ -1692,28 +1699,12 @@ function SetupTab({ restaurant, onDone }) {
     </div>
   );
 
-  const { lang: uiLang, setLang: setUiLang, T: uiT } = useContext(LangCtx);
-
   return (
     <div className="fade-in" style={{ maxWidth: 760, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 22, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>⚡ Setup rapide</h2>
         <p style={{ color: C.textSecondary, fontSize: 14 }}>Collez votre menu — l'IA configure votre carte et génère votre inventaire automatiquement.</p>
-      </div>
-
-      {/* Language card */}
-      <div style={{ background: C.white, borderRadius: 16, padding: "18px 20px", marginBottom: 24, border: `1.5px solid ${C.border}` }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🌐 {uiT.lang_label}</p>
-        <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{uiT.lang_hint}</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {LANG_OPTIONS.map(l => (
-            <button key={l.code} onClick={() => setUiLang(l.code)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${uiLang === l.code ? C.dark : C.border}`, background: uiLang === l.code ? C.dark : "transparent", color: uiLang === l.code ? C.white : C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", transition: "all 0.15s", ...FF }}>
-              <span style={{ fontSize: 18 }}>{l.flag}</span> {l.name}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Steps */}
@@ -5220,6 +5211,9 @@ function Dashboard() {
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
   const store = useStore(restaurant?.id);
+  const [lang, setLangState] = useState(() => localStorage.getItem("vg_lang") || "fr");
+  const setLang = code => { setLangState(code); localStorage.setItem("vg_lang", code); };
+  const T = TRANSLATIONS[lang] || TRANSLATIONS.fr;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -5250,6 +5244,7 @@ function Dashboard() {
   );
 
   return (
+    <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
       {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@velvetguest.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
@@ -5257,5 +5252,6 @@ function Dashboard() {
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
+    </LangCtx.Provider>
   );
 }
