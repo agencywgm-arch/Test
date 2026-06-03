@@ -3751,7 +3751,7 @@ function CampaignProposalCard({ proposal, restaurant, store }) {
     setError("");
     try {
       const { data, error: fnErr } = await supabase.functions.invoke("send-campaign", {
-        body: { restaurant_id: restaurant.id, subject: proposal.subject, html_body: proposal.body, recipients },
+        body: { restaurant_id: restaurant.id, restaurant_name: restaurant.name, subject: proposal.subject, html_body: proposal.body, recipients },
       });
       if (fnErr) { setError(fnErr.message); }
       else if (data?.error) { setError(data.error); }
@@ -4244,62 +4244,15 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 // CRM TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function GmailConnectSection({ restaurant }) {
-  const isDemo = restaurant.id === "demo";
-  const [conn, setConn] = useState(null); // null=loading, false=not connected, object=connected
-  const [loading, setLoading] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-
-  useEffect(() => {
-    if (isDemo) { setConn(false); return; }
-    supabase.from("email_connections").select("email,token_expiry").eq("restaurant_id", restaurant.id).maybeSingle()
-      .then(({ data }) => setConn(data || false));
-  }, [restaurant.id, isDemo]);
-
-  function handleConnect() {
-    if (!GOOGLE_CLIENT_ID) { alert("VITE_GOOGLE_CLIENT_ID non configuré."); return; }
-    const oauthUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: `${window.location.origin}${BASE_PATH}/oauth/gmail`,
-      response_type: "code",
-      scope: "https://www.googleapis.com/auth/gmail.send email profile",
-      access_type: "offline",
-      prompt: "consent",
-      state: restaurant.id,
-    }).toString();
-    window.location.href = oauthUrl;
-  }
-
-  async function handleDisconnect() {
-    if (!confirm("Déconnecter Gmail ?")) return;
-    setDisconnecting(true);
-    await supabase.from("email_connections").delete().eq("restaurant_id", restaurant.id);
-    setConn(false);
-    setDisconnecting(false);
-  }
-
-  if (conn === null) return <div style={{ padding: "12px 0", color: C.textTertiary, fontSize: 13 }}>Vérification Gmail…</div>;
-
   return (
-    <Surface style={{ padding: "16px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: conn ? "#EA433515" : C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-        📧
+    <Surface style={{ padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 12, background: "#10B98115", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+        📨
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Gmail</p>
-        {conn
-          ? <p style={{ fontSize: 12, color: C.accentGreen, marginTop: 2 }}>✅ Connecté : {conn.email}</p>
-          : <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Connectez votre Gmail pour envoyer des campagnes email.</p>
-        }
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Envoi d'emails</p>
+        <p style={{ fontSize: 12, color: C.accentGreen, marginTop: 2 }}>✅ Propulsé par Resend — prêt à envoyer</p>
       </div>
-      {conn ? (
-        <button onClick={handleDisconnect} disabled={disconnecting} style={{ padding: "8px 16px", background: C.accent + "12", color: C.accent, border: `1px solid ${C.accent}30`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF }}>
-          {disconnecting ? "…" : "Déconnecter"}
-        </button>
-      ) : (
-        <button onClick={handleConnect} disabled={isDemo} style={{ padding: "8px 16px", background: C.dark, color: C.white, border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: isDemo ? "default" : "pointer", opacity: isDemo ? 0.5 : 1, ...FF }}>
-          Connecter mon Gmail
-        </button>
-      )}
     </Surface>
   );
 }
@@ -4331,7 +4284,7 @@ function CampaignSender({ restaurant, customers }) {
     setResult(null);
     try {
       const { data, error } = await supabase.functions.invoke("send-campaign", {
-        body: { restaurant_id: restaurant.id, subject, html_body: htmlBody, recipients: filteredRecipients },
+        body: { restaurant_id: restaurant.id, restaurant_name: restaurant.name, subject, html_body: htmlBody, recipients: filteredRecipients },
       });
       if (error) { setResult({ error: error.message }); }
       else { setResult(data); }
