@@ -427,7 +427,7 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1229,7 +1229,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         )}
         <div style={{ padding: isMobile ? "12px 12px" : "28px 32px" }}>
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
-          {tab === "orders" && <OrdersTab store={store} />}
+          {tab === "orders" && <OrdersTab store={store} restaurant={restaurant} />}
           {tab === "caisse" && <CaisseTab store={store} restaurant={restaurant} />}
           {tab === "qrcode" && <QRTab restaurant={restaurant} />}
           {tab === "setup" && <SetupTab restaurant={restaurant} onDone={() => setTab("overview")} />}
@@ -1428,12 +1428,134 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   );
 }
 
-function OrdersTab({ store }) {
+function EditOrderModal({ order, restaurant, onClose, onSaved }) {
+  const isDemo = restaurant.id === "demo";
+  const [items, setItems] = useState(order.items.map(it => ({ ...it })));
+  const [menuItems, setMenuItems] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isDemo) { setMenuItems(DEMO_MENU); return; }
+    supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).eq("available", true).order("category").order("name")
+      .then(({ data }) => setMenuItems(data ?? []));
+  }, []);
+
+  function setQty(id, delta) {
+    setItems(prev => {
+      const next = prev.map(it => it.id === id ? { ...it, qty: Math.max(0, it.qty + delta) } : it).filter(it => it.qty > 0);
+      return next;
+    });
+  }
+
+  function addMenuItem(mi) {
+    setItems(prev => {
+      const ex = prev.find(it => it.id === mi.id);
+      if (ex) return prev.map(it => it.id === mi.id ? { ...it, qty: it.qty + 1 } : it);
+      return [...prev, { id: mi.id, name: mi.name, price: Number(mi.price), qty: 1, emoji: mi.emoji || "🍽", cat: mi.category || "" }];
+    });
+  }
+
+  const newTotal = items.reduce((s, it) => s + it.price * it.qty, 0);
+
+  async function save() {
+    setSaving(true);
+    if (isDemo) {
+      onSaved({ ...order, items, total: newTotal });
+      return;
+    }
+    try {
+      await supabase.from("order_items").delete().eq("order_id", order.id);
+      const menuMap = {};
+      menuItems.forEach(mi => { menuMap[mi.id] = mi; });
+      const rows = items.map(it => ({ order_id: order.id, menu_item_id: it.id, quantity: it.qty, detail: "" }));
+      await supabase.from("order_items").insert(rows);
+      await supabase.from("orders").update({ total: newTotal }).eq("id", order.id);
+      onSaved({ ...order, items, total: newTotal });
+    } catch { setSaving(false); }
+  }
+
+  const menuCats = Array.from(new Set(menuItems.map(m => m.category)));
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: C.surface, borderRadius: 20, width: "100%", maxWidth: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", ...FF }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "18px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>Modifier — Table {order.table}</p>
+          <button onClick={onClose} style={{ background: C.bg, border: "none", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 14, color: C.textSecondary, ...FF }}>✕</button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 10 }}>Articles en cours</p>
+            {items.length === 0 && <p style={{ fontSize: 13, color: C.textTertiary }}>Aucun article</p>}
+            {items.map(it => (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 20, width: 28, textAlign: "center", flexShrink: 0 }}>{it.emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{it.name}</p>
+                  <p style={{ fontSize: 11, color: C.textTertiary }}>{it.price.toFixed(2)}€/u</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={() => setQty(it.id, -1)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 15, ...FF }}>−</button>
+                  <span style={{ fontWeight: 700, fontSize: 14, minWidth: 18, textAlign: "center" }}>{it.qty}</span>
+                  <button onClick={() => setQty(it.id, 1)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 15, ...FF }}>+</button>
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, minWidth: 44, textAlign: "right" }}>{(it.price * it.qty).toFixed(2)}€</p>
+              </div>
+            ))}
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 10 }}>Ajouter un plat</p>
+            {menuCats.map(cat => (
+              <div key={cat} style={{ marginBottom: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{cat}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {menuItems.filter(m => m.category === cat).map(m => (
+                    <button key={m.id} onClick={() => addMenuItem(m)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${C.border}`, background: C.bg, cursor: "pointer", fontSize: 12, color: C.dark, fontWeight: 500, ...FF }}>
+                      <span>{m.emoji}</span><span>{m.name}</span><span style={{ color: C.textTertiary }}>+{Number(m.price).toFixed(2)}€</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <p style={{ flex: 1, fontSize: 15, fontWeight: 700, color: C.dark }}>Total : {newTotal.toFixed(2)}€</p>
+          <Btn variant="ghost" size="sm" onClick={onClose}>Annuler</Btn>
+          <Btn variant="primary" size="sm" onClick={save} disabled={saving}>
+            {saving ? <span style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: C.white, borderRadius: "50%", display: "inline-block", animation: "ring 0.8s linear infinite" }} /> : "Enregistrer"}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrdersTab({ store, restaurant: restaurantProp }) {
   const byStatus = s => store.orders.filter(o => o.status === s);
   const all = [...store.orders, ...store.servedOrders.slice(0, 4)];
   const isMobile = useIsMobile();
+  const [editOrder, setEditOrder] = useState(null);
+  const storeCtx = useContext(StoreCtx);
+  const resolvedRestaurant = restaurantProp || { id: "demo" };
+
+  function handleSaved(updated) {
+    if (storeCtx?.setOrders) {
+      storeCtx.setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+    }
+    setEditOrder(null);
+  }
+
   return (
     <div className="fade-in">
+      {editOrder && (
+        <EditOrderModal
+          order={editOrder}
+          restaurant={resolvedRestaurant}
+          onClose={() => setEditOrder(null)}
+          onSaved={handleSaved}
+        />
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: isMobile ? 6 : 12, marginBottom: isMobile ? 12 : 20 }}>
         {[["Nouvelles", "new", C.accentBlue], ["Cuisine", "cooking", C.accentOrange], ["Prêtes", "ready", C.accentGreen], ["Servies", "served", C.textTertiary]].map(([l, s, c]) => (
           <Surface key={s} style={{ padding: isMobile ? "10px 10px" : "16px 18px" }}>
@@ -1458,6 +1580,9 @@ function OrdersTab({ store }) {
               </div>
               {!isMobile && <p style={{ fontSize: 13, color: C.textSecondary, flexShrink: 0 }}>{Math.round(o.elapsed)} min</p>}
               <Tag color={sc}>{sl}</Tag>
+              {o.status !== "served" && (
+                <button onClick={() => setEditOrder(o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, color: C.textSecondary, flexShrink: 0, ...FF }} title="Modifier la commande">✏️</button>
+              )}
             </div>
           );
         })}
@@ -1467,20 +1592,79 @@ function OrdersTab({ store }) {
 }
 
 function QRTab({ restaurant }) {
-  const [sel, setSel] = useState(1);
+  const isDemo = restaurant.id === "demo";
+  const [tables, setTables] = useState([]);
+  const [sel, setSel] = useState(null);
   const [fg, setFg] = useState("#1D1D1F");
   const [bg, setBg] = useState("#FFFFFF");
   const [customBase, setCustomBase] = useState("");
-  const tables = Array.from({ length: restaurant.tables || 8 }, (_, i) => i + 1);
+  const [adding, setAdding] = useState(false);
   const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  const baseUrl = customBase || window.location.origin;
-  const url = `${baseUrl}${BASE_PATH}/r/${restaurant.id}/t/${sel}`;
+  const origin = customBase || window.location.origin;
+
+  useEffect(() => {
+    if (isDemo) {
+      const dt = Array.from({ length: 8 }, (_, i) => ({ id: `demo-t${i + 1}`, number: i + 1, qr_url: "" }));
+      setTables(dt);
+      setSel(dt[0]);
+      return;
+    }
+    supabase.from("tables").select("*").eq("restaurant_id", restaurant.id).order("number")
+      .then(({ data }) => {
+        const rows = data ?? [];
+        setTables(rows);
+        if (rows.length > 0) setSel(rows[0]);
+      });
+  }, [restaurant.id]);
+
+  const selNum = sel?.number ?? 1;
+  const url = sel?.qr_url || `${origin}${BASE_PATH}/r/${restaurant.id}/t/${selNum}`;
+
+  async function addTable() {
+    if (adding) return;
+    setAdding(true);
+    const maxNum = tables.reduce((m, t) => Math.max(m, t.number), 0);
+    const number = maxNum + 1;
+    const qr_url = `${origin}${BASE_PATH}/r/${restaurant.id}/t/${number}`;
+    if (isDemo) {
+      const newT = { id: `demo-t${number}`, number, qr_url };
+      setTables(prev => [...prev, newT]);
+      setSel(newT);
+      setAdding(false);
+      return;
+    }
+    const { data, error } = await supabase.from("tables").insert({ restaurant_id: restaurant.id, number, qr_url }).select().single();
+    if (!error && data) {
+      setTables(prev => [...prev, data]);
+      setSel(data);
+      await supabase.from("restaurants").update({ tables_count: tables.length + 1 }).eq("id", restaurant.id);
+    }
+    setAdding(false);
+  }
+
+  async function deleteTable(t) {
+    if (!confirm(`Supprimer la table ${t.number} ?`)) return;
+    if (isDemo) {
+      setTables(prev => prev.filter(x => x.id !== t.id));
+      setSel(prev => prev?.id === t.id ? null : prev);
+      return;
+    }
+    await supabase.from("tables").delete().eq("id", t.id);
+    setTables(prev => {
+      const next = prev.filter(x => x.id !== t.id);
+      if (sel?.id === t.id) setSel(next[0] ?? null);
+      return next;
+    });
+    await supabase.from("restaurants").update({ tables_count: Math.max(0, tables.length - 1) }).eq("id", restaurant.id);
+  }
+
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
-    const a = document.createElement("a"); a.download = `vg-table-${sel}.png`; a.href = canvas.toDataURL("image/png"); a.click();
+    const a = document.createElement("a"); a.download = `vg-table-${selNum}.png`; a.href = canvas.toDataURL("image/png"); a.click();
   };
+
   return (
     <div className="fade-in">
       {isLocalhost && (
@@ -1504,7 +1688,7 @@ function QRTab({ restaurant }) {
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: 16 }}>
       <div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
-          {[["Tables", restaurant.tables || 8], ["QR actifs", restaurant.tables || 8], ["Scans totaux", 0]].map(([l, v]) => (
+          {[["Tables", tables.length], ["QR actifs", tables.length], ["Scans totaux", 0]].map(([l, v]) => (
             <Surface key={l} style={{ padding: "16px 18px" }}>
               <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 500 }}>{l}</p>
               <p style={{ fontSize: 24, fontWeight: 800, color: C.dark }}>{v}</p>
@@ -1512,12 +1696,20 @@ function QRTab({ restaurant }) {
           ))}
         </div>
         <Surface style={{ overflow: "hidden" }}>
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}><p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Tables</p></div>
+          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Tables</p>
+            <button onClick={addTable} disabled={adding} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF, opacity: adding ? 0.5 : 1 }}>
+              + Ajouter une table
+            </button>
+          </div>
           <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 8 }}>
             {tables.map(t => (
-              <div key={t} onClick={() => setSel(t)} style={{ padding: "12px 8px", borderRadius: 12, border: `1.5px solid ${sel === t ? C.dark : C.border}`, background: sel === t ? C.dark : C.surface, textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
-                <p style={{ fontSize: 10, color: sel === t ? "rgba(255,255,255,0.5)" : C.textTertiary, marginBottom: 4 }}>TABLE</p>
-                <p style={{ fontSize: 20, fontWeight: 800, color: sel === t ? C.white : C.dark }}>{t}</p>
+              <div key={t.id} style={{ position: "relative" }}>
+                <div onClick={() => setSel(t)} style={{ padding: "12px 8px", borderRadius: 12, border: `1.5px solid ${sel?.id === t.id ? C.dark : C.border}`, background: sel?.id === t.id ? C.dark : C.surface, textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
+                  <p style={{ fontSize: 10, color: sel?.id === t.id ? "rgba(255,255,255,0.5)" : C.textTertiary, marginBottom: 4 }}>TABLE</p>
+                  <p style={{ fontSize: 20, fontWeight: 800, color: sel?.id === t.id ? C.white : C.dark }}>{t.number}</p>
+                </div>
+                <button onClick={e => { e.stopPropagation(); deleteTable(t); }} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: C.accent, border: "2px solid #fff", color: "#fff", fontSize: 10, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, ...FF }}>×</button>
               </div>
             ))}
           </div>
@@ -1538,18 +1730,20 @@ function QRTab({ restaurant }) {
             ))}
           </div>
         </Surface>
-        <Surface id="qr-dl" style={{ padding: "18px 20px", textAlign: "center" }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Table {sel}</p>
-          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{restaurant.name}</p>
-          <div style={{ display: "inline-block", padding: 14, background: bg, borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
-            <QRCanvas text={url} size={160} fg={fg} bg={bg} />
-          </div>
-          <p style={{ fontSize: 10, color: C.textTertiary, marginTop: 10, wordBreak: "break-all", padding: "0 4px" }}>{url}</p>
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <Btn variant="primary" size="sm" full onClick={download}>📥 Télécharger</Btn>
-            <Btn variant="ghost" size="sm" full>🖨</Btn>
-          </div>
-        </Surface>
+        {sel && (
+          <Surface id="qr-dl" style={{ padding: "18px 20px", textAlign: "center" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Table {selNum}</p>
+            <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{restaurant.name}</p>
+            <div style={{ display: "inline-block", padding: 14, background: bg, borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
+              <QRCanvas text={url} size={160} fg={fg} bg={bg} />
+            </div>
+            <p style={{ fontSize: 10, color: C.textTertiary, marginTop: 10, wordBreak: "break-all", padding: "0 4px" }}>{url}</p>
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <Btn variant="primary" size="sm" full onClick={download}>📥 Télécharger</Btn>
+              <Btn variant="ghost" size="sm" full>🖨</Btn>
+            </div>
+          </Surface>
+        )}
       </div>
     </div>
     </div>
@@ -3395,7 +3589,7 @@ function ClientView({ restaurant, onBack }) {
   const [orderError, setOrderError] = useState("");
   const [ordering, setOrdering] = useState(false);
   const [cvChatOpen, setCvChatOpen] = useState(false);
-  const [cvChatMsgs, setCvChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Des questions sur les allergènes ou les ingrédients ? Je suis là !" }]);
+  const [cvChatMsgs, setCvChatMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
   const [cvChatInput, setCvChatInput] = useState("");
   const [cvChatLoading, setCvChatLoading] = useState(false);
   const tableNum = 1;
@@ -3662,7 +3856,7 @@ function ClientView({ restaurant, onBack }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function ClientViewChat({ menuItems, restaurant, tableNum }) {
   const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Des questions sur les allergènes ou les ingrédients ? Je suis là !" }]);
+  const [msgs, setMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
@@ -4659,7 +4853,7 @@ function CustomerPage({ slug, tableNum }) {
   const [customerPhone, setCustomerPhone] = useState("");
   const [profileSkipped, setProfileSkipped] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "Bonjour ! 👋 Je suis là pour répondre à vos questions sur les allergènes, ingrédients ou plats. Comment puis-je vous aider ?" }]);
+  const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
