@@ -128,17 +128,17 @@ const DEMO_MENU = [
 ];
 function _demoT(minsAgo) { return new Date(Date.now() - minsAgo * 60000).toISOString(); }
 const DEMO_ORDERS = [
-  { id: "d1", table: 3, note: "Sans oignons", total: 32.40, payment_method: "card", status: "cooking", elapsed: 8, createdAt: _demoT(8), items: [
+  { id: "d1", table: 3, customerName: "Sophie", note: "Sans oignons", total: 32.40, payment_method: "card", status: "cooking", elapsed: 8, createdAt: _demoT(8), items: [
     { id: "di1", name: "Steak Frites", price: 19.90, qty: 1, emoji: "🥩", cat: "Plats" },
     { id: "di2", name: "Salade César", price: 9.00, qty: 1, emoji: "🥗", cat: "Entrées" },
     { id: "di3", name: "Coca-Cola", price: 3.50, qty: 1, emoji: "🥤", cat: "Boissons" },
   ]},
-  { id: "d2", table: 7, note: "", total: 20.40, payment_method: "cash", status: "new", elapsed: 2, createdAt: _demoT(2), items: [
+  { id: "d2", table: 7, customerName: "Thomas", note: "", total: 20.40, payment_method: "cash", status: "new", elapsed: 2, createdAt: _demoT(2), items: [
     { id: "di4", name: "Burger Maison", price: 13.90, qty: 1, emoji: "🍔", cat: "Plats" },
     { id: "di5", name: "Frites Maison", price: 4.00, qty: 1, emoji: "🍟", cat: "Accompagnements" },
     { id: "di6", name: "Eau Minérale", price: 3.00, qty: 1, emoji: "💧", cat: "Boissons" },
   ]},
-  { id: "d3", table: 2, note: "Allergie arachides", total: 46.00, payment_method: "card", status: "ready", elapsed: 19, createdAt: _demoT(19), items: [
+  { id: "d3", table: 2, customerName: "Camille", note: "Allergie arachides", total: 46.00, payment_method: "card", status: "ready", elapsed: 19, createdAt: _demoT(19), items: [
     { id: "di7", name: "Pasta Carbonara", price: 14.50, qty: 2, emoji: "🍝", cat: "Plats" },
     { id: "di8", name: "Vin Rouge", price: 5.50, qty: 2, emoji: "🍷", cat: "Boissons" },
     { id: "di9", name: "Soupe du Jour", price: 6.00, qty: 1, emoji: "🍲", cat: "Entrées" },
@@ -2963,6 +2963,7 @@ function useLiveOrders(restaurantId, pushNotif) {
   const fmt = useCallback((o) => ({
     id: o.id,
     table: o.tables?.number ?? "?",
+    customerName: o.customer_name || "",
     note: o.note || "",
     status: o.status === "PENDING" ? "new" : o.status === "PREPARING" ? "cooking" : o.status === "READY" ? "ready" : "served",
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
@@ -3151,7 +3152,13 @@ function CuisineView({ restaurant, onBack }) {
                     <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
-                        <div><p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p><p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p></div>
+                        <div>
+                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
+                          {order.customerName
+                            ? <p style={{ fontSize: 13, color: C.white, fontWeight: 700, letterSpacing: "-0.01em" }}>{order.customerName}</p>
+                            : <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p>
+                          }
+                        </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <p style={{ fontSize: 22, fontWeight: 800, color: C.white, lineHeight: 1 }}>{order.elapsed}<span style={{ fontSize: 12, opacity: 0.6 }}>min</span></p>
