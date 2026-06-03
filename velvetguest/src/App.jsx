@@ -6,6 +6,84 @@ import QRCode from "qrcode";
 const BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// INTERNATIONALISATION — admin dashboard UI strings
+// ─────────────────────────────────────────────────────────────────────────────
+const TRANSLATIONS = {
+  fr: {
+    // Nav tabs
+    tab_setup: "⚡ Setup", tab_overview: "Résumé", tab_orders: "Commandes",
+    tab_caisse: "Caisse", tab_qrcode: "QR Codes", tab_inventory: "Inventaire",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carte",
+    // Mobile labels
+    m_overview: "Accueil", m_orders: "Cmds", m_caisse: "Caisse",
+    m_crm: "CRM", m_promos: "Promos", m_menu: "Carte",
+    m_qrcode: "QR", m_inventory: "Stock", m_setup: "Setup",
+    // Sidebar / header
+    switch_resto: "← Changer", logout: "Déconnexion",
+    welcome: "Bienvenue",
+    btn_kitchen: "Cuisine", btn_client: "Vue client",
+    // Demo banner
+    demo_banner: "MODE DÉMO — Tout est interactif, explorez librement !",
+    demo_sub: "· Données fictives, aucune modification enregistrée",
+    // Language card (Setup)
+    lang_label: "Langue de l'interface",
+    lang_hint: "Choisissez la langue du tableau de bord administrateur.",
+  },
+  en: {
+    tab_setup: "⚡ Setup", tab_overview: "Overview", tab_orders: "Orders",
+    tab_caisse: "Cash Register", tab_qrcode: "QR Codes", tab_inventory: "Inventory",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Menu",
+    m_overview: "Home", m_orders: "Orders", m_caisse: "Cash",
+    m_crm: "CRM", m_promos: "Promos", m_menu: "Menu",
+    m_qrcode: "QR", m_inventory: "Stock", m_setup: "Setup",
+    switch_resto: "← Switch", logout: "Log out",
+    welcome: "Welcome",
+    btn_kitchen: "Kitchen", btn_client: "Customer view",
+    demo_banner: "DEMO MODE — Everything is interactive, explore freely!",
+    demo_sub: "· Dummy data, no changes are saved",
+    lang_label: "Interface language",
+    lang_hint: "Choose the language of the admin dashboard.",
+  },
+  es: {
+    tab_setup: "⚡ Setup", tab_overview: "Resumen", tab_orders: "Pedidos",
+    tab_caisse: "Caja", tab_qrcode: "Códigos QR", tab_inventory: "Inventario",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carta",
+    m_overview: "Inicio", m_orders: "Pedidos", m_caisse: "Caja",
+    m_crm: "CRM", m_promos: "Promos", m_menu: "Carta",
+    m_qrcode: "QR", m_inventory: "Stock", m_setup: "Ajustes",
+    switch_resto: "← Cambiar", logout: "Salir",
+    welcome: "Bienvenido",
+    btn_kitchen: "Cocina", btn_client: "Vista cliente",
+    demo_banner: "MODO DEMO — ¡Todo es interactivo, explora libremente!",
+    demo_sub: "· Datos ficticios, ningún cambio se guarda",
+    lang_label: "Idioma de la interfaz",
+    lang_hint: "Elige el idioma del panel de administración.",
+  },
+  pt: {
+    tab_setup: "⚡ Setup", tab_overview: "Resumo", tab_orders: "Pedidos",
+    tab_caisse: "Caixa", tab_qrcode: "QR Codes", tab_inventory: "Inventário",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Cardápio",
+    m_overview: "Início", m_orders: "Pedidos", m_caisse: "Caixa",
+    m_crm: "CRM", m_promos: "Promos", m_menu: "Cardápio",
+    m_qrcode: "QR", m_inventory: "Stock", m_setup: "Config.",
+    switch_resto: "← Trocar", logout: "Sair",
+    welcome: "Bem-vindo",
+    btn_kitchen: "Cozinha", btn_client: "Vista cliente",
+    demo_banner: "MODO DEMO — Tudo é interativo, explore à vontade!",
+    demo_sub: "· Dados fictícios, nenhuma alteração é salva",
+    lang_label: "Idioma da interface",
+    lang_hint: "Escolha o idioma do painel de administração.",
+  },
+};
+const LANG_OPTIONS = [
+  { code: "fr", flag: "🇫🇷", name: "Français" },
+  { code: "en", flag: "🇬🇧", name: "English" },
+  { code: "es", flag: "🇪🇸", name: "Español" },
+  { code: "pt", flag: "🇵🇹", name: "Português" },
+];
+const LangCtx = createContext({ lang: "fr", setLang: () => {}, T: TRANSLATIONS.fr });
+
 class ErrorBoundary extends Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(e) { return { err: e }; }
@@ -1018,41 +1096,47 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const [moreOpen, setMoreOpen] = useState(false);
+
+  const [lang, setLangState] = useState(() => localStorage.getItem("vg_lang") || "fr");
+  const setLang = code => { setLangState(code); localStorage.setItem("vg_lang", code); };
+  const T = TRANSLATIONS[lang] || TRANSLATIONS.fr;
+
   const TABS = [
-    { id: "setup", label: "⚡ Setup", icon: "⚡" },
-    { id: "overview", label: "Résumé", icon: "🏠" },
-    { id: "orders", label: "Commandes", icon: "📋" },
-    { id: "caisse", label: "Caisse", icon: "💰" },
-    { id: "qrcode", label: "QR Codes", icon: "📷" },
-    { id: "inventory", label: "Inventaire", icon: "📦" },
+    { id: "setup", label: T.tab_setup, icon: "⚡" },
+    { id: "overview", label: T.tab_overview, icon: "🏠" },
+    { id: "orders", label: T.tab_orders, icon: "📋" },
+    { id: "caisse", label: T.tab_caisse, icon: "💰" },
+    { id: "qrcode", label: T.tab_qrcode, icon: "📷" },
+    { id: "inventory", label: T.tab_inventory, icon: "📦" },
     { id: "promos", label: "Promos", icon: "🎁" },
     { id: "crm", label: "CRM", icon: "👥" },
     { id: "menu", label: "Carte", icon: "🍽️" },
   ];
   // Main 5 bottom nav tabs + "more" drawer for rest
   const MOBILE_TABS = [
-    { id: "overview", icon: "🏠", label: "Accueil" },
-    { id: "orders", icon: "📋", label: "Cmds" },
-    { id: "caisse", icon: "💰", label: "Caisse" },
-    { id: "crm", icon: "👥", label: "CRM" },
-    { id: "promos", icon: "🎁", label: "Promos" },
+    { id: "overview", icon: "🏠", label: T.m_overview },
+    { id: "orders", icon: "📋", label: T.m_orders },
+    { id: "caisse", icon: "💰", label: T.m_caisse },
+    { id: "crm", icon: "👥", label: T.m_crm },
+    { id: "promos", icon: "🎁", label: T.m_promos },
   ];
   const MORE_TABS = [
-    { id: "menu", icon: "🍽️", label: "Carte" },
-    { id: "qrcode", icon: "📷", label: "QR Codes" },
-    { id: "inventory", icon: "📦", label: "Inventaire" },
-    { id: "setup", icon: "⚡", label: "Setup" },
+    { id: "menu", icon: "🍽️", label: T.m_menu },
+    { id: "qrcode", icon: "📷", label: T.m_qrcode },
+    { id: "inventory", icon: "📦", label: T.m_inventory },
+    { id: "setup", icon: "⚡", label: T.m_setup },
   ];
   const demoBanner = restaurant.id === "demo";
   return (
+    <LangCtx.Provider value={{ lang, setLang, T }}>
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
       {demoBanner && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg, #FF9F0A, #FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <span style={{ fontSize: 13 }}>🎯</span>
-          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>MODE DÉMO — Tout est interactif, explorez librement !</span>
-          {!isMobile && <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>· Données fictives, aucune modification enregistrée</span>}
+          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{T.demo_banner}</span>
+          {!isMobile && <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{T.demo_sub}</span>}
         </div>
       )}
       {/* Desktop sidebar */}
@@ -1081,11 +1165,20 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
                 {ready.length > 0 && <span style={{ marginLeft: "auto", background: C.accentGreen, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20 }}>{ready.length} prête{ready.length > 1 ? "s" : ""}</span>}
               </button>
               <button onClick={onClient} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.bg, color: C.textSecondary, fontWeight: 500, fontSize: 14, cursor: "pointer", ...FF }}>
-                <span style={{ fontSize: 14 }}>📱</span> Vue client
+                <span style={{ fontSize: 14 }}>📱</span> {T.btn_client}
               </button>
             </div>
           </nav>
           <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
+            {/* Language switcher */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+              {LANG_OPTIONS.map(l => (
+                <button key={l.code} onClick={() => setLang(l.code)} title={l.name}
+                  style={{ flex: 1, padding: "5px 0", borderRadius: 8, border: `1.5px solid ${lang === l.code ? C.dark : C.border}`, background: lang === l.code ? C.dark : "transparent", fontSize: 14, cursor: "pointer", transition: "all 0.15s" }}>
+                  {l.flag}
+                </button>
+              ))}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Avatar name={user.name || user.email} size={30} />
               <div>
@@ -1116,11 +1209,11 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           <header style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 32px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
             <div>
               <h2 style={{ fontSize: 18, fontWeight: 700, color: C.dark, letterSpacing: "-0.02em" }}>{TABS.find(t => t.id === tab)?.label}</h2>
-              <p style={{ fontSize: 12, color: C.textTertiary }}>Bienvenue, {first} · {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p>
+              <p style={{ fontSize: 12, color: C.textTertiary }}>{T.welcome}, {first} · {new Date().toLocaleDateString(lang === "fr" ? "fr-FR" : lang === "es" ? "es-ES" : lang === "pt" ? "pt-PT" : "en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 Cuisine{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
-              <Btn variant="primary" size="sm" onClick={onClient}>📱 Vue client</Btn>
+              <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 {T.btn_kitchen}{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
+              <Btn variant="primary" size="sm" onClick={onClient}>📱 {T.btn_client}</Btn>
             </div>
           </header>
         )}
@@ -1173,6 +1266,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
         </>
       )}
     </div>
+    </LangCtx.Provider>
   );
 }
 
@@ -1598,12 +1692,28 @@ function SetupTab({ restaurant, onDone }) {
     </div>
   );
 
+  const { lang: uiLang, setLang: setUiLang, T: uiT } = useContext(LangCtx);
+
   return (
     <div className="fade-in" style={{ maxWidth: 760, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 22, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>⚡ Setup rapide</h2>
         <p style={{ color: C.textSecondary, fontSize: 14 }}>Collez votre menu — l'IA configure votre carte et génère votre inventaire automatiquement.</p>
+      </div>
+
+      {/* Language card */}
+      <div style={{ background: C.white, borderRadius: 16, padding: "18px 20px", marginBottom: 24, border: `1.5px solid ${C.border}` }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🌐 {uiT.lang_label}</p>
+        <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{uiT.lang_hint}</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {LANG_OPTIONS.map(l => (
+            <button key={l.code} onClick={() => setUiLang(l.code)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${uiLang === l.code ? C.dark : C.border}`, background: uiLang === l.code ? C.dark : "transparent", color: uiLang === l.code ? C.white : C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", transition: "all 0.15s", ...FF }}>
+              <span style={{ fontSize: 18 }}>{l.flag}</span> {l.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Steps */}
