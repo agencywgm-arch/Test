@@ -14,7 +14,7 @@ const TRANSLATIONS = {
     // Nav tabs
     tab_setup: "⚡ Setup", tab_overview: "Dashboard", tab_orders: "Commandes",
     tab_caisse: "Caisse", tab_qrcode: "QR Codes", tab_inventory: "Inventaire",
-    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carte",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carte", tab_settings: "Paramètres",
     // Mobile labels
     m_overview: "Dashboard", m_orders: "Cmds", m_caisse: "Caisse",
     m_crm: "CRM", m_promos: "Promos", m_menu: "Carte",
@@ -33,7 +33,7 @@ const TRANSLATIONS = {
   en: {
     tab_setup: "⚡ Setup", tab_overview: "Overview", tab_orders: "Orders",
     tab_caisse: "Cash Register", tab_qrcode: "QR Codes", tab_inventory: "Inventory",
-    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Menu",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Menu", tab_settings: "Settings",
     m_overview: "Home", m_orders: "Orders", m_caisse: "Cash",
     m_crm: "CRM", m_promos: "Promos", m_menu: "Menu",
     m_qrcode: "QR", m_inventory: "Stock", m_setup: "Setup",
@@ -48,7 +48,7 @@ const TRANSLATIONS = {
   es: {
     tab_setup: "⚡ Setup", tab_overview: "Resumen", tab_orders: "Pedidos",
     tab_caisse: "Caja", tab_qrcode: "Códigos QR", tab_inventory: "Inventario",
-    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carta",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Carta", tab_settings: "Configuración",
     m_overview: "Inicio", m_orders: "Pedidos", m_caisse: "Caja",
     m_crm: "CRM", m_promos: "Promos", m_menu: "Carta",
     m_qrcode: "QR", m_inventory: "Stock", m_setup: "Ajustes",
@@ -63,7 +63,7 @@ const TRANSLATIONS = {
   pt: {
     tab_setup: "⚡ Setup", tab_overview: "Resumo", tab_orders: "Pedidos",
     tab_caisse: "Caixa", tab_qrcode: "QR Codes", tab_inventory: "Inventário",
-    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Cardápio",
+    tab_promos: "Promos", tab_crm: "CRM", tab_menu: "Cardápio", tab_settings: "Configurações",
     m_overview: "Início", m_orders: "Pedidos", m_caisse: "Caixa",
     m_crm: "CRM", m_promos: "Promos", m_menu: "Cardápio",
     m_qrcode: "QR", m_inventory: "Stock", m_setup: "Config.",
@@ -1100,6 +1100,138 @@ function AlertBubbles({ store, restaurant }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS TAB
+// ─────────────────────────────────────────────────────────────────────────────
+function SettingsTab({ restaurant }) {
+  const store = useContext(StoreCtx);
+  const emptySettings = { resend_api_key: "", resend_from: "", openai_api_key: "", stripe_publishable_key: "", stripe_secret_key: "" };
+  const [settings, setSettings] = useState(emptySettings);
+  const [saving, setSaving] = useState(false);
+  const [show, setShow] = useState({ resend_api_key: false, openai_api_key: false, stripe_secret_key: false });
+
+  useEffect(() => {
+    if (restaurant.id === "demo") return;
+    supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
+      .then(({ data, error }) => {
+        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", openai_api_key: data.openai_api_key || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "" });
+        else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
+      });
+  }, [restaurant.id]);
+
+  function toggleShow(field) { setShow(p => ({ ...p, [field]: !p[field] })); }
+  function set(field) { return e => setSettings(p => ({ ...p, [field]: e.target.value })); }
+
+  async function save() {
+    if (restaurant.id === "demo") {
+      store.addNotif({ type: "warning", text: "Indisponible en mode démo" });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    setSaving(false);
+    if (error) store.addNotif({ type: "warning", text: "Erreur : " + error.message });
+    else store.addNotif({ type: "success", text: "✅ Configuration enregistrée" });
+  }
+
+  const inputStyle = (focused) => ({ width: "100%", background: focused ? "#fff" : "#F5F5F7", border: `1.5px solid ${focused ? "#1D1D1F" : "transparent"}`, borderRadius: 12, padding: "12px 44px 12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", transition: "all 0.15s", fontFamily: "'Figtree', -apple-system, sans-serif" });
+  const eyeBtn = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: C.textTertiary, padding: 4 };
+
+  function PwField({ label, field, placeholder }) {
+    const [focused, setFocused] = useState(false);
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
+        <div style={{ position: "relative" }}>
+          <input type={show[field] ? "text" : "password"} placeholder={placeholder} value={settings[field]}
+            onChange={set(field)} style={inputStyle(focused)}
+            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
+          <button style={eyeBtn} onClick={() => toggleShow(field)} type="button">{show[field] ? "🙈" : "👁"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  function TxtField({ label, field, placeholder }) {
+    const [focused, setFocused] = useState(false);
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
+        <input type="text" placeholder={placeholder} value={settings[field]} onChange={set(field)}
+          style={inputStyle(focused)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
+      </div>
+    );
+  }
+
+  function ExtLink({ href, children }) {
+    return (
+      <a href="#" onClick={e => { e.preventDefault(); window.open(href, "_blank", "noopener"); }}
+        style={{ fontSize: 13, color: C.accentBlue, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+        {children} →
+      </a>
+    );
+  }
+
+  function StatusBadge({ label, ok, hint }) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ok ? C.accentGreen + "18" : C.accent + "18", color: ok ? C.accentGreen : C.accent, fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20, alignSelf: "flex-start" }}>
+          <span>{ok ? "✓" : "✗"}</span> {label}
+        </span>
+        <span style={{ fontSize: 11, color: C.textTertiary }}>{hint}</span>
+      </div>
+    );
+  }
+
+  const emailOk = !!settings.resend_api_key;
+  const aiOk = !!settings.openai_api_key;
+  const stripeOk = !!(settings.stripe_publishable_key && settings.stripe_secret_key);
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Email */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>📧 Email — Resend</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Utilisé pour envoyer vos campagnes email à vos clients.</p>
+        <PwField label="Clé API Resend" field="resend_api_key" placeholder="re_xxxx..." />
+        <TxtField label="Email expéditeur" field="resend_from" placeholder="contact@monresto.fr" />
+        <ExtLink href="https://resend.com">Obtenir une clé API Resend</ExtLink>
+      </Surface>
+
+      {/* OpenAI */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🤖 Intelligence Artificielle — OpenAI</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Utilisé par l'assistant IA pour répondre à vos questions.</p>
+        <PwField label="Clé API OpenAI" field="openai_api_key" placeholder="sk-..." />
+        <ExtLink href="https://platform.openai.com/api-keys">Obtenir une clé API OpenAI</ExtLink>
+      </Surface>
+
+      {/* Stripe */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>💳 Paiement en ligne — Stripe</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Permet à vos clients de payer en ligne par carte bancaire.</p>
+        <TxtField label="Clé publique Stripe" field="stripe_publishable_key" placeholder="pk_live_..." />
+        <PwField label="Clé secrète Stripe" field="stripe_secret_key" placeholder="sk_live_..." />
+        <ExtLink href="https://dashboard.stripe.com/apikeys">Obtenir vos clés Stripe</ExtLink>
+      </Surface>
+
+      {/* Status */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>📊 Statut de configuration</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <StatusBadge label="Email" ok={emailOk} hint={emailOk ? "Clé Resend configurée — campagnes actives." : "Renseignez votre clé Resend pour activer les campagnes email."} />
+          <StatusBadge label="IA" ok={aiOk} hint={aiOk ? "Clé OpenAI configurée — assistant actif." : "Renseignez votre clé OpenAI pour activer l'assistant IA."} />
+          <StatusBadge label="Stripe" ok={stripeOk} hint={stripeOk ? "Clés Stripe configurées — paiement en ligne actif." : "Renseignez les deux clés Stripe pour activer le paiement en ligne."} />
+        </div>
+      </Surface>
+
+      <Btn variant="primary" full onClick={save} disabled={saving}>
+        {saving ? "Enregistrement…" : "Enregistrer"}
+      </Btn>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
@@ -1122,6 +1254,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     { id: "promos", label: "Promos", icon: "🎁" },
     { id: "crm", label: "CRM", icon: "👥" },
     { id: "menu", label: "Carte", icon: "🍽️" },
+    { id: "settings", label: T.tab_settings, icon: "⚙️" },
   ];
   // Main 5 bottom nav tabs + "more" drawer for rest
   const MOBILE_TABS = [
@@ -1136,6 +1269,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
     { id: "qrcode", icon: "📷", label: T.m_qrcode },
     { id: "inventory", icon: "📦", label: T.m_inventory },
     { id: "setup", icon: "⚡", label: T.m_setup },
+    { id: "settings", icon: "⚙️", label: T.tab_settings },
   ];
   const demoBanner = restaurant.id === "demo";
   return (
@@ -1237,6 +1371,7 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
           {tab === "promos" && <PromosTab restaurant={restaurant} store={store} />}
           {tab === "crm" && <CRMTab restaurant={restaurant} store={store} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
+          {tab === "settings" && <SettingsTab restaurant={restaurant} />}
         </div>
       </main>
       {/* Mobile bottom nav */}
@@ -3418,7 +3553,7 @@ function CuisineView({ restaurant, onBack }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE CARD FORM
 // ─────────────────────────────────────────────────────────────────────────────
-function CardPaymentForm({ total, onSuccess, onCancel }) {
+function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
   const containerRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
@@ -3430,7 +3565,15 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
   const [expiry, setExpiry] = useState("");
   const [cvv, setCvv] = useState("");
   const [name, setName] = useState("");
-  const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  const [dbStripeKey, setDbStripeKey] = useState(null);
+  const ENV_STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  const STRIPE_KEY = ENV_STRIPE_KEY || dbStripeKey;
+
+  useEffect(() => {
+    if (ENV_STRIPE_KEY || !restaurant?.id || restaurant.id === "demo") return;
+    supabase.from("restaurant_settings").select("stripe_publishable_key").eq("restaurant_id", restaurant.id).single()
+      .then(({ data }) => { if (data?.stripe_publishable_key) setDbStripeKey(data.stripe_publishable_key); });
+  }, [restaurant?.id, ENV_STRIPE_KEY]);
 
   useEffect(() => {
     if (!STRIPE_KEY) { setReady(true); return; }
@@ -3458,7 +3601,7 @@ function CardPaymentForm({ total, onSuccess, onCancel }) {
       const check = setInterval(() => { if (window.Stripe) { clearInterval(check); init(); } }, 100);
       return () => clearInterval(check);
     }
-  }, [total, STRIPE_KEY]);
+  }, [total, ENV_STRIPE_KEY, dbStripeKey]);
 
   async function pay() {
     if (!STRIPE_KEY) {
@@ -3762,7 +3905,7 @@ function ClientView({ restaurant, onBack }) {
             </div>
           </>
         ) : !ordering && (
-          <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} />
+          <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} restaurant={restaurant} />
         )}
       </div>
       <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
@@ -5172,7 +5315,7 @@ function CustomerPage({ slug, tableNum }) {
                   </div>
                 </>
               ) : (
-                <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} />
+                <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} restaurant={restaurant} />
               )}
             </>
           )}

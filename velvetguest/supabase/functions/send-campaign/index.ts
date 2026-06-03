@@ -62,7 +62,12 @@ serve(async (req) => {
       })
     }
 
-    const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
+    // Load restaurant-level API keys if available
+    const { data: rSettings } = restaurant_id
+      ? await supabase.from("restaurant_settings").select("resend_api_key, resend_from").eq("restaurant_id", restaurant_id).single()
+      : { data: null }
+
+    const RESEND_API_KEY = rSettings?.resend_api_key || Deno.env.get("RESEND_API_KEY")
     if (!RESEND_API_KEY) {
       return new Response(
         JSON.stringify({ error: "RESEND_API_KEY not configured" }),
@@ -71,7 +76,7 @@ serve(async (req) => {
     }
 
     const fromName = restaurant_name || "Wegemo"
-    const fromEmail = Deno.env.get("RESEND_FROM") || "onboarding@resend.dev"
+    const fromEmail = rSettings?.resend_from || Deno.env.get("RESEND_FROM") || "onboarding@resend.dev"
     const from = `${fromName} <${fromEmail}>`
 
     let sent = 0
