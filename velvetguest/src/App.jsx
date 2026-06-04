@@ -6619,10 +6619,10 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
           <div style={{ padding: "20px 16px 16px" }}>
             <Logo size={16} onClick={onHome} />
             <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg }}>
-              <div style={{ fontSize: 22 }}>{group.logo_emoji}</div>
+              <div style={{ fontSize: 22 }}>{groupForm.logo_emoji || group.logo_emoji}</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{group.name}</div>
-                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>{group.plan || "franchise"}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Groupe</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, letterSpacing: "-0.01em" }}>{groupForm.name || group.name}</div>
               </div>
             </div>
           </div>
@@ -6642,6 +6642,13 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                 <div style={{ fontSize: 11, color: C.textTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
               </div>
             </div>
+            {restaurants.length > 0 && onRestaurant && (
+              <button onClick={() => onRestaurant(restaurants[0], getStat(restaurants[0].id))}
+                style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, ...FF }}>
+                <span>{restaurants[0].logo_emoji || "🍽️"}</span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{restaurants[0].name}</span>
+              </button>
+            )}
             <button onClick={onBack} style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
               {isDemo ? "← Retour accueil" : "← Mes restaurants"}
             </button>
@@ -6655,9 +6662,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: isMobile ? "12px 16px" : "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {isMobile && <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", padding: 4 }}>←</button>}
-            <span style={{ fontSize: 20 }}>{group.logo_emoji}</span>
+            <span style={{ fontSize: 20 }}>{groupForm.logo_emoji || group.logo_emoji}</span>
             <div>
-              <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700, color: C.dark }}>{group.name}</div>
+              <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700, color: C.dark }}>{groupForm.name || group.name}</div>
               <div style={{ fontSize: 12, color: C.textSecondary }}>{restaurants.length} établissement{restaurants.length !== 1 ? "s" : ""} · Plan {group.plan}</div>
             </div>
           </div>
