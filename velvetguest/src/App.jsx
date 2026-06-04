@@ -6311,7 +6311,7 @@ function ChartModal({ title, subtitle, kpis, children, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FRANCHISE DASHBOARD — multi-restaurant group view
 // ─────────────────────────────────────────────────────────────────────────────
-function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
+function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroupUpdate }) {
   const isMobile = useIsMobile();
   const isDemo = user.id === "demo";
   const [tab, setTab] = useState("overview");
@@ -6463,10 +6463,12 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
 
   async function saveGroupSettings() {
     setSavingGroup(true);
+    const updated = { ...group, name: groupForm.name, logo_emoji: groupForm.logo_emoji };
     if (!isDemo) {
       await supabase.from("franchise_groups").update({ name: groupForm.name, logo_emoji: groupForm.logo_emoji }).eq("id", group.id);
     }
-    setTimeout(() => setSavingGroup(false), 800);
+    if (onGroupUpdate) onGroupUpdate(updated);
+    setSavingGroup(false);
   }
 
   async function inviteMember() {
@@ -6641,7 +6643,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
               </div>
             </div>
             <button onClick={onBack} style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
-              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
+              {isDemo ? "← Retour accueil" : "← Mes restaurants"}
             </button>
           </div>
         </aside>
@@ -6661,7 +6663,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
           </div>
           {!isMobile && (
             <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
-              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
+              {isDemo ? "← Retour accueil" : "← Mes restaurants"}
             </button>
           )}
         </div>
@@ -7512,7 +7514,7 @@ function Dashboard() {
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onRestaurant={(r, stat) => {
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : setPage("restaurants")} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
           const s = stat || DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
