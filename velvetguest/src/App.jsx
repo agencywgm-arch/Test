@@ -6822,7 +6822,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
               {alerts.length > 0 && (
                 <Surface style={{ padding: "20px 24px", border: `1.5px solid ${C.accent}20` }}>
                   <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔴 Alertes performance</h3>
-                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Cliquez sur une alerte pour obtenir une analyse IA</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>👆 Cliquez sur une alerte pour obtenir un audit complet du problème de performance</p>
                   {alerts.map(a => {
                     const r = restaurants.find(x => x.id === a.restaurant_id);
                     const s = getStat(a.restaurant_id);
