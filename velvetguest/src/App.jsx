@@ -700,14 +700,11 @@ function LandingPage({ onDemo, onSignup, onLogin }) {
 
       {/* Hero */}
       <div style={{ textAlign: "center", padding: isMobile ? "48px 20px 32px" : "80px 48px 48px", maxWidth: 720, margin: "0 auto" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#007AFF15", borderRadius: 20, padding: "6px 14px", marginBottom: 20 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#007AFF" }}>🚀 SaaS de commande QR pour restaurants</span>
-        </div>
-        <h1 style={{ fontSize: isMobile ? 32 : 52, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 20 }}>
-          Gérez votre restaurant<br /><span style={{ color: "#007AFF" }}>intelligemment</span>
+        <h1 style={{ fontSize: isMobile ? 56 : 96, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 24 }}>
+          Wegemo
         </h1>
         <p style={{ fontSize: isMobile ? 16 : 18, color: C.textSecondary, marginBottom: 36, lineHeight: 1.6 }}>
-          Commandes QR, cuisine temps réel, caisse, CRM, campagnes email IA.<br />Pour les restaurants indépendants et les réseaux franchise.
+          Commandes QR, cuisine temps réel, caisse, CRM et campagnes email.<br />Pour les restaurants indépendants et les réseaux franchise.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={onSignup} style={{ padding: "14px 32px", background: C.dark, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, color: C.white, cursor: "pointer", ...FF }}>
@@ -718,9 +715,7 @@ function LandingPage({ onDemo, onSignup, onLogin }) {
           </button>
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: isMobile ? 16 : 32, marginTop: 24, flexWrap: "wrap" }}>
-          {["30 jours gratuits", "Sans carte bancaire", "Support 7j/7"].map(t => (
-            <span key={t} style={{ color: C.textTertiary, fontSize: 13 }}>✓ {t}</span>
-          ))}
+          <span style={{ color: C.textTertiary, fontSize: 13 }}>✓ Support 7j/7</span>
         </div>
       </div>
 
