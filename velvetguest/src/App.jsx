@@ -701,7 +701,7 @@ function LandingPage({ onDemo, onSignup, onLogin }) {
       {/* Hero */}
       <div style={{ textAlign: "center", padding: isMobile ? "48px 20px 32px" : "80px 48px 48px", maxWidth: 720, margin: "0 auto" }}>
         <h1 style={{ fontSize: isMobile ? 56 : 96, fontWeight: 900, color: C.dark, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 24 }}>
-          Wegemo
+          We<span style={{ color: C.accent }}>gemo</span>
         </h1>
         <p style={{ fontSize: isMobile ? 16 : 18, color: C.textSecondary, marginBottom: 36, lineHeight: 1.6 }}>
           Commandes QR, cuisine temps réel, caisse, CRM et campagnes email.<br />Pour les restaurants indépendants et les réseaux franchise.
