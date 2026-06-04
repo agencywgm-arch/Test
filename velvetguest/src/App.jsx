@@ -247,6 +247,25 @@ const SEASONAL_EVENTS = [
   { emoji: "🎬", name: "Festival de Cannes", month: 5, day: 14, color: "#BF5AF2", msg: "Soirée cinéma, menu 'Palme d'Or', cocktails glamour — pour les amateurs de culture." },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FRANCHISE / GROUP — Demo data
+// ─────────────────────────────────────────────────────────────────────────────
+const DEMO_GROUP = { id: "demo-group", name: "Groupe Démo", logo_emoji: "🏢", plan: "franchise" };
+const DEMO_FRANCHISE_RESTAURANTS = [
+  { id: "fr1", name: "Bistrot Paris", region: "Île-de-France", logo_emoji: "🥗", tables_count: 12, manager_email: "paris@demo.fr" },
+  { id: "fr2", name: "Brasserie Lyon", region: "Auvergne-Rhône", logo_emoji: "🍷", tables_count: 8, manager_email: "lyon@demo.fr" },
+  { id: "fr3", name: "Café Marseille", region: "PACA", logo_emoji: "☕", tables_count: 6, manager_email: "marseille@demo.fr" },
+  { id: "fr4", name: "Resto Bordeaux", region: "Nouvelle-Aquitaine", logo_emoji: "🍷", tables_count: 10, manager_email: "bordeaux@demo.fr" },
+  { id: "fr5", name: "Bisto Lille", region: "Hauts-de-France", logo_emoji: "🍺", tables_count: 7, manager_email: "lille@demo.fr" },
+];
+const DEMO_FRANCHISE_STATS = [
+  { restaurant_id: "fr1", ca_today: 2340, ca_7j: 16380, orders_today: 187, orders_7j: 1204, avg_basket: 13.6, growth: 12 },
+  { restaurant_id: "fr2", ca_today: 1890, ca_7j: 13230, orders_today: 154, orders_7j: 986, avg_basket: 13.4, growth: 8 },
+  { restaurant_id: "fr3", ca_today: 1420, ca_7j: 9940, orders_today: 108, orders_7j: 756, avg_basket: 13.1, growth: 1 },
+  { restaurant_id: "fr4", ca_today: 920, ca_7j: 6440, orders_today: 74, orders_7j: 520, avg_basket: 12.4, growth: -5 },
+  { restaurant_id: "fr5", ca_today: 540, ca_7j: 3780, orders_today: 41, orders_7j: 314, avg_basket: 12.0, growth: -18 },
+];
+
 function getUpcomingEvents(daysAhead = 60) {
   const today = new Date();
   const results = [];
@@ -585,6 +604,8 @@ function QRCanvas({ text, size = 160, fg = "#000", bg = "#fff" }) {
 function SignupPage({ onDone, onDemo }) {
   const [mode, setMode] = useState("signup");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [accountType, setAccountType] = useState("solo");
+  const [groupName, setGroupName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -595,11 +616,19 @@ function SignupPage({ onDone, onDemo }) {
     setError(""); setLoading(true);
     try {
       if (mode === "signup") {
-        const { error: err } = await supabase.auth.signUp({
+        const { data: signUpData, error: err } = await supabase.auth.signUp({
           email: form.email, password: form.password,
           options: { data: { name: form.name } },
         });
         if (err) throw err;
+        // If group/franchise, create franchise_groups entry
+        if (accountType !== "solo" && signUpData?.user) {
+          await supabase.from("franchise_groups").insert({
+            owner_id: signUpData.user.id,
+            name: groupName || form.name + " Groupe",
+            plan: accountType,
+          });
+        }
         setSent(true);
       } else {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
@@ -642,6 +671,27 @@ function SignupPage({ onDone, onDemo }) {
           {mode === "signup" && <InputField label="Nom complet" placeholder="Jean Dupont" value={form.name} onChange={f("name")} autoFocus />}
           <InputField label="Adresse email" type="email" placeholder="jean@restaurant.fr" value={form.email} onChange={f("email")} />
           <InputField label="Mot de passe" type="password" placeholder="8 caractères minimum" value={form.password} onChange={f("password")} />
+          {mode === "signup" && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Type de compte</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {[["solo", "🍽️", "Restaurant indépendant"], ["group", "🏢", "Groupe de restaurants"], ["franchise", "🏪", "Franchise"]].map(([val, emoji, label]) => (
+                  <label key={val} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${accountType === val ? C.dark : C.border}`, background: accountType === val ? C.dark + "06" : C.bg, cursor: "pointer", transition: "all 0.15s" }}>
+                    <input type="radio" name="accountType" value={val} checked={accountType === val} onChange={() => setAccountType(val)} style={{ accentColor: C.dark }} />
+                    <span style={{ fontSize: 16 }}>{emoji}</span>
+                    <span style={{ fontSize: 14, fontWeight: accountType === val ? 600 : 400, color: C.dark }}>{label}</span>
+                  </label>
+                ))}
+              </div>
+              {accountType !== "solo" && (
+                <div style={{ marginTop: 10 }}>
+                  <InputField label={`Nom du ${accountType === "franchise" ? "réseau franchise" : "groupe"}`}
+                    placeholder={accountType === "franchise" ? "ex: Brasseries du Nord" : "ex: Groupe Martin"}
+                    value={groupName} onChange={e => setGroupName(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
           {error && <p style={{ color: C.accent, fontSize: 13, background: C.accent + "10", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>{error}</p>}
           <Btn variant="primary" size="lg" full disabled={!ok || loading} onClick={submit} style={{ marginTop: 8 }}>
             {loading ? "..." : mode === "signup" ? "Créer mon compte →" : "Se connecter →"}
@@ -666,7 +716,7 @@ function SignupPage({ onDone, onDemo }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RESTAURANTS PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
+function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise }) {
   const { lang, setLang } = useContext(LangCtx);
   const first = (user.name || user.email).split(" ")[0];
   const h = new Date().getHours();
@@ -755,6 +805,17 @@ function RestaurantsPage({ user, onSelect, onLogout, onDemo }) {
         </div>
       </nav>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
+        {franchiseGroup && (
+          <div style={{ marginBottom: 20 }}>
+            <button onClick={onFranchise} style={{ width: "100%", background: C.dark, color: C.white, border: "none", borderRadius: 14, padding: "14px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, ...FF, transition: "all 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#333"}
+              onMouseLeave={e => e.currentTarget.style.background = C.dark}>
+              <span style={{ fontSize: 20 }}>{franchiseGroup.logo_emoji}</span>
+              <span>🏢 Dashboard Franchise — {franchiseGroup.name}</span>
+              <span style={{ marginLeft: "auto", opacity: 0.7 }}>→</span>
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
           <div>
             <p style={{ color: C.textSecondary, fontSize: 15, marginBottom: 4 }}>{greet}, <strong style={{ color: C.dark }}>{first}</strong> 👋</p>
@@ -1224,7 +1285,7 @@ function SettingsTab({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
+function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, onClient, onFranchise }) {
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
   const isMobile = useIsMobile();
@@ -1301,6 +1362,11 @@ function DashboardPage({ user, restaurant, onBack, onCuisine, onClient }) {
               <button onClick={onClient} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.bg, color: C.textSecondary, fontWeight: 500, fontSize: 14, cursor: "pointer", ...FF }}>
                 <span style={{ fontSize: 14 }}>📱</span> {T.btn_client}
               </button>
+              {franchiseGroup && (
+                <button onClick={onFranchise} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "none", background: C.dark + "10", color: C.dark, fontWeight: 600, fontSize: 14, cursor: "pointer", marginTop: 4, ...FF }}>
+                  <span style={{ fontSize: 14 }}>🏢</span> Réseau
+                </button>
+              )}
             </div>
           </nav>
           <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
@@ -5418,6 +5484,749 @@ function CustomerPage({ slug, tableNum }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MINI CHART — SVG bar chart (no external deps)
+// ─────────────────────────────────────────────────────────────────────────────
+function MiniChart({ data, color = C.accentBlue, height = 80 }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  const w = 100 / data.length;
+  return (
+    <svg width="100%" height={height} style={{ display: "block" }}>
+      {data.map((d, i) => (
+        <rect key={i}
+          x={`${i * w + 0.5}%`} width={`${w - 1}%`}
+          y={height - (d.value / max) * (height - 4)}
+          height={(d.value / max) * (height - 4)}
+          fill={color} rx={3} opacity={0.8}
+        />
+      ))}
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FRANCHISE DASHBOARD — multi-restaurant group view
+// ─────────────────────────────────────────────────────────────────────────────
+function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
+  const isMobile = useIsMobile();
+  const isDemo = user.id === "demo";
+  const [tab, setTab] = useState("overview");
+  const [restaurants, setRestaurants] = useState([]);
+  const [stats, setStats] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sortCol, setSortCol] = useState("ca_7j");
+  const [sortDir, setSortDir] = useState("desc");
+  // Campaign form
+  const [campSubject, setCampSubject] = useState("");
+  const [campBody, setCampBody] = useState("");
+  const [campSegment, setCampSegment] = useState("all");
+  const [campTarget, setCampTarget] = useState("all");
+  const [campSelected, setCampSelected] = useState([]);
+  const [campSending, setCampSending] = useState(false);
+  const [campGenLoading, setCampGenLoading] = useState(false);
+  // Modals
+  const [editResto, setEditResto] = useState(null);
+  const [editForm, setEditForm] = useState({ region: "", manager_email: "" });
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ email: "", role: "manager" });
+  const [inviting, setInviting] = useState(false);
+  // Group settings
+  const [groupForm, setGroupForm] = useState({ name: group?.name || "", logo_emoji: group?.logo_emoji || "🏢" });
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  useEffect(() => {
+    if (!group) return;
+    if (isDemo) {
+      setRestaurants(DEMO_FRANCHISE_RESTAURANTS);
+      setStats(DEMO_FRANCHISE_STATS);
+      setCampaigns([
+        { id: "c1", subject: "Offre spéciale été", segment: "top_clients", status: "sent", sent_at: new Date(Date.now() - 86400000 * 3).toISOString(), created_at: new Date(Date.now() - 86400000 * 3).toISOString() },
+        { id: "c2", subject: "Nouveautés menu automne", segment: "all", status: "draft", sent_at: null, created_at: new Date(Date.now() - 86400000).toISOString() },
+      ]);
+      setMembers([
+        { id: "m1", email: "owner@demo.fr", role: "owner", regions: [] },
+        { id: "m2", email: "directeur@demo.fr", role: "director", regions: ["Île-de-France", "PACA"] },
+        { id: "m3", email: "regional@demo.fr", role: "regional", regions: ["Auvergne-Rhône"] },
+      ]);
+      setLoading(false);
+      return;
+    }
+    Promise.all([
+      supabase.from("restaurants").select("*").eq("group_id", group.id).order("name"),
+      supabase.from("group_campaigns").select("*").eq("group_id", group.id).order("created_at", { ascending: false }),
+      supabase.from("group_members").select("*").eq("group_id", group.id),
+    ]).then(([restoRes, campRes, memRes]) => {
+      const restos = restoRes.data ?? [];
+      setRestaurants(restos);
+      setCampaigns(campRes.data ?? []);
+      setMembers(memRes.data ?? []);
+      if (restos.length > 0) {
+        const ids = restos.map(r => r.id);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        supabase.from("orders").select("restaurant_id, total, created_at")
+          .in("restaurant_id", ids).eq("status", "DONE").gte("created_at", sevenDaysAgo)
+          .then(({ data: orders }) => {
+            const computed = restos.map(r => {
+              const rOrders = (orders || []).filter(o => o.restaurant_id === r.id);
+              const todayOrders = rOrders.filter(o => new Date(o.created_at) >= today);
+              const ca7j = rOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+              const caToday = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+              return {
+                restaurant_id: r.id,
+                ca_today: caToday, ca_7j: ca7j,
+                orders_today: todayOrders.length, orders_7j: rOrders.length,
+                avg_basket: rOrders.length > 0 ? ca7j / rOrders.length : 0,
+                growth: 0,
+              };
+            });
+            setStats(computed);
+          });
+      }
+      setLoading(false);
+    });
+  }, [group, isDemo]);
+
+  function getStat(restoId) {
+    return stats.find(s => s.restaurant_id === restoId) || { ca_today: 0, ca_7j: 0, orders_today: 0, orders_7j: 0, avg_basket: 0, growth: 0 };
+  }
+
+  const totalCaToday = stats.reduce((s, r) => s + r.ca_today, 0);
+  const totalCa7j = stats.reduce((s, r) => s + r.ca_7j, 0);
+  const totalOrdersToday = stats.reduce((s, r) => s + r.orders_today, 0);
+  const avgBasket = stats.length > 0 ? stats.reduce((s, r) => s + r.avg_basket, 0) / stats.length : 0;
+  const alerts = stats.filter(s => s.growth < -10);
+
+  const sortedRestos = [...restaurants].sort((a, b) => {
+    const sa = getStat(a.id), sb = getStat(b.id);
+    const va = sa[sortCol] ?? 0, vb = sb[sortCol] ?? 0;
+    if (sortCol === "name") { return sortDir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name); }
+    return sortDir === "asc" ? va - vb : vb - va;
+  });
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("desc"); }
+  }
+
+  async function saveCampaign(send = false) {
+    if (!campSubject.trim() || !campBody.trim()) return;
+    setCampSending(true);
+    const targets = campTarget === "all" ? restaurants.map(r => r.id) : campSelected;
+    if (!isDemo) {
+      const { data: newCamp } = await supabase.from("group_campaigns").insert({
+        group_id: group.id, created_by: user.id,
+        subject: campSubject, html_body: campBody,
+        segment: campSegment, target: campTarget,
+        restaurant_ids: targets,
+        status: send ? "sent" : "draft",
+        sent_at: send ? new Date().toISOString() : null,
+      }).select().single();
+      if (send && newCamp) {
+        for (const rId of targets) {
+          await supabase.functions.invoke("send-campaign", { body: { campaign_id: newCamp.id, restaurant_id: rId } }).catch(() => {});
+        }
+      }
+    }
+    setCampaigns(prev => [{
+      id: "new_" + Date.now(), subject: campSubject, segment: campSegment,
+      status: send ? "sent" : "draft", sent_at: send ? new Date().toISOString() : null,
+      created_at: new Date().toISOString(),
+    }, ...prev]);
+    setCampSubject(""); setCampBody(""); setCampSending(false);
+  }
+
+  async function generateAI() {
+    setCampGenLoading(true);
+    await new Promise(r => setTimeout(r, 1200));
+    setCampBody(`<h2>🎉 Offre exclusive pour nos clients fidèles !</h2>
+<p>Cher(e) client(e),</p>
+<p>Nous avons le plaisir de vous annoncer une <strong>offre spéciale</strong> dans nos établissements du réseau <em>${group.name}</em>.</p>
+<p>🍽️ Profitez de <strong>-20% sur votre prochain repas</strong> en mentionnant ce message.</p>
+<p>À très bientôt,<br/>L'équipe ${group.name}</p>`);
+    setCampGenLoading(false);
+  }
+
+  async function saveGroupSettings() {
+    setSavingGroup(true);
+    if (!isDemo) {
+      await supabase.from("franchise_groups").update({ name: groupForm.name, logo_emoji: groupForm.logo_emoji }).eq("id", group.id);
+    }
+    setTimeout(() => setSavingGroup(false), 800);
+  }
+
+  async function inviteMember() {
+    if (!inviteForm.email.trim()) return;
+    setInviting(true);
+    if (!isDemo) {
+      await supabase.from("group_members").insert({ group_id: group.id, email: inviteForm.email, role: inviteForm.role, user_id: null }).catch(() => {});
+    }
+    setMembers(prev => [...prev, { id: "m_" + Date.now(), email: inviteForm.email, role: inviteForm.role, regions: [] }]);
+    setInviteForm({ email: "", role: "manager" });
+    setShowInvite(false);
+    setInviting(false);
+  }
+
+  async function saveEditResto() {
+    if (!editResto) return;
+    if (!isDemo) {
+      await supabase.from("restaurants").update({ region: editForm.region, manager_email: editForm.manager_email }).eq("id", editResto.id);
+    }
+    setRestaurants(prev => prev.map(r => r.id === editResto.id ? { ...r, ...editForm } : r));
+    setEditResto(null);
+  }
+
+  function exportCSV() {
+    const rows = [["Restaurant", "CA 7j (€)", "Commandes 7j", "Panier moyen (€)", "Évolution (%)"]];
+    sortedRestos.forEach((r, i) => {
+      const s = getStat(r.id);
+      rows.push([r.name, s.ca_7j.toFixed(2), s.orders_7j, s.avg_basket.toFixed(2), s.growth]);
+    });
+    const csv = rows.map(r => r.join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "comparatif_reseau.csv"; a.click();
+  }
+
+  // Analytics data: 30-day bar chart (demo: random)
+  const chartData30 = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(Date.now() - (29 - i) * 86400000);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const base = isDemo ? totalCa7j / 7 : 0;
+    const value = isDemo ? Math.round(base * (0.7 + Math.random() * 0.6)) : 0;
+    return { label, value };
+  });
+  const chartOrders30 = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(Date.now() - (29 - i) * 86400000);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const value = isDemo ? Math.round(totalOrdersToday * (0.7 + Math.random() * 0.6)) : 0;
+    return { label, value };
+  });
+
+  const TABS_DEF = [
+    { id: "overview", icon: "🏠", label: "Vue d'ensemble" },
+    { id: "compare", icon: "📊", label: "Comparatif" },
+    { id: "campaigns", icon: "📧", label: "Campagnes" },
+    { id: "establishments", icon: "👥", label: "Établissements" },
+    { id: "analytics", icon: "📈", label: "Analytics" },
+    { id: "settings", icon: "⚙️", label: "Paramètres" },
+  ];
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>
+      <style>{css}</style>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>🏢</div>
+        <div style={{ color: C.textSecondary, fontSize: 15 }}>Chargement du groupe...</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: isMobile ? "column" : "row", ...FF }}>
+      <style>{css}</style>
+      {/* Demo banner */}
+      {isDemo && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg,#FF9F0A,#FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>🎯 MODE DÉMO FRANCHISE — Données fictives, aucune modification enregistrée</span>
+        </div>
+      )}
+      {/* Desktop sidebar */}
+      {!isMobile && (
+        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: isDemo ? 36 : 0 }}>
+          <div style={{ padding: "20px 16px 16px" }}>
+            <Logo size={16} />
+            <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
+              <div style={{ fontSize: 22 }}>{group.logo_emoji}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{group.name}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Mes restaurants</div>
+              </div>
+            </div>
+          </div>
+          <nav style={{ flex: 1, padding: "4px 10px" }}>
+            {TABS_DEF.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{ width: "100%", display: "flex", alignItems: "center", padding: "9px 12px", borderRadius: 10, border: "none", background: tab === t.id ? C.bg : "transparent", color: tab === t.id ? C.dark : C.textSecondary, fontWeight: tab === t.id ? 600 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", marginBottom: 2, transition: "all 0.15s", ...FF }}>
+                {t.icon}<span style={{ marginLeft: 8 }}>{t.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 13, fontWeight: 700 }}>{(user.name || user.email)[0].toUpperCase()}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Main content */}
+      <div style={{ flex: 1, overflow: "auto", paddingTop: isDemo ? (isMobile ? 44 : 0) : 0, paddingBottom: isMobile ? 70 : 0 }}>
+        {/* Header */}
+        <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: isMobile ? "12px 16px" : "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {isMobile && <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", padding: 4 }}>←</button>}
+            <span style={{ fontSize: 20 }}>{group.logo_emoji}</span>
+            <div>
+              <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700, color: C.dark }}>{group.name}</div>
+              <div style={{ fontSize: 12, color: C.textSecondary }}>{restaurants.length} établissement{restaurants.length !== 1 ? "s" : ""} · Plan {group.plan}</div>
+            </div>
+          </div>
+          {!isMobile && (
+            <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>← Mes restaurants</button>
+          )}
+        </div>
+
+        <div style={{ padding: isMobile ? "16px" : "28px 32px", maxWidth: 1100, margin: "0 auto" }}>
+
+          {/* ── Tab: Overview ── */}
+          {tab === "overview" && (
+            <div className="fade-in">
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 20, letterSpacing: "-0.03em" }}>Vue d'ensemble du réseau</h2>
+              {/* KPI grid */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
+                <KPICard label="Établissements" value={restaurants.length} sub="dans le réseau" />
+                <KPICard label="CA aujourd'hui" value={`${totalCaToday.toFixed(0)} €`} sub="toutes enseignes" delta={5} />
+                <KPICard label="CA 7 jours" value={`${totalCa7j.toFixed(0)} €`} sub="réseau" delta={8} />
+                <KPICard label="Commandes aujourd'hui" value={totalOrdersToday} sub="total réseau" />
+                <KPICard label="Panier moyen réseau" value={`${avgBasket.toFixed(2)} €`} sub="sur 7 jours" />
+                <KPICard label="Alertes actives" value={alerts.length} sub={alerts.length > 0 ? "⚠️ Baisse détectée" : "Tout est nominal"} />
+              </div>
+              {/* Établissements ranking */}
+              <Surface style={{ padding: "20px 24px", marginBottom: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Classement CA 7 jours</h3>
+                {sortedRestos.map((r, i) => {
+                  const s = getStat(r.id);
+                  const maxCa = Math.max(...stats.map(st => st.ca_7j), 1);
+                  const pct = (s.ca_7j / maxCa) * 100;
+                  return (
+                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: onRestaurant ? "pointer" : "default" }} onClick={() => onRestaurant && onRestaurant(r)}>
+                      <div style={{ width: 28, fontSize: 14, fontWeight: 700, color: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.textTertiary, textAlign: "center" }}>{i < 3 ? ["🥇","🥈","🥉"][i] : `#${i+1}`}</div>
+                      <div style={{ fontSize: 20 }}>{r.logo_emoji}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(0)} €</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: i === 0 ? C.accentGreen : i === 1 ? C.accentBlue : C.accentOrange, borderRadius: 3, transition: "width 0.5s ease" }} />
+                        </div>
+                      </div>
+                      {s.growth < -10 && <Tag color={C.accent}>⚠️ {s.growth}%</Tag>}
+                      {s.growth >= 0 && <Tag color={C.accentGreen}>+{s.growth}%</Tag>}
+                    </div>
+                  );
+                })}
+              </Surface>
+              {/* Alerts */}
+              {alerts.length > 0 && (
+                <Surface style={{ padding: "20px 24px", border: `1.5px solid ${C.accent}20` }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 12 }}>🔴 Alertes performance</h3>
+                  {alerts.map(a => {
+                    const r = restaurants.find(x => x.id === a.restaurant_id);
+                    return r ? (
+                      <div key={a.restaurant_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 18 }}>{r.logo_emoji}</span>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</span>
+                          <span style={{ color: C.textSecondary, fontSize: 13 }}> — région {r.region || "N/A"}</span>
+                        </div>
+                        <Tag color={C.accent}>⬇ {Math.abs(a.growth)}% de baisse</Tag>
+                      </div>
+                    ) : null;
+                  })}
+                </Surface>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Compare ── */}
+          {tab === "compare" && (
+            <div className="fade-in">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Comparatif établissements</h2>
+                <Btn variant="ghost" size="sm" onClick={exportCSV}>📥 Exporter CSV</Btn>
+              </div>
+              <Surface style={{ overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `2px solid ${C.border}`, background: C.bg }}>
+                        {[["name", "Restaurant"], ["ca_7j", "CA 7j"], ["orders_7j", "Cmds 7j"], ["avg_basket", "Panier moy."], ["growth", "Évolution"]].map(([col, label]) => (
+                          <th key={col} onClick={() => toggleSort(col)}
+                            style={{ padding: "12px 16px", textAlign: "left", fontWeight: 700, color: C.textSecondary, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+                            {label} {sortCol === col ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                          </th>
+                        ))}
+                        <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 700, color: C.textSecondary }}>Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedRestos.map((r, i) => {
+                        const s = getStat(r.id);
+                        const rank = restaurants.slice().sort((a, b) => getStat(b.id).ca_7j - getStat(a.id).ca_7j).findIndex(x => x.id === r.id);
+                        const medal = rank < 3 ? ["🥇","🥈","🥉"][rank] : null;
+                        return (
+                          <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 === 0 ? C.surface : C.bg + "80" }}>
+                            <td style={{ padding: "12px 16px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                {medal && <span>{medal}</span>}
+                                <span style={{ fontSize: 16 }}>{r.logo_emoji}</span>
+                                <div>
+                                  <div style={{ fontWeight: 600, color: C.dark }}>{r.name}</div>
+                                  {r.region && <div style={{ fontSize: 11, color: C.textTertiary }}>{r.region}</div>}
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(0)} €</td>
+                            <td style={{ padding: "12px 16px", color: C.text }}>{s.orders_7j}</td>
+                            <td style={{ padding: "12px 16px", color: C.text }}>{s.avg_basket.toFixed(2)} €</td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <Tag color={s.growth < -10 ? C.accent : s.growth >= 0 ? C.accentGreen : C.accentOrange}>
+                                {s.growth >= 0 ? "+" : ""}{s.growth}%
+                              </Tag>
+                              {s.growth < -10 && <span style={{ marginLeft: 6 }}>⚠️</span>}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <div style={{ display: "flex", gap: 2 }}>
+                                {Array.from({ length: 5 }, (_, j) => {
+                                  const score = Math.min(5, Math.max(1, Math.round((s.ca_7j / Math.max(...stats.map(st => st.ca_7j), 1)) * 5)));
+                                  return <span key={j} style={{ color: j < score ? C.accentOrange : C.border, fontSize: 14 }}>★</span>;
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Surface>
+            </div>
+          )}
+
+          {/* ── Tab: Campaigns ── */}
+          {tab === "campaigns" && (
+            <div className="fade-in">
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 20, letterSpacing: "-0.03em" }}>Campagnes globales</h2>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20 }}>
+                {/* Form */}
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Nouvelle campagne</h3>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Sujet</label>
+                    <input value={campSubject} onChange={e => setCampSubject(e.target.value)} placeholder="Objet de l'email..."
+                      style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500 }}>Corps HTML</label>
+                      <button onClick={generateAI} disabled={campGenLoading}
+                        style={{ background: "linear-gradient(135deg,#BF5AF2,#0071E3)", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
+                        {campGenLoading ? "..." : "✨ Générer avec l'IA"}
+                      </button>
+                    </div>
+                    <textarea value={campBody} onChange={e => setCampBody(e.target.value)} placeholder="<h2>Votre message</h2>..."
+                      rows={6} style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", resize: "vertical", ...FF }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Segment</label>
+                      <select value={campSegment} onChange={e => setCampSegment(e.target.value)}
+                        style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", ...FF }}>
+                        <option value="all">Tous les clients</option>
+                        <option value="top_clients">Top clients</option>
+                        <option value="inactive">Inactifs</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Cible</label>
+                      <select value={campTarget} onChange={e => { setCampTarget(e.target.value); setCampSelected([]); }}
+                        style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", ...FF }}>
+                        <option value="all">Tous les établissements</option>
+                        <option value="select">Sélection</option>
+                      </select>
+                    </div>
+                  </div>
+                  {campTarget === "select" && (
+                    <div style={{ marginBottom: 14, padding: "12px 16px", background: C.bg, borderRadius: 10 }}>
+                      {restaurants.map(r => (
+                        <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                          <input type="checkbox" checked={campSelected.includes(r.id)}
+                            onChange={e => setCampSelected(prev => e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id))} />
+                          <span style={{ fontSize: 14 }}>{r.logo_emoji}</span>
+                          <span style={{ fontSize: 13, color: C.dark }}>{r.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <Btn variant="ghost" size="sm" full disabled={!campSubject || !campBody || campSending} onClick={() => saveCampaign(false)}>
+                      Sauvegarder brouillon
+                    </Btn>
+                    <Btn variant="blue" size="sm" full disabled={!campSubject || !campBody || campSending} onClick={() => saveCampaign(true)}>
+                      {campSending ? "Envoi..." : "📤 Envoyer"}
+                    </Btn>
+                  </div>
+                </Surface>
+                {/* Campaign list */}
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Historique des campagnes</h3>
+                  {campaigns.length === 0 ? (
+                    <p style={{ color: C.textTertiary, fontSize: 14 }}>Aucune campagne pour l'instant.</p>
+                  ) : campaigns.map(c => (
+                    <div key={c.id} style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{c.subject}</span>
+                        <Tag color={c.status === "sent" ? C.accentGreen : C.accentOrange}>{c.status === "sent" ? "Envoyée" : "Brouillon"}</Tag>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.textTertiary }}>
+                        {c.sent_at ? `Envoyée le ${new Date(c.sent_at).toLocaleDateString("fr-FR")}` : `Créée le ${new Date(c.created_at).toLocaleDateString("fr-FR")}`}
+                        {c.segment && ` · Segment: ${c.segment}`}
+                      </div>
+                    </div>
+                  ))}
+                </Surface>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Establishments ── */}
+          {tab === "establishments" && (
+            <div className="fade-in">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Établissements</h2>
+                <Btn variant="primary" size="sm" onClick={() => setShowCreate && setShowCreate(true)}>+ Ajouter</Btn>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                {restaurants.map(r => {
+                  const s = getStat(r.id);
+                  return (
+                    <Surface key={r.id} style={{ padding: 20 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{r.logo_emoji}</div>
+                          <div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{r.name}</div>
+                            <div style={{ fontSize: 12, color: C.textSecondary }}>{r.region || "Région N/A"}</div>
+                          </div>
+                        </div>
+                        <Tag color={C.accentGreen}>Actif</Tag>
+                      </div>
+                      {r.manager_email && (
+                        <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12, padding: "6px 10px", background: C.bg, borderRadius: 8 }}>
+                          👤 {r.manager_email}
+                        </div>
+                      )}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={{ textAlign: "center", padding: "8px 0", background: C.bg, borderRadius: 8 }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{s.ca_today.toFixed(0)} €</div>
+                          <div style={{ fontSize: 11, color: C.textTertiary }}>CA aujourd'hui</div>
+                        </div>
+                        <div style={{ textAlign: "center", padding: "8px 0", background: C.bg, borderRadius: 8 }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{s.orders_today}</div>
+                          <div style={{ fontSize: 11, color: C.textTertiary }}>Commandes</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {onRestaurant && (
+                          <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r)}>Gérer</Btn>
+                        )}
+                        <Btn variant="ghost" size="sm" full onClick={() => { setEditResto(r); setEditForm({ region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
+                      </div>
+                    </Surface>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Analytics ── */}
+          {tab === "analytics" && (
+            <div className="fade-in">
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 20, letterSpacing: "-0.03em" }}>Analytics réseau</h2>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 24 }}>
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>CA réseau — 30 jours</h3>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Chiffre d'affaires total toutes enseignes</p>
+                  <MiniChart data={chartData30} color={C.accentBlue} height={100} />
+                </Surface>
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Commandes — 30 jours</h3>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Nombre total de commandes par jour</p>
+                  <MiniChart data={chartOrders30} color={C.accentGreen} height={100} />
+                </Surface>
+              </div>
+              {/* Top dishes (demo) */}
+              <Surface style={{ padding: 24, marginBottom: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Top 5 plats du réseau</h3>
+                {(isDemo ? [
+                  { name: "Steak Frites", emoji: "🥩", count: 324, revenue: 6448 },
+                  { name: "Burger Maison", emoji: "🍔", count: 289, revenue: 4016 },
+                  { name: "Salade César", emoji: "🥗", count: 201, revenue: 1809 },
+                  { name: "Poulet Rôti", emoji: "🍗", count: 178, revenue: 2759 },
+                  { name: "Pasta Carbonara", emoji: "🍝", count: 156, revenue: 2262 },
+                ] : []).map((d, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                    <span style={{ fontWeight: 700, color: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.textTertiary, fontSize: 14, width: 20 }}>{i+1}</span>
+                    <span style={{ fontSize: 20 }}>{d.emoji}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{d.name}</div>
+                      <div style={{ fontSize: 12, color: C.textSecondary }}>{d.count} commandes · {d.revenue} €</div>
+                    </div>
+                    <div style={{ width: 80, height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(d.count / 324) * 100}%`, background: C.accentBlue, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                ))}
+                {!isDemo && <p style={{ color: C.textTertiary, fontSize: 14 }}>Données agrégées disponibles après activation.</p>}
+              </Surface>
+              {/* Répartition par région */}
+              {restaurants.some(r => r.region) && (
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Répartition par région</h3>
+                  {Array.from(new Set(restaurants.map(r => r.region).filter(Boolean))).map(region => {
+                    const restoInRegion = restaurants.filter(r => r.region === region);
+                    const regionCa = restoInRegion.reduce((s, r) => s + getStat(r.id).ca_7j, 0);
+                    return (
+                      <div key={region} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <div>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{region}</span>
+                          <span style={{ color: C.textSecondary, fontSize: 13, marginLeft: 8 }}>{restoInRegion.length} établissement{restoInRegion.length !== 1 ? "s" : ""}</span>
+                        </div>
+                        <span style={{ fontWeight: 700, color: C.dark }}>{regionCa.toFixed(0)} €</span>
+                      </div>
+                    );
+                  })}
+                </Surface>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Settings ── */}
+          {tab === "settings" && (
+            <div className="fade-in">
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 20, letterSpacing: "-0.03em" }}>Paramètres du groupe</h2>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20 }}>
+                <Surface style={{ padding: 24 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Informations générales</h3>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Nom du groupe</label>
+                    <input value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))}
+                      style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji logo</label>
+                    <input value={groupForm.logo_emoji} onChange={e => setGroupForm(p => ({ ...p, logo_emoji: e.target.value }))}
+                      style={{ width: 80, background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 20, color: C.text, outline: "none", textAlign: "center", ...FF }} />
+                  </div>
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Plan</label>
+                    <Tag color={group.plan === "franchise" ? C.accentPurple : C.accentBlue}>{group.plan}</Tag>
+                  </div>
+                  <Btn variant="primary" size="sm" disabled={savingGroup} onClick={saveGroupSettings}>{savingGroup ? "Sauvegarde..." : "💾 Sauvegarder"}</Btn>
+                </Surface>
+                <Surface style={{ padding: 24 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>Membres de l'équipe</h3>
+                    <Btn variant="ghost" size="xs" onClick={() => setShowInvite(true)}>+ Inviter</Btn>
+                  </div>
+                  {members.map(m => (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{m.email[0].toUpperCase()}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.email}</div>
+                        {m.regions && m.regions.length > 0 && <div style={{ fontSize: 11, color: C.textTertiary }}>{m.regions.join(", ")}</div>}
+                      </div>
+                      <Tag color={m.role === "owner" ? C.dark : m.role === "director" ? C.accentPurple : m.role === "regional" ? C.accentBlue : C.accentGreen}>{m.role}</Tag>
+                    </div>
+                  ))}
+                  {members.length === 0 && <p style={{ color: C.textTertiary, fontSize: 14 }}>Aucun membre ajouté.</p>}
+                </Surface>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.surface, borderTop: `1px solid ${C.border}`, display: "flex", zIndex: 100 }}>
+          {TABS_DEF.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 0", border: "none", background: "transparent", color: tab === t.id ? C.dark : C.textTertiary, cursor: "pointer", ...FF }}>
+              <span style={{ fontSize: 16 }}>{t.icon}</span>
+              <span style={{ fontSize: 9, marginTop: 2, fontWeight: tab === t.id ? 700 : 400 }}>{t.label.split(" ")[0]}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* Edit restaurant modal */}
+      {editResto && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setEditResto(null); }}>
+          <Surface style={{ padding: 28, width: "100%", maxWidth: 400 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>Modifier {editResto.name}</h3>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Région</label>
+              <input value={editForm.region} onChange={e => setEditForm(p => ({ ...p, region: e.target.value }))}
+                placeholder="ex: Île-de-France"
+                style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Email responsable</label>
+              <input value={editForm.manager_email} onChange={e => setEditForm(p => ({ ...p, manager_email: e.target.value }))}
+                placeholder="manager@email.com" type="email"
+                style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => setEditResto(null)}>Annuler</Btn>
+              <Btn variant="primary" full onClick={saveEditResto}>Sauvegarder</Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Invite member modal */}
+      {showInvite && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowInvite(false); }}>
+          <Surface style={{ padding: 28, width: "100%", maxWidth: 380 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>Inviter un membre</h3>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Email</label>
+              <input value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))}
+                placeholder="email@exemple.com" type="email" autoFocus
+                style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Rôle</label>
+              <select value={inviteForm.role} onChange={e => setInviteForm(p => ({ ...p, role: e.target.value }))}
+                style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }}>
+                <option value="manager">Manager</option>
+                <option value="regional">Directeur régional</option>
+                <option value="director">Directeur</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => setShowInvite(false)}>Annuler</Btn>
+              <Btn variant="primary" full disabled={!inviteForm.email || inviting} onClick={inviteMember}>{inviting ? "Envoi..." : "Inviter →"}</Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // APP ROOT — Supabase session restore
 // ─────────────────────────────────────────────────────────────────────────────
 function AppInner() {
@@ -5439,6 +6248,7 @@ function Dashboard() {
   const [page, setPage] = useState("loading");
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
+  const [franchiseGroup, setFranchiseGroup] = useState(null);
   const store = useStore(restaurant?.id);
   const [lang, setLangState] = useState(() => localStorage.getItem("vg_lang") || "fr");
   const setLang = code => { setLangState(code); localStorage.setItem("vg_lang", code); };
@@ -5460,9 +6270,15 @@ function Dashboard() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user || user.id === "demo") return;
+    supabase.from("franchise_groups").select("*").eq("owner_id", user.id).single()
+      .then(({ data }) => { if (data) setFranchiseGroup(data); });
+  }, [user]);
+
   async function handleLogout() {
     await supabase.auth.signOut();
-    setUser(null); setRestaurant(null); setPage("signup");
+    setUser(null); setRestaurant(null); setFranchiseGroup(null); setPage("signup");
   }
 
   if (page === "loading") return (
@@ -5476,8 +6292,9 @@ function Dashboard() {
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
       {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
-      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} onFranchise={() => setPage("franchise")} />}
+      {page === "franchise" && user && <FranchiseDashboard user={user} group={franchiseGroup || (user.id === "demo" ? DEMO_GROUP : null)} onBack={() => setPage("restaurants")} onRestaurant={r => { setRestaurant(r); setPage("dashboard"); }} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
