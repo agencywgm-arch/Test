@@ -1474,6 +1474,7 @@ function AlertBubbles({ store, restaurant }) {
   const [campaign, setCampaign] = useState(null);
   const [visibleIdx, setVisibleIdx] = useState(0);
   const isMobile = useIsMobile();
+  const shownRef = useRef(new Set());
 
   const ingredients = store.ingredients ?? [];
   const orders = store.orders ?? [];
@@ -1536,12 +1537,15 @@ function AlertBubbles({ store, restaurant }) {
     })),
   ].filter(a => !dismissed.has(a.id));
 
-  // Cycle one alert at a time, every 15s
+  // Auto-dismiss each new alert after 5s (once shown, never repeat in session)
   useEffect(() => {
-    if (allAlerts.length <= 1) return;
-    const t = setInterval(() => setVisibleIdx(i => (i + 1) % allAlerts.length), 15000);
-    return () => clearInterval(t);
-  }, [allAlerts.length]);
+    for (const a of allAlerts) {
+      if (!shownRef.current.has(a.id)) {
+        shownRef.current.add(a.id);
+        setTimeout(() => setDismissed(prev => new Set([...prev, a.id])), 5000);
+      }
+    }
+  });
   // Reset index if it's out of bounds after dismiss
   const safeIdx = allAlerts.length > 0 ? visibleIdx % allAlerts.length : 0;
   const visibleAlerts = allAlerts.length > 0 ? [allAlerts[safeIdx]] : [];
@@ -1755,16 +1759,9 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
       {demoBanner && <OnboardingBar demoMode="restaurant" />}
-      {demoBanner && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg, #FF9F0A, #FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          <span style={{ fontSize: 13 }}>🎯</span>
-          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{T.demo_banner}</span>
-          {!isMobile && <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{T.demo_sub}</span>}
-        </div>
-      )}
       {/* Desktop sidebar */}
       {!isMobile && (
-        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: demoBanner ? 36 : 0 }}>
+        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
           <div style={{ padding: "20px 16px 16px" }}>
             <Logo size={16} />
             <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
@@ -1822,7 +1819,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
       <main style={{ flex: 1, minWidth: 0, overflow: "auto", paddingBottom: isMobile ? 72 : 0 }}>
         {isMobile ? (
           /* Mobile header */
-          <header style={{ background: "rgba(245,245,247,0.95)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: demoBanner ? 34 : 0, zIndex: 50 }}>
+          <header style={{ background: "rgba(245,245,247,0.95)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
             <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <div style={{ fontSize: 20 }}>{restaurant.emoji}</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{restaurant.name}</div>
@@ -1978,7 +1975,17 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (restaurant.id === "demo") { setWeeklyRev(DEMO_WEEKLY_REV); return; }
+    if (restaurant.id === "demo") {
+      if (restaurant._demoStats) {
+        // Generate coherent 7-day breakdown from franchise stats
+        const s = restaurant._demoStats;
+        const ratios = [0.12, 0.10, 0.16, 0.18, 0.15, 0.17, 0.12];
+        setWeeklyRev(ratios.map((r, i) => Math.round(s.ca_7j * r + (i === 6 ? s.ca_today * 0.1 : 0))));
+      } else {
+        setWeeklyRev(DEMO_WEEKLY_REV);
+      }
+      return;
+    }
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
     supabase.from("orders").select("total, created_at")
       .eq("restaurant_id", restaurant.id).eq("status", "DONE")
@@ -1993,10 +2000,11 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
       });
   }, [restaurant.id]);
 
+  const ds = restaurant._demoStats;
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
-  const rev = store.revenue;
-  const avgTicket = store.doneOrders.length > 0 ? rev / store.doneOrders.length : 0;
+  const rev = ds ? ds.ca_today : store.revenue;
+  const avgTicket = ds ? ds.avg_basket : (store.doneOrders.length > 0 ? store.revenue / store.doneOrders.length : 0);
   const DAY_LABELS = ["D", "L", "M", "M", "J", "V", "S"];
   const WEEKLY = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - 6 + i);
@@ -2009,9 +2017,9 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
     <div className="fade-in">
       <StockAlerts restaurantId={restaurant.id} />
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
-        <KPICard label="Actives" value={active.length} sub="en cours" />
+        <KPICard label="Actives" value={ds ? ds.orders_today : active.length} sub="en cours" />
         <KPICard label="CA today" value={`${rev.toFixed(0)}€`} sub="clôturées" />
-        <KPICard label="Servies" value={store.doneOrders.length} sub="aujourd'hui" />
+        <KPICard label="Servies" value={ds ? ds.orders_today : store.doneOrders.length} sub="aujourd'hui" />
         <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="moy." />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
@@ -6764,7 +6772,8 @@ function Dashboard() {
       {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => user ? setPage("restaurants") : setPage("landing")} onRestaurant={r => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
-          setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji });
+          const stat = DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
+          setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji, _demoStats: stat });
           setFromFranchise(true);
         } else {
           setRestaurant(r);
