@@ -6338,6 +6338,12 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   const [showCreateResto, setShowCreateResto] = useState(false);
   const [createRestoForm, setCreateRestoForm] = useState({ name: "", logo_emoji: "🍽️", address: "", tables_count: 8 });
   const [creatingResto, setCreatingResto] = useState(false);
+  const [staffResto, setStaffResto] = useState(null); // restaurant being managed for staff
+  const [staffList, setStaffList] = useState([]); // staff of current staffResto
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffRole, setStaffRole] = useState("manager");
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffAdding, setStaffAdding] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", role: "manager" });
   const [inviting, setInviting] = useState(false);
@@ -6516,6 +6522,40 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
     setShowCreateResto(false);
     setCreateRestoForm({ name: "", logo_emoji: "🍽️", address: "", tables_count: 8 });
     setCreatingResto(false);
+  }
+
+  async function openStaffModal(r) {
+    setStaffResto(r);
+    setStaffEmail(""); setStaffRole("manager");
+    setStaffLoading(true);
+    if (!isDemo) {
+      const { data } = await supabase.from("restaurant_staff").select("*").eq("restaurant_id", r.id).order("invited_at");
+      setStaffList(data ?? []);
+    } else {
+      setStaffList([{ id: "s1", email: "chef@baoma.fr", role: "manager", invited_at: new Date().toISOString() }]);
+    }
+    setStaffLoading(false);
+  }
+
+  async function addStaff(e) {
+    e.preventDefault();
+    if (!staffEmail.trim()) return;
+    setStaffAdding(true);
+    if (!isDemo) {
+      const { data, error } = await supabase.from("restaurant_staff")
+        .insert({ restaurant_id: staffResto.id, email: staffEmail.trim().toLowerCase(), role: staffRole })
+        .select().single();
+      if (data) setStaffList(p => [...p, data]);
+    } else {
+      setStaffList(p => [...p, { id: Date.now(), email: staffEmail, role: staffRole, invited_at: new Date().toISOString() }]);
+    }
+    setStaffEmail("");
+    setStaffAdding(false);
+  }
+
+  async function removeStaff(id) {
+    if (!isDemo) await supabase.from("restaurant_staff").delete().eq("id", id);
+    setStaffList(p => p.filter(s => s.id !== id));
   }
 
   function exportCSV() {
@@ -6940,6 +6980,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                         {onRestaurant && (
                           <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r, s)}>Gérer</Btn>
                         )}
+                        <Btn variant="ghost" size="sm" onClick={() => openStaffModal(r)}>👤</Btn>
                         <Btn variant="ghost" size="sm" onClick={() => { setEditResto(r); setEditForm({ name: r.name || "", logo_emoji: r.logo_emoji || "🍽️", region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
                         <Btn variant="ghost" size="sm" onClick={() => { setDeleteResto(r); setDeleteRestoInput(""); }}
                           style={{ color: C.accent, borderColor: C.accent + "40" }}>🗑</Btn>
@@ -7267,6 +7308,75 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
         </nav>
       )}
 
+      {/* Staff modal */}
+      {staffResto && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setStaffResto(null); }}>
+          <Surface style={{ padding: 28, width: "100%", maxWidth: 480 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <div style={{ fontSize: 28 }}>{staffResto.logo_emoji || "🍽️"}</div>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, color: C.dark }}>Staff — {staffResto.name}</h3>
+                <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Les membres peuvent se connecter et accéder directement à ce restaurant.</p>
+              </div>
+            </div>
+
+            {/* Add staff form */}
+            <form onSubmit={addStaff} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              <input value={staffEmail} onChange={e => setStaffEmail(e.target.value)}
+                placeholder="email@exemple.com" type="email" required
+                style={{ flex: 1, background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "9px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+              <select value={staffRole} onChange={e => setStaffRole(e.target.value)}
+                style={{ background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "9px 10px", fontSize: 13, color: C.text, outline: "none", ...FF }}>
+                <option value="manager">Manager</option>
+                <option value="staff">Staff</option>
+                <option value="cashier">Caisse</option>
+              </select>
+              <Btn variant="primary" type="submit" disabled={staffAdding || !staffEmail.trim()}>
+                {staffAdding ? "..." : "+ Ajouter"}
+              </Btn>
+            </form>
+
+            {/* Staff list */}
+            <div style={{ maxHeight: 260, overflowY: "auto" }}>
+              {staffLoading ? (
+                <div style={{ textAlign: "center", padding: 20, color: C.textSecondary, fontSize: 13 }}>Chargement...</div>
+              ) : staffList.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 20, color: C.textSecondary, fontSize: 13 }}>
+                  Aucun membre pour l'instant.<br />
+                  <span style={{ fontSize: 11 }}>Ajoutez un email ci-dessus — il pourra se connecter et accéder à ce restaurant.</span>
+                </div>
+              ) : staffList.map(s => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: C.bg, marginBottom: 6 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                    {s.email[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.email}</div>
+                    <div style={{ fontSize: 11, color: C.textTertiary }}>{s.role} · Ajouté le {new Date(s.invited_at).toLocaleDateString("fr-FR")}</div>
+                  </div>
+                  <button onClick={() => removeStaff(s.id)}
+                    style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, width: 28, height: 28, cursor: "pointer", color: C.textTertiary, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 10, background: C.accentBlue + "10", border: `1px solid ${C.accentBlue}30` }}>
+              <p style={{ fontSize: 12, color: C.accentBlue, fontWeight: 600, marginBottom: 4 }}>💡 Comment ça marche ?</p>
+              <p style={{ fontSize: 11, color: C.textSecondary, lineHeight: 1.5 }}>
+                Le membre se connecte sur l'app avec l'email ajouté ici et crée son compte. Il arrive directement sur le dashboard de <strong>{staffResto.name}</strong>.
+              </p>
+            </div>
+
+            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+              <Btn variant="ghost" onClick={() => setStaffResto(null)}>Fermer</Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+
       {/* Edit restaurant modal */}
       {editResto && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
@@ -7467,13 +7577,24 @@ function Dashboard() {
             }
           } catch {}
 
-          // 2. Query Supabase
+          // 2. Query Supabase for franchise group
           try {
             const grpRes = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
             if (grpRes?.data) {
               localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grpRes.data));
               setFranchiseGroup(grpRes.data);
               setPage("franchise");
+              return;
+            }
+          } catch {}
+
+          // 3. Check if user is a restaurant staff member
+          try {
+            const staffRes = await supabase.from("restaurant_staff").select("*, restaurants(*)").eq("email", u.email).single();
+            if (staffRes?.data?.restaurants) {
+              const r = staffRes.data.restaurants;
+              setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || "🍽️", logo_emoji: r.logo_emoji || "🍽️", scans: 0, rating: null, orders: 0 });
+              setPage("dashboard");
               return;
             }
           } catch {}
