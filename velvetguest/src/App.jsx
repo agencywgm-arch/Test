@@ -320,13 +320,15 @@ function useStore(restaurantId) {
   const [orders, setOrders] = useState([]);
   const [doneOrders, setDoneOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [notifHistory, setNotifHistory] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [customers, setCustomers] = useState([]);
 
   const pushNotif = useCallback((msg, type = "info") => {
-    const n = { id: Date.now(), msg, type };
+    const n = { id: Date.now(), msg, type, ts: new Date() };
     setNotifications(p => [n, ...p.slice(0, 4)]);
+    setNotifHistory(p => [n, ...p.slice(0, 49)]);
     setTimeout(() => setNotifications(p => p.filter(x => x.id !== n.id)), 5000);
   }, []);
 
@@ -446,7 +448,7 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -671,10 +673,8 @@ function OnboardingBar({ demoMode }) {
 // LANDING PAGE PUBLIQUE
 // ─────────────────────────────────────────────────────────────────────────────
 const DEMO_PERSONAS = [
-  { key: "restaurant", icon: "🍽️", title: "Manager Restaurant", desc: "Gérez commandes, carte, caisse, stocks et CRM en temps réel.", tags: ["Commandes", "Caisse", "CRM"], color: "#007AFF" },
-  { key: "franchise",  icon: "🏢", title: "Franchiseur / Groupe", desc: "Pilotez un réseau de 5 restaurants avec analytics consolidés.", tags: ["Réseau", "Comparatif", "Campagnes"], color: "#34C759" },
-  { key: "kitchen",    icon: "👨‍🍳", title: "Chef Cuisine", desc: "Vue kanban des commandes en temps réel, avancement par statut.", tags: ["Kanban", "Temps réel", "Statuts"], color: "#FF9500" },
-  { key: "customer",   icon: "📱", title: "Client Restaurant", desc: "Scannez un QR code, commandez et payez depuis votre mobile.", tags: ["Menu QR", "Panier", "Paiement"], color: "#FF3B30" },
+  { key: "restaurant", icon: "🍽️", title: "Restaurant", desc: "Gérez commandes, carte, caisse, stocks et CRM en temps réel.", tags: ["Commandes", "Caisse", "CRM"], color: "#007AFF" },
+  { key: "franchise",  icon: "🏢", title: "Franchise / Groupe", desc: "Pilotez un réseau de 5 restaurants avec analytics consolidés.", tags: ["Réseau", "Comparatif", "Campagnes"], color: "#34C759" },
 ];
 
 function LandingPage({ onDemo, onSignup, onLogin }) {
@@ -1719,6 +1719,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const { lang, setLang, T } = useContext(LangCtx);
 
   const TABS = [
@@ -1838,11 +1839,39 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
               <h2 style={{ fontSize: 18, fontWeight: 700, color: C.dark, letterSpacing: "-0.02em" }}>{TABS.find(t => t.id === tab)?.label}</h2>
               <p style={{ fontSize: 12, color: C.textTertiary }}>{T.welcome}, {first} · {new Date().toLocaleDateString(lang === "fr" ? "fr-FR" : lang === "es" ? "es-ES" : lang === "pt" ? "pt-PT" : "en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 {T.btn_kitchen}{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
               <Btn variant="primary" size="sm" onClick={onClient}>📱 {T.btn_client}</Btn>
+              <button onClick={() => setNotifOpen(o => !o)} style={{ position: "relative", width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: notifOpen ? C.bg : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, cursor: "pointer" }}>
+                🔔
+                {store.notifHistory.length > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: C.accent }} />}
+              </button>
             </div>
           </header>
+        )}
+        {notifOpen && (
+          <div style={{ position: "fixed", top: 56, right: 16, width: 340, maxHeight: 480, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 12px 40px rgba(0,0,0,0.14)", zIndex: 200, display: "flex", flexDirection: "column", ...FF }}>
+            <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>🔔 Notifications</span>
+              <button onClick={() => setNotifOpen(false)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {store.notifHistory.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Aucune notification</div>
+              ) : store.notifHistory.map(n => {
+                const colors = { info: C.accentBlue, success: C.accentGreen, warning: C.accentOrange, new: C.accent };
+                return (
+                  <div key={n.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: colors[n.type] || C.accentBlue, marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, color: C.dark }}>{n.msg}</div>
+                      <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>{n.ts?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
         <div style={{ padding: isMobile ? "12px 12px" : "28px 32px" }}>
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
@@ -6133,9 +6162,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
 
   const TABS_DEF = [
     { id: "overview", icon: "🏠", label: "Vue d'ensemble" },
+    { id: "establishments", icon: "👥", label: "Établissements" },
     { id: "compare", icon: "📊", label: "Comparatif" },
     { id: "campaigns", icon: "📧", label: "Campagnes" },
-    { id: "establishments", icon: "👥", label: "Établissements" },
     { id: "analytics", icon: "📈", label: "Analytics" },
     { id: "settings", icon: "⚙️", label: "Paramètres" },
   ];
@@ -6676,6 +6705,7 @@ function Dashboard() {
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
   const [franchiseGroup, setFranchiseGroup] = useState(null);
+  const [fromFranchise, setFromFranchise] = useState(false);
   const store = useStore(restaurant?.id);
   const [lang, setLangState] = useState(() => localStorage.getItem("vg_lang") || "fr");
   const setLang = code => { setLangState(code); localStorage.setItem("vg_lang", code); };
@@ -6717,7 +6747,7 @@ function Dashboard() {
 
   function startDemo(key) {
     const demoUser = { id: "demo", name: "Démo", email: "demo@wegemo.com" };
-    if (key === "restaurant") { setUser(demoUser); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }
+    if (key === "restaurant") { setUser(demoUser); setRestaurant(DEMO_RESTAURANT); setFromFranchise(false); setPage("dashboard"); }
     else if (key === "franchise") { setUser(demoUser); setFranchiseGroup(DEMO_GROUP); setPage("franchise"); }
     else if (key === "kitchen") { setPage("demo-kitchen"); }
     else if (key === "customer") { setPage("demo-customer"); }
@@ -6731,8 +6761,18 @@ function Dashboard() {
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => user ? setPage("restaurants") : setPage("landing")} onRestaurant={r => { setRestaurant(r); setPage("dashboard"); }} />}
-      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => user ? setPage("restaurants") : setPage("landing")} onRestaurant={r => {
+        const isDemo = !user || user.id === "demo";
+        if (isDemo) {
+          setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji });
+          setFromFranchise(true);
+        } else {
+          setRestaurant(r);
+          setFromFranchise(true);
+        }
+        setPage("dashboard");
+      }} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
