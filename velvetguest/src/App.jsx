@@ -541,9 +541,9 @@ function InputField({ label, type = "text", placeholder, value, onChange, autoFo
   );
 }
 
-function Logo({ dark = true, size = 18 }) {
+function Logo({ dark = true, size = 18, onClick }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, cursor: onClick ? "pointer" : "default" }}>
       <div style={{ width: size + 10, height: size + 10, background: dark ? C.dark : C.white, borderRadius: (size + 10) * 0.28, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <span style={{ fontSize: size * 0.7 }}>🍽</span>
       </div>
@@ -1141,7 +1141,7 @@ function SignupPage({ onDone, onDemo, onDemoPicker }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RESTAURANTS PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise }) {
+function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise, onHome }) {
   const { lang, setLang } = useContext(LangCtx);
   const first = (user.name || user.email).split(" ")[0];
   const h = new Date().getHours();
@@ -1216,7 +1216,7 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
     <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
       <style>{css}</style>
       <nav style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", position: "sticky", top: 0, zIndex: 100 }}>
-        <Logo size={17} />
+        <Logo size={17} onClick={onHome} />
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Language switcher */}
           <div style={{ display: "flex", gap: 4 }}>
@@ -1528,12 +1528,18 @@ function AlertBubbles({ store, restaurant }) {
     })),
   ].filter(a => !dismissed.has(a.id));
 
+  function dismissAlert(id) {
+    const alert = allAlerts.find(a => a.id === id);
+    if (alert) store.pushNotif(`${alert.icon} ${alert.label} — ${alert.text}`, alert.type === "campaign" ? "info" : "warning");
+    setDismissed(prev => new Set([...prev, id]));
+  }
+
   // Auto-dismiss each new alert after 5s (once shown, never repeat in session)
   useEffect(() => {
     for (const a of allAlerts) {
       if (!shownRef.current.has(a.id)) {
         shownRef.current.add(a.id);
-        setTimeout(() => setDismissed(prev => new Set([...prev, a.id])), 5000);
+        setTimeout(() => dismissAlert(a.id), 5000);
       }
     }
   });
@@ -1571,7 +1577,7 @@ function AlertBubbles({ store, restaurant }) {
                   </button>
                 )}
               </div>
-              <button onClick={() => setDismissed(prev => new Set([...prev, alert.id]))}
+              <button onClick={() => dismissAlert(alert.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>×</button>
             </div>
           </div>
@@ -1706,7 +1712,7 @@ function SettingsTab({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onCuisine, onClient, onFranchise }) {
+function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onCuisine, onClient, onFranchise, onHome }) {
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
   const isMobile = useIsMobile();
@@ -1754,7 +1760,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
       {!isMobile && (
         <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
           <div style={{ padding: "20px 16px 16px" }}>
-            <Logo size={16} />
+            <Logo size={16} onClick={onHome} />
             <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
               <div style={{ fontSize: 22 }}>{restaurant.emoji}</div>
               <div>
@@ -6249,7 +6255,7 @@ function ChartModal({ title, subtitle, kpis, children, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FRANCHISE DASHBOARD — multi-restaurant group view
 // ─────────────────────────────────────────────────────────────────────────────
-function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
+function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
   const isMobile = useIsMobile();
   const isDemo = user.id === "demo";
   const [tab, setTab] = useState("overview");
@@ -6520,7 +6526,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
       {!isMobile && (
         <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
           <div style={{ padding: "20px 16px 16px" }}>
-            <Logo size={16} />
+            <Logo size={16} onClick={onHome} />
             <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg }}>
               <div style={{ fontSize: 22 }}>{group.logo_emoji}</div>
               <div>
@@ -7286,8 +7292,8 @@ function Dashboard() {
       {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onRestaurant={(r, stat) => {
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} />}
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
           const s = stat || DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
@@ -7299,7 +7305,7 @@ function Dashboard() {
         }
         setPage("dashboard");
       }} />}
-      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} onHome={() => { if (!user || user.id === "demo") setPage("landing"); else if (franchiseGroup) setPage("franchise"); else setPage("restaurants"); }} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
