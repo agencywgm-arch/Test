@@ -6413,8 +6413,15 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
       setLoading(false);
       return;
     }
+    // Always refresh group name/emoji from Supabase (cache may be stale)
+    supabase.from("franchise_groups").select("*").eq("id", group.id).maybeSingle().then(({ data }) => {
+      if (data) {
+        setGroupForm({ name: data.name, logo_emoji: data.logo_emoji || "🏢" });
+        if (onGroupUpdate) onGroupUpdate(data);
+      }
+    });
     Promise.all([
-      supabase.from("restaurants").select("*").or(`group_id.eq.${group.id},owner_id.eq.${user.id}`).order("name"),
+      supabase.from("restaurants").select("*").eq("owner_id", user.id).order("name"),
       supabase.from("group_campaigns").select("*").eq("group_id", group.id).order("created_at", { ascending: false }),
       supabase.from("group_members").select("*").eq("group_id", group.id),
     ]).then(([restoRes, campRes, memRes]) => {
