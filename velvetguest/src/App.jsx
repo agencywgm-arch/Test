@@ -599,9 +599,349 @@ function QRCanvas({ text, size = 160, fg = "#000", bg = "#fff" }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DEMO — Onboarding steps per persona
+// ─────────────────────────────────────────────────────────────────────────────
+const ONBOARDING_STEPS = {
+  restaurant: [
+    { title: "👋 Bienvenue dans votre dashboard !", body: "Voici le tableau de bord de votre restaurant. Tout est interactif !" },
+    { title: "📋 Vos commandes en temps réel", body: "Suivez toutes les commandes en cours depuis l'onglet Commandes." },
+    { title: "🍽️ Gérez votre carte", body: "Ajoutez, modifiez ou supprimez des plats depuis l'onglet Carte." },
+    { title: "💰 Suivez votre caisse", body: "Visualisez les recettes du jour, semaine et mois dans l'onglet Caisse." },
+    { title: "👥 Votre CRM clients", body: "Consultez l'historique de vos clients et lancez des campagnes ciblées." },
+    { title: "🤖 Gémo, votre assistant IA", body: "Gémo vous aide à gérer votre restaurant au quotidien — posez-lui une question !" },
+  ],
+  franchise: [
+    { title: "🏢 Votre réseau en un coup d'œil", body: "Tous vos établissements consolidés en un seul dashboard." },
+    { title: "📊 Comparez vos établissements", body: "Visualisez les performances de chaque restaurant côte à côte." },
+    { title: "📧 Lancez une campagne sur tout le réseau", body: "Une seule action pour envoyer une promo à tous vos restaurants." },
+    { title: "📈 Analytics consolidés", body: "CA global, panier moyen, croissance — tout en un clin d'œil." },
+    { title: "👥 Gérez vos franchisés", body: "Accédez à la liste de vos établissements et gérez les accès." },
+  ],
+  kitchen: [
+    { title: "👨‍🍳 Les commandes arrivent ici", body: "La colonne 'Nouvelles' reçoit chaque commande dès qu'elle est passée par un client." },
+    { title: "✅ Faites avancer chaque commande", body: "Cliquez sur 'Accepter' puis 'Prête' pour faire avancer le statut de la commande." },
+    { title: "⏱️ Alerte si une commande dépasse 20 min", body: "Les commandes en retard s'affichent en rouge — ne les laissez pas attendre !" },
+  ],
+  customer: [
+    { title: "📱 Vous venez de scanner le QR code de la Table 5", body: "En restaurant, un simple scan suffit pour accéder au menu complet." },
+    { title: "🛒 Ajoutez des plats à votre panier", body: "Parcourez la carte et cliquez sur + pour ajouter des plats à votre commande." },
+    { title: "💳 Payez en quelques secondes", body: "Validez votre commande directement depuis votre téléphone — sans attendre un serveur." },
+  ],
+};
+
+function useOnboarding(demoMode) {
+  const [step, setStep] = useState(0);
+  const [active, setActive] = useState(true);
+  const steps = ONBOARDING_STEPS[demoMode] || [];
+  return {
+    step, total: steps.length,
+    current: steps[step],
+    next: () => setStep(s => s + 1),
+    skip: () => setActive(false),
+    active: active && step < steps.length,
+  };
+}
+
+function OnboardingBar({ demoMode }) {
+  const ob = useOnboarding(demoMode);
+  if (!ob.active || !ob.current) return null;
+  return (
+    <div style={{
+      position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+      background: C.dark, color: C.white, borderRadius: 20, padding: "16px 24px",
+      display: "flex", alignItems: "center", gap: 16, zIndex: 9999,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.3)", maxWidth: 480, width: "calc(100% - 32px)", ...FF,
+    }}>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 2 }}>Étape {ob.step + 1} / {ob.total}</p>
+        <p style={{ fontSize: 14, fontWeight: 700 }}>{ob.current.title}</p>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{ob.current.body}</p>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <button onClick={ob.skip} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 12, cursor: "pointer", ...FF }}>Passer</button>
+        <button onClick={ob.next} style={{ padding: "6px 14px", background: C.white, border: "none", borderRadius: 8, color: C.dark, fontSize: 12, fontWeight: 700, cursor: "pointer", ...FF }}>
+          {ob.step === ob.total - 1 ? "Terminer ✓" : "Suivant →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEMO PICKER PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function DemoPickerPage({ onSelect, onBack, onSignup }) {
+  const isMobile = useIsMobile();
+  const personas = [
+    {
+      key: "restaurant",
+      emoji: "🍽️",
+      title: "Je gère mon restaurant",
+      desc: "Commandes, carte, caisse, stocks, cuisine, CRM",
+      tags: ["Commandes temps réel", "Gestion menu", "Caisse & compta"],
+      color: C.accentBlue,
+    },
+    {
+      key: "franchise",
+      emoji: "🏢",
+      title: "Je pilote un réseau",
+      desc: "5 restaurants, analytics consolidés, campagnes globales",
+      tags: ["Vue réseau", "Comparatif", "Campagnes multi-restos"],
+      color: C.accentGreen,
+    },
+    {
+      key: "kitchen",
+      emoji: "👨‍🍳",
+      title: "Je travaille en cuisine",
+      desc: "Vue kanban des commandes, avancement en temps réel",
+      tags: ["Kanban", "Temps réel", "Statuts commandes"],
+      color: C.accentOrange,
+    },
+    {
+      key: "customer",
+      emoji: "📱",
+      title: "Je suis un client",
+      desc: "Je scanne un QR code et je commande depuis mon téléphone",
+      tags: ["Menu QR", "Panier", "Paiement"],
+      color: C.accent,
+    },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
+      <style>{css}</style>
+      <nav style={{ background: "rgba(245,245,247,0.9)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button onClick={onBack} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, color: C.textSecondary, cursor: "pointer", ...FF }}>← Retour</button>
+          <Logo size={17} />
+        </div>
+        <button onClick={onSignup} style={{ background: C.dark, border: "none", borderRadius: 10, padding: "8px 18px", color: C.white, fontSize: 13, fontWeight: 700, cursor: "pointer", ...FF }}>🚀 Créer mon compte</button>
+      </nav>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "40px 20px" : "60px 24px" }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <h1 style={{ fontSize: isMobile ? 28 : 36, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 12 }}>
+            Explorez Wegemo sans créer de compte
+          </h1>
+          <p style={{ color: C.textSecondary, fontSize: 16 }}>Choisissez votre rôle et découvrez l'interface en temps réel</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+          {personas.map(p => (
+            <button key={p.key} onClick={() => onSelect(p.key)}
+              style={{ background: C.white, border: `2px solid ${C.border}`, borderRadius: 20, padding: 28, textAlign: "left", cursor: "pointer", transition: "all 0.2s", ...FF }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = p.color; e.currentTarget.style.boxShadow = `0 8px 32px ${p.color}22`; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: p.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>{p.emoji}</div>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 2 }}>{p.title}</h3>
+                  <p style={{ color: C.textSecondary, fontSize: 13, lineHeight: 1.4 }}>{p.desc}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {p.tags.map(t => (
+                  <span key={t} style={{ background: p.color + "12", color: p.color, fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20 }}>{t}</span>
+                ))}
+              </div>
+              <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 6, color: p.color, fontWeight: 700, fontSize: 13 }}>
+                Explorer ce rôle <span>→</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEMO KITCHEN PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function DemoKitchenPage({ onBack, onSignup }) {
+  const [orders, setOrders] = useState(() => DEMO_ORDERS.map(o => ({ ...o })));
+  const [clock, setClock] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  function advance(orderId) {
+    setOrders(prev => prev.map(o => {
+      if (o.id !== orderId) return o;
+      const next = o.status === "new" ? "cooking" : o.status === "cooking" ? "ready" : "served";
+      return { ...o, status: next };
+    }).filter(o => o.status !== "served"));
+  }
+
+  const COLS = [
+    { key: "new", label: "Nouvelles", color: C.accentBlue, orders: orders.filter(o => o.status === "new") },
+    { key: "cooking", label: "En cuisine", color: C.accentOrange, orders: orders.filter(o => o.status === "cooking") },
+    { key: "ready", label: "Prêtes ✓", color: C.accentGreen, orders: orders.filter(o => o.status === "ready") },
+  ];
+  const btnLabel = { new: "Accepter →", cooking: "Prête ✓", ready: "Servie ✓" };
+  const isMobile = useIsMobile();
+
+  return (
+    <div style={{ background: "#1a1a1a", minHeight: "100vh", display: "flex", flexDirection: "column", ...FF }}>
+      <style>{css}</style>
+      {/* Floating action buttons */}
+      <div style={{ position: "fixed", top: 16, right: 16, zIndex: 1000, display: "flex", gap: 8 }}>
+        <button onClick={onBack} style={{ padding: "8px 16px", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, color: "rgba(255,255,255,0.8)", fontSize: 13, cursor: "pointer", ...FF }}>← Autres rôles</button>
+        <button onClick={onSignup} style={{ padding: "8px 18px", background: C.accentGreen, border: "none", borderRadius: 10, color: C.white, fontSize: 13, fontWeight: 700, cursor: "pointer", ...FF }}>🚀 Créer mon compte gratuit</button>
+      </div>
+      {/* Header */}
+      <header style={{ background: C.dark, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <Logo size={16} dark={false} />
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Mode Démo — Vue Cuisine 👨‍🍳</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(52,199,89,0.2)", border: "1px solid rgba(52,199,89,0.3)", padding: "4px 10px", borderRadius: 20 }}>
+            <Dot color={C.accentGreen} pulse /><span style={{ color: C.accentGreen, fontSize: 11, fontWeight: 600 }}>DÉMO</span>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 24, fontWeight: 800, color: C.white, lineHeight: 1 }}>{clock.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+        </div>
+      </header>
+      {/* Kanban */}
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, padding: 12, overflow: "auto" }}>
+        {COLS.map(col => (
+          <div key={col.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.white, borderRadius: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{col.label}</span>
+              </div>
+              <span style={{ background: col.color + "18", color: col.color, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20 }}>{col.orders.length}</span>
+            </div>
+            {col.orders.length === 0 && <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: 28, textAlign: "center", color: C.textTertiary, fontSize: 13 }}>Aucune commande</div>}
+            {col.orders.map(order => {
+              const isLate = order.elapsed >= 20 && order.status !== "ready";
+              return (
+                <div key={order.id} style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
+                      <div>
+                        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
+                        <p style={{ fontSize: 13, color: C.white, fontWeight: 700 }}>{order.customerName || order.id.slice(0,6)}</p>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ fontSize: 22, fontWeight: 800, color: C.white, lineHeight: 1 }}>{order.elapsed}<span style={{ fontSize: 12, opacity: 0.6 }}>min</span></p>
+                      {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
+                    </div>
+                  </div>
+                  <div style={{ padding: "12px 16px" }}>
+                    {order.items.map(item => (
+                      <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6, marginBottom: 6, borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 16 }}>{item.emoji}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: C.dark, fontWeight: 600 }}>{item.name}</span>
+                        <span style={{ fontSize: 12, color: C.textSecondary }}>×{item.qty}</span>
+                      </div>
+                    ))}
+                    {order.note && <p style={{ fontSize: 11, color: C.textSecondary, fontStyle: "italic", marginTop: 4 }}>📝 {order.note}</p>}
+                    <button onClick={() => advance(order.id)} style={{ width: "100%", marginTop: 12, padding: "9px 0", background: order.status === "ready" ? C.accentGreen : order.status === "cooking" ? C.accentOrange : C.accentBlue, border: "none", borderRadius: 10, color: C.white, fontSize: 13, fontWeight: 700, cursor: "pointer", ...FF }}>
+                      {btnLabel[order.status]}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <OnboardingBar demoMode="kitchen" />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEMO CUSTOMER PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function DemoCustomerPage({ onBack, onSignup }) {
+  const [cart, setCart] = useState({});
+  const [ordered, setOrdered] = useState(false);
+  const isMobile = useIsMobile();
+
+  const categories = [...new Set(DEMO_MENU.map(i => i.category))];
+  const total = Object.entries(cart).reduce((s, [id, qty]) => {
+    const item = DEMO_MENU.find(i => i.id === id);
+    return s + (item ? item.price * qty : 0);
+  }, 0);
+  const cartCount = Object.values(cart).reduce((s, q) => s + q, 0);
+
+  function add(id) { setCart(p => ({ ...p, [id]: (p[id] || 0) + 1 })); }
+  function remove(id) { setCart(p => { const n = { ...p }; if (n[id] > 1) n[id]--; else delete n[id]; return n; }); }
+
+  if (ordered) return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", ...FF, flexDirection: "column", gap: 16, padding: 24 }}>
+      <style>{css}</style>
+      <div style={{ fontSize: 64 }}>✅</div>
+      <h2 style={{ fontSize: 24, fontWeight: 800, color: C.dark, textAlign: "center" }}>Commande envoyée !</h2>
+      <p style={{ color: C.textSecondary, fontSize: 15, textAlign: "center" }}>La cuisine a bien reçu votre commande pour la Table 5.</p>
+      <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+        <button onClick={() => { setCart({}); setOrdered(false); }} style={{ padding: "10px 20px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, fontSize: 14, cursor: "pointer", ...FF }}>Commander autre chose</button>
+        <button onClick={onSignup} style={{ padding: "10px 20px", background: C.accentGreen, border: "none", borderRadius: 12, color: C.white, fontSize: 14, fontWeight: 700, cursor: "pointer", ...FF }}>🚀 Créer mon compte</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
+      <style>{css}</style>
+      {/* Floating buttons */}
+      <div style={{ position: "fixed", top: 16, right: 16, zIndex: 1000, display: "flex", gap: 8 }}>
+        <button onClick={onBack} style={{ padding: "7px 14px", background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 10, color: C.dark, fontSize: 12, cursor: "pointer", ...FF }}>← Autres rôles</button>
+        <button onClick={onSignup} style={{ padding: "7px 14px", background: C.accentGreen, border: "none", borderRadius: 10, color: C.white, fontSize: 12, fontWeight: 700, cursor: "pointer", ...FF }}>🚀 Créer mon compte</button>
+      </div>
+      {/* Header */}
+      <div style={{ background: C.dark, padding: "20px 20px 16px", textAlign: "center" }}>
+        <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", marginBottom: 4 }}>MODE DÉMO · TABLE 5</p>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.white }}>{DEMO_RESTAURANT.emoji} {DEMO_RESTAURANT.name}</h1>
+        <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginTop: 4 }}>{DEMO_RESTAURANT.address}</p>
+      </div>
+      {/* Menu */}
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "20px 16px 120px" }}>
+        {categories.map(cat => (
+          <div key={cat} style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 700, color: C.textSecondary, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>{cat}</h2>
+            {DEMO_MENU.filter(i => i.category === cat).map(item => (
+              <div key={item.id} style={{ background: C.white, borderRadius: 14, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>{item.emoji}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 700, color: C.dark, fontSize: 14 }}>{item.name}</p>
+                  <p style={{ color: C.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 1.3 }}>{item.description}</p>
+                  <p style={{ color: C.dark, fontWeight: 700, fontSize: 14, marginTop: 4 }}>{item.price.toFixed(2)} €</p>
+                </div>
+                {cart[item.id] ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => remove(item.id)} style={{ width: 30, height: 30, borderRadius: "50%", background: C.bg, border: `1px solid ${C.border}`, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>−</button>
+                    <span style={{ fontWeight: 700, fontSize: 15, minWidth: 18, textAlign: "center" }}>{cart[item.id]}</span>
+                    <button onClick={() => add(item.id)} style={{ width: 30, height: 30, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", fontSize: 16, color: C.white, display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>+</button>
+                  </div>
+                ) : (
+                  <button onClick={() => add(item.id)} style={{ width: 34, height: 34, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", fontSize: 18, color: C.white, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, ...FF }}>+</button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Cart bar */}
+      {cartCount > 0 && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: "12px 16px 20px", background: C.white, borderTop: `1px solid ${C.border}`, boxShadow: "0 -4px 24px rgba(0,0,0,0.08)" }}>
+          <button onClick={() => setOrdered(true)} style={{ width: "100%", maxWidth: 480, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: C.dark, border: "none", borderRadius: 14, color: C.white, cursor: "pointer", ...FF }}>
+            <span style={{ background: "rgba(255,255,255,0.2)", borderRadius: 8, padding: "2px 10px", fontSize: 14, fontWeight: 700 }}>{cartCount}</span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>Commander</span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{total.toFixed(2)} €</span>
+          </button>
+        </div>
+      )}
+      <OnboardingBar demoMode="customer" />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AUTH PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function SignupPage({ onDone, onDemo }) {
+function SignupPage({ onDone, onDemo, onDemoPicker }) {
   const [mode, setMode] = useState("signup");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [accountType, setAccountType] = useState("solo");
@@ -704,8 +1044,11 @@ function SignupPage({ onDone, onDemo }) {
         </div>
         <div style={{ textAlign: "center", marginTop: 28 }}>
           <p style={{ color: C.textTertiary, fontSize: 13, marginBottom: 12 }}>Pas encore prêt à vous inscrire ?</p>
-          <button onClick={onDemo} style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 28px", fontSize: 15, fontWeight: 700, color: C.dark, cursor: "pointer", boxShadow: "0 2px 12px rgba(0,0,0,0.07)", ...FF }}>
-            🎯 Voir la démo interactive →
+          <button onClick={onDemoPicker || onDemo} style={{ background: C.accentBlue, border: "none", borderRadius: 14, padding: "14px 32px", fontSize: 16, fontWeight: 800, color: C.white, cursor: "pointer", boxShadow: `0 4px 20px ${C.accentBlue}40`, ...FF, display: "block", width: "100%", marginBottom: 10 }}>
+            🎮 Explorer la démo interactive →
+          </button>
+          <button onClick={onDemo} style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "10px 24px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
+            Accès rapide démo restaurant
           </button>
         </div>
       </div>
@@ -1327,6 +1670,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", ...FF }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
+      {demoBanner && <OnboardingBar demoMode="restaurant" />}
       {demoBanner && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg, #FF9F0A, #FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <span style={{ fontSize: 13 }}>🎯</span>
@@ -6291,7 +6635,15 @@ function Dashboard() {
   return (
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
-      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} />}
+      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} onDemoPicker={() => setPage("demo-picker")} />}
+      {page === "demo-picker" && <DemoPickerPage onBack={() => setPage("signup")} onSignup={() => setPage("signup")} onSelect={key => {
+        if (key === "restaurant") { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }
+        else if (key === "franchise") { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setPage("franchise"); }
+        else if (key === "kitchen") { setPage("demo-kitchen"); }
+        else if (key === "customer") { setPage("demo-customer"); }
+      }} />}
+      {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("demo-picker")} onSignup={() => setPage("signup")} />}
+      {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("demo-picker")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} onFranchise={() => setPage("franchise")} />}
       {page === "franchise" && user && <FranchiseDashboard user={user} group={franchiseGroup || (user.id === "demo" ? DEMO_GROUP : null)} onBack={() => setPage("restaurants")} onRestaurant={r => { setRestaurant(r); setPage("dashboard"); }} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
