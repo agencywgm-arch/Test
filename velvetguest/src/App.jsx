@@ -6276,7 +6276,13 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
   const [campGenLoading, setCampGenLoading] = useState(false);
   // Modals
   const [editResto, setEditResto] = useState(null);
-  const [editForm, setEditForm] = useState({ region: "", manager_email: "" });
+  const [editForm, setEditForm] = useState({ name: "", logo_emoji: "🍽️", region: "", manager_email: "" });
+  const [deleteResto, setDeleteResto] = useState(null);
+  const [deleteRestoInput, setDeleteRestoInput] = useState("");
+  const [deletingResto, setDeletingResto] = useState(false);
+  const [showCreateResto, setShowCreateResto] = useState(false);
+  const [createRestoForm, setCreateRestoForm] = useState({ name: "", logo_emoji: "🍽️", address: "", tables_count: 8 });
+  const [creatingResto, setCreatingResto] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", role: "manager" });
   const [inviting, setInviting] = useState(false);
@@ -6422,10 +6428,37 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
   async function saveEditResto() {
     if (!editResto) return;
     if (!isDemo) {
-      await supabase.from("restaurants").update({ region: editForm.region, manager_email: editForm.manager_email }).eq("id", editResto.id);
+      await supabase.from("restaurants").update({ name: editForm.name, logo_emoji: editForm.logo_emoji, region: editForm.region, manager_email: editForm.manager_email }).eq("id", editResto.id);
     }
     setRestaurants(prev => prev.map(r => r.id === editResto.id ? { ...r, ...editForm } : r));
     setEditResto(null);
+  }
+
+  async function confirmDeleteResto() {
+    if (!deleteResto) return;
+    if (deleteRestoInput.trim().toLowerCase() !== "supprimer") return;
+    setDeletingResto(true);
+    if (!isDemo) {
+      await supabase.from("restaurants").delete().eq("id", deleteResto.id);
+    }
+    setRestaurants(prev => prev.filter(r => r.id !== deleteResto.id));
+    setDeleteResto(null); setDeleteRestoInput(""); setDeletingResto(false);
+  }
+
+  async function createResto(e) {
+    e.preventDefault();
+    if (restaurants.length >= 5) return;
+    setCreatingResto(true);
+    if (!isDemo) {
+      const slug = createRestoForm.name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Math.random().toString(36).slice(2, 6);
+      const { data } = await supabase.from("restaurants").insert({ ...createRestoForm, owner_id: user.id, group_id: group.id, slug, tables_count: Number(createRestoForm.tables_count) }).select().single();
+      if (data) setRestaurants(prev => [...prev, data]);
+    } else {
+      setRestaurants(prev => [...prev, { id: `demo-new-${Date.now()}`, ...createRestoForm, region: "", manager_email: "" }]);
+    }
+    setShowCreateResto(false);
+    setCreateRestoForm({ name: "", logo_emoji: "🍽️", address: "", tables_count: 8 });
+    setCreatingResto(false);
   }
 
   function exportCSV() {
@@ -6795,8 +6828,14 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
           {tab === "establishments" && (
             <div className="fade-in">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Établissements</h2>
-                <Btn variant="primary" size="sm" onClick={() => setShowCreate && setShowCreate(true)}>+ Ajouter</Btn>
+                <div>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Établissements</h2>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{restaurants.length} / 5 établissements</p>
+                </div>
+                <Btn variant="primary" size="sm" onClick={() => restaurants.length < 5 ? setShowCreateResto(true) : null}
+                  style={{ opacity: restaurants.length >= 5 ? 0.4 : 1, cursor: restaurants.length >= 5 ? "not-allowed" : "pointer" }}>
+                  {restaurants.length >= 5 ? "🔒 Maximum atteint" : "+ Ajouter"}
+                </Btn>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                 {restaurants.map(r => {
@@ -6832,7 +6871,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
                         {onRestaurant && (
                           <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r, s)}>Gérer</Btn>
                         )}
-                        <Btn variant="ghost" size="sm" full onClick={() => { setEditResto(r); setEditForm({ region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
+                        <Btn variant="ghost" size="sm" onClick={() => { setEditResto(r); setEditForm({ name: r.name || "", logo_emoji: r.logo_emoji || "🍽️", region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
+                        <Btn variant="ghost" size="sm" onClick={() => { setDeleteResto(r); setDeleteRestoInput(""); }}
+                          style={{ color: C.accent, borderColor: C.accent + "40" }}>🗑</Btn>
                       </div>
                     </Surface>
                   );
@@ -7161,8 +7202,21 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
       {editResto && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
           onClick={e => { if (e.target === e.currentTarget) setEditResto(null); }}>
-          <Surface style={{ padding: 28, width: "100%", maxWidth: 400 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>Modifier {editResto.name}</h3>
+          <Surface style={{ padding: 28, width: "100%", maxWidth: 420 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 20 }}>✏️ Modifier l'établissement</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
+                <input value={editForm.logo_emoji} onChange={e => setEditForm(p => ({ ...p, logo_emoji: e.target.value }))}
+                  style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 22, textAlign: "center", outline: "none", ...FF }} />
+              </div>
+              <div>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Nom du restaurant</label>
+                <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+                  placeholder="Nom de l'établissement" autoFocus
+                  style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+              </div>
+            </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Région</label>
               <input value={editForm.region} onChange={e => setEditForm(p => ({ ...p, region: e.target.value }))}
@@ -7179,6 +7233,81 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome }) {
               <Btn variant="ghost" full onClick={() => setEditResto(null)}>Annuler</Btn>
               <Btn variant="primary" full onClick={saveEditResto}>Sauvegarder</Btn>
             </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Delete restaurant modal */}
+      {deleteResto && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) { setDeleteResto(null); setDeleteRestoInput(""); } }}>
+          <Surface style={{ padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <div style={{ fontSize: 44, marginBottom: 12 }}>⚠️</div>
+              <h2 style={{ fontSize: 19, fontWeight: 800, color: C.dark, marginBottom: 8 }}>Supprimer cet établissement ?</h2>
+              <p style={{ color: C.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
+                Vous allez supprimer <strong>{deleteResto.name}</strong>.<br />
+                Toutes les données seront <strong style={{ color: C.accent }}>définitivement perdues</strong>.
+              </p>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, marginBottom: 8 }}>Tapez <strong>supprimer</strong> pour confirmer</label>
+              <input value={deleteRestoInput} onChange={e => setDeleteRestoInput(e.target.value)}
+                placeholder="supprimer" autoFocus
+                style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", textAlign: "center", ...FF }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="ghost" full onClick={() => { setDeleteResto(null); setDeleteRestoInput(""); }}>Annuler</Btn>
+              <Btn full disabled={deleteRestoInput.trim().toLowerCase() !== "supprimer" || deletingResto}
+                onClick={confirmDeleteResto}
+                style={{ background: deleteRestoInput.trim().toLowerCase() === "supprimer" ? C.accent : C.border, color: "#fff", border: "none", borderRadius: 12, padding: "12px 0", fontWeight: 700, fontSize: 14, cursor: deleteRestoInput.trim().toLowerCase() === "supprimer" ? "pointer" : "not-allowed", ...FF }}>
+                {deletingResto ? "Suppression..." : "🗑 Supprimer définitivement"}
+              </Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Create restaurant modal */}
+      {showCreateResto && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCreateResto(false); }}>
+          <Surface style={{ padding: 28, width: "100%", maxWidth: 440 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>+ Nouvel établissement</h3>
+            <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>{restaurants.length} / 5 utilisés</p>
+            <form onSubmit={createResto}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: 10, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
+                  <input value={createRestoForm.logo_emoji} onChange={e => setCreateRestoForm(p => ({ ...p, logo_emoji: e.target.value }))}
+                    style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 22, textAlign: "center", outline: "none", ...FF }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Nom *</label>
+                  <input value={createRestoForm.name} onChange={e => setCreateRestoForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="Nom de l'établissement" required autoFocus
+                    style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Adresse</label>
+                <input value={createRestoForm.address} onChange={e => setCreateRestoForm(p => ({ ...p, address: e.target.value }))}
+                  placeholder="ex: 12 rue de la Paix, Paris"
+                  style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Nombre de tables</label>
+                <input value={createRestoForm.tables_count} onChange={e => setCreateRestoForm(p => ({ ...p, tables_count: e.target.value }))}
+                  type="number" min="1" max="100"
+                  style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn variant="ghost" full onClick={() => setShowCreateResto(false)} type="button">Annuler</Btn>
+                <Btn variant="primary" full type="submit" disabled={!createRestoForm.name || creatingResto}>
+                  {creatingResto ? "Création..." : "Créer l'établissement →"}
+                </Btn>
+              </div>
+            </form>
           </Surface>
         </div>
       )}
