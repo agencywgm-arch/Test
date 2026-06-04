@@ -668,6 +668,89 @@ function OnboardingBar({ demoMode }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LANDING PAGE PUBLIQUE
+// ─────────────────────────────────────────────────────────────────────────────
+const DEMO_PERSONAS = [
+  { key: "restaurant", icon: "🍽️", title: "Manager Restaurant", desc: "Gérez commandes, carte, caisse, stocks et CRM en temps réel.", tags: ["Commandes", "Caisse", "CRM"], color: "#007AFF" },
+  { key: "franchise",  icon: "🏢", title: "Franchiseur / Groupe", desc: "Pilotez un réseau de 5 restaurants avec analytics consolidés.", tags: ["Réseau", "Comparatif", "Campagnes"], color: "#34C759" },
+  { key: "kitchen",    icon: "👨‍🍳", title: "Chef Cuisine", desc: "Vue kanban des commandes en temps réel, avancement par statut.", tags: ["Kanban", "Temps réel", "Statuts"], color: "#FF9500" },
+  { key: "customer",   icon: "📱", title: "Client Restaurant", desc: "Scannez un QR code, commandez et payez depuis votre mobile.", tags: ["Menu QR", "Panier", "Paiement"], color: "#FF3B30" },
+];
+
+function LandingPage({ onDemo, onSignup, onLogin }) {
+  const isMobile = useIsMobile();
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
+      <style>{css}</style>
+
+      {/* Navbar */}
+      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "14px 20px" : "16px 48px", background: C.white, borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 100 }}>
+        <Logo size={18} />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button onClick={onLogin} style={{ padding: "8px 18px", background: "transparent", border: `1.5px solid ${C.borderStrong}`, borderRadius: 10, fontSize: 14, fontWeight: 600, color: C.text, cursor: "pointer", ...FF }}>Connexion</button>
+          <button onClick={onSignup} style={{ padding: "8px 18px", background: C.dark, border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600, color: C.white, cursor: "pointer", ...FF }}>Créer un compte</button>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <div style={{ textAlign: "center", padding: isMobile ? "48px 20px 32px" : "80px 48px 48px", maxWidth: 720, margin: "0 auto" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#007AFF15", borderRadius: 20, padding: "6px 14px", marginBottom: 20 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#007AFF" }}>🚀 SaaS de commande QR pour restaurants</span>
+        </div>
+        <h1 style={{ fontSize: isMobile ? 32 : 52, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 20 }}>
+          Gérez votre restaurant<br /><span style={{ color: "#007AFF" }}>intelligemment</span>
+        </h1>
+        <p style={{ fontSize: isMobile ? 16 : 18, color: C.textSecondary, marginBottom: 36, lineHeight: 1.6 }}>
+          Commandes QR, cuisine temps réel, caisse, CRM, campagnes email IA.<br />Pour les restaurants indépendants et les réseaux franchise.
+        </p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <button onClick={onSignup} style={{ padding: "14px 32px", background: C.dark, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, color: C.white, cursor: "pointer", ...FF }}>
+            Commencer gratuitement →
+          </button>
+          <button onClick={() => document.getElementById("demos-section").scrollIntoView({ behavior: "smooth" })} style={{ padding: "14px 28px", background: C.white, border: `1.5px solid ${C.borderStrong}`, borderRadius: 14, fontSize: 16, fontWeight: 700, color: C.dark, cursor: "pointer", ...FF }}>
+            🎮 Voir les démos
+          </button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: isMobile ? 16 : 32, marginTop: 24, flexWrap: "wrap" }}>
+          {["30 jours gratuits", "Sans carte bancaire", "Support 7j/7"].map(t => (
+            <span key={t} style={{ color: C.textTertiary, fontSize: 13 }}>✓ {t}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Section démos */}
+      <div id="demos-section" style={{ padding: isMobile ? "32px 16px 48px" : "48px 48px 80px", maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <h2 style={{ fontSize: isMobile ? 24 : 32, fontWeight: 800, color: C.dark, letterSpacing: "-0.02em", marginBottom: 10 }}>Explorez sans créer de compte</h2>
+          <p style={{ fontSize: 15, color: C.textSecondary }}>Choisissez votre rôle et découvrez l'interface en temps réel</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+          {DEMO_PERSONAS.map(p => (
+            <button key={p.key} onClick={() => onDemo(p.key)}
+              className="btn-press"
+              style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 20, padding: "24px", textAlign: "left", cursor: "pointer", transition: "all 0.2s", ...FF, display: "block" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 16, background: p.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{p.icon}</div>
+                <div>
+                  <p style={{ fontSize: 17, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{p.title}</p>
+                  <p style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5 }}>{p.desc}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {p.tags.map(t => (
+                  <span key={t} style={{ padding: "3px 10px", background: p.color + "15", borderRadius: 20, fontSize: 11, fontWeight: 600, color: p.color }}>{t}</span>
+                ))}
+                <span style={{ marginLeft: "auto", fontSize: 13, color: p.color, fontWeight: 700 }}>Explorer →</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DEMO PICKER PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 function DemoPickerPage({ onSelect, onBack, onSignup }) {
@@ -6605,11 +6688,11 @@ function Dashboard() {
         setUser({ id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email });
         setPage("restaurants");
       } else {
-        setPage("signup");
+        setPage("landing");
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) { setUser(null); setPage("signup"); }
+      if (!session) { setUser(null); setPage("landing"); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -6622,7 +6705,7 @@ function Dashboard() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    setUser(null); setRestaurant(null); setFranchiseGroup(null); setPage("signup");
+    setUser(null); setRestaurant(null); setFranchiseGroup(null); setPage("landing");
   }
 
   if (page === "loading") return (
@@ -6632,20 +6715,23 @@ function Dashboard() {
     </div>
   );
 
+  function startDemo(key) {
+    const demoUser = { id: "demo", name: "Démo", email: "demo@wegemo.com" };
+    if (key === "restaurant") { setUser(demoUser); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }
+    else if (key === "franchise") { setUser(demoUser); setFranchiseGroup(DEMO_GROUP); setPage("franchise"); }
+    else if (key === "kitchen") { setPage("demo-kitchen"); }
+    else if (key === "customer") { setPage("demo-customer"); }
+  }
+
   return (
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
-      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} onDemoPicker={() => setPage("demo-picker")} />}
-      {page === "demo-picker" && <DemoPickerPage onBack={() => setPage("signup")} onSignup={() => setPage("signup")} onSelect={key => {
-        if (key === "restaurant") { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }
-        else if (key === "franchise") { setUser({ id: "demo", name: "Démo", email: "demo@wegemo.com" }); setPage("franchise"); }
-        else if (key === "kitchen") { setPage("demo-kitchen"); }
-        else if (key === "customer") { setPage("demo-customer"); }
-      }} />}
-      {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("demo-picker")} onSignup={() => setPage("signup")} />}
-      {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("demo-picker")} onSignup={() => setPage("signup")} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => { setRestaurant(DEMO_RESTAURANT); setPage("dashboard"); }} onFranchise={() => setPage("franchise")} />}
-      {page === "franchise" && user && <FranchiseDashboard user={user} group={franchiseGroup || (user.id === "demo" ? DEMO_GROUP : null)} onBack={() => setPage("restaurants")} onRestaurant={r => { setRestaurant(r); setPage("dashboard"); }} />}
+      {page === "landing" && <LandingPage onDemo={startDemo} onSignup={() => setPage("signup")} onLogin={() => setPage("signup")} />}
+      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
+      {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
+      {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} />}
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => user ? setPage("restaurants") : setPage("landing")} onRestaurant={r => { setRestaurant(r); setPage("dashboard"); }} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => setPage("restaurants")} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
