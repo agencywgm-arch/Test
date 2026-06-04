@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { updateEvenementStatut } from "@/lib/actions";
+import { AgentConfigPanel } from "@/components/AgentConfigPanel";
 
 const STATUT_COLOR: Record<string, string> = {
   PLANIFIE: "#7c3aed", CONFIRME: "#10b981", TERMINE: "#71717a", ANNULE: "#ef4444"
@@ -187,6 +187,118 @@ export default async function Evenements() {
             Aucun événement créé. Les événements se créent via les workflows n8n ou manuellement.
           </div>
         )}
+
+        {/* ── Configuration des Agents ── */}
+        <section style={{ marginTop: 48 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+            <h2 style={{
+              color: "#a1a1aa", fontSize: 13, fontWeight: 600,
+              letterSpacing: "0.08em", textTransform: "uppercase", margin: 0,
+            }}>
+              Configuration des agents IA
+            </h2>
+            <span style={{
+              padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+              background: "rgba(124,58,237,0.15)", color: "#a78bfa",
+            }}>n8n · Automatisation</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            <AgentConfigPanel
+              agentId="agent-dm"
+              agentName="Agent 2 — Invitations Instagram DM"
+              agentDescription="Envoie automatiquement les invitations aux participantes acceptées via ManyChat"
+              icon="📩"
+              color="#db2777"
+              fields={[
+                {
+                  key: "manychat_token",
+                  label: "Token ManyChat API",
+                  type: "text",
+                  placeholder: "mc-XXXXXXXXXXXXXXXXXXXX",
+                  secret: true,
+                  hint: "Récupérer dans ManyChat → Settings → API",
+                },
+                {
+                  key: "message_template",
+                  label: "Message d'invitation",
+                  type: "textarea",
+                  defaultValue: "🎉 Bonsoir {{prenom}} ! Tu es sélectionnée pour notre prochain événement : {{nom_event}} le {{date}} à {{lieu}}. Dress code : {{dress_code}}. Confirme ta présence en répondant OUI 🙌",
+                  hint: "Variables : {{prenom}}, {{nom_event}}, {{date}}, {{lieu}}, {{dress_code}}",
+                },
+                {
+                  key: "delai_envoi",
+                  label: "Délai avant l'événement (heures)",
+                  type: "number",
+                  defaultValue: "48",
+                  hint: "Heures avant J pour envoyer le rappel",
+                },
+                {
+                  key: "auto_relance",
+                  label: "Relance automatique si pas de réponse",
+                  type: "select",
+                  defaultValue: "24h",
+                  options: [
+                    { label: "Pas de relance", value: "none" },
+                    { label: "Après 12h", value: "12h" },
+                    { label: "Après 24h", value: "24h" },
+                    { label: "Après 48h", value: "48h" },
+                  ],
+                },
+                {
+                  key: "webhook_url",
+                  label: "Webhook n8n (réception réponses)",
+                  type: "text",
+                  defaultValue: "https://ton-n8n.railway.app/webhook/dm-response",
+                  placeholder: "https://...",
+                },
+              ]}
+            />
+
+            <AgentConfigPanel
+              agentId="agent-event-notif"
+              agentName="Agent 2b — Rappels automatiques"
+              agentDescription="Envoie un rappel Instagram 24h avant chaque événement aux participantes confirmées"
+              icon="🔔"
+              color="#f59e0b"
+              fields={[
+                {
+                  key: "rappel_message",
+                  label: "Message de rappel",
+                  type: "textarea",
+                  defaultValue: "⏰ Rappel {{prenom}} ! C'est demain soir 🎉 {{nom_event}} — {{lieu}} à {{heure_debut}}. Dress code rappel : {{dress_code}}. On a hâte de te voir !",
+                  hint: "Variables : {{prenom}}, {{nom_event}}, {{lieu}}, {{heure_debut}}, {{dress_code}}",
+                },
+                {
+                  key: "delai_rappel",
+                  label: "Délai de rappel",
+                  type: "select",
+                  defaultValue: "24h",
+                  options: [
+                    { label: "2h avant", value: "2h" },
+                    { label: "6h avant", value: "6h" },
+                    { label: "24h avant", value: "24h" },
+                    { label: "48h avant", value: "48h" },
+                  ],
+                },
+                {
+                  key: "canal",
+                  label: "Canal d'envoi",
+                  type: "select",
+                  defaultValue: "instagram",
+                  options: [
+                    { label: "Instagram DM (ManyChat)", value: "instagram" },
+                    { label: "WhatsApp", value: "whatsapp" },
+                    { label: "Les deux", value: "both" },
+                  ],
+                },
+              ]}
+            />
+
+          </div>
+        </section>
+
       </main>
     </div>
   );

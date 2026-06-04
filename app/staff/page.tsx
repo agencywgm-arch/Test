@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { ContactButton, GroupMessageButton } from "@/components/StaffActions";
+import { AgentConfigPanel } from "@/components/AgentConfigPanel";
 
 const ROLE_COLOR: Record<string, string> = {
   Coordinateur: "#7c3aed",
@@ -263,6 +264,117 @@ export default async function Staff() {
             Aucun membre staff. Ils sont ajoutés manuellement ou via les workflows n8n.
           </div>
         )}
+
+        {/* ── Configuration des Agents ── */}
+        <section style={{ marginTop: 48 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+            <h2 style={{
+              color: "#a1a1aa", fontSize: 13, fontWeight: 600,
+              letterSpacing: "0.08em", textTransform: "uppercase", margin: 0,
+            }}>
+              Configuration des agents IA
+            </h2>
+            <span style={{
+              padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+              background: "rgba(16,185,129,0.15)", color: "#10b981",
+            }}>Telegram · n8n</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            <AgentConfigPanel
+              agentId="agent-staff-telegram"
+              agentName="Agent 3 — Bot Telegram Staff"
+              agentDescription="Envoie les convocations, recueille les confirmations et alerte le promoteur en temps réel"
+              icon="🤖"
+              color="#10b981"
+              fields={[
+                {
+                  key: "telegram_bot_token",
+                  label: "Token Bot Telegram",
+                  type: "text",
+                  placeholder: "123456789:AAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                  secret: true,
+                  hint: "Récupérer via @BotFather sur Telegram",
+                },
+                {
+                  key: "promoteur_chat_id",
+                  label: "Ton Chat ID Telegram (promoteur)",
+                  type: "text",
+                  placeholder: "123456789",
+                  hint: "Récupérer via @userinfobot",
+                },
+                {
+                  key: "convocation_message",
+                  label: "Message de convocation",
+                  type: "textarea",
+                  defaultValue: "🎯 Bonjour {{prenom}} ! Tu es convoqué(e) pour : {{nom_event}}\n📅 {{date}} · {{heure_debut}} → {{heure_fin}}\n📍 {{lieu}}\n\nConfirme ta présence :\n✅ OUI je suis là\n❌ NON je ne peux pas",
+                  hint: "Variables : {{prenom}}, {{nom_event}}, {{date}}, {{lieu}}, {{heure_debut}}, {{heure_fin}}",
+                },
+                {
+                  key: "delai_confirmation",
+                  label: "Délai max pour confirmer",
+                  type: "select",
+                  defaultValue: "48h",
+                  options: [
+                    { label: "12 heures", value: "12h" },
+                    { label: "24 heures", value: "24h" },
+                    { label: "48 heures", value: "48h" },
+                    { label: "72 heures", value: "72h" },
+                  ],
+                },
+                {
+                  key: "alerte_non_reponse",
+                  label: "Alerte si pas de réponse",
+                  type: "select",
+                  defaultValue: "yes",
+                  options: [
+                    { label: "Oui — m'alerter sur Telegram", value: "yes" },
+                    { label: "Non", value: "no" },
+                  ],
+                },
+                {
+                  key: "webhook_url",
+                  label: "Webhook n8n (réception confirmations)",
+                  type: "text",
+                  defaultValue: "https://ton-n8n.railway.app/webhook/staff-confirm",
+                  placeholder: "https://...",
+                },
+              ]}
+            />
+
+            <AgentConfigPanel
+              agentId="agent-staff-planning"
+              agentName="Agent 3b — Planning automatique"
+              agentDescription="Génère et envoie le planning détaillé à chaque membre confirmé 24h avant l'événement"
+              icon="📋"
+              color="#7c3aed"
+              fields={[
+                {
+                  key: "planning_message",
+                  label: "Template du planning",
+                  type: "textarea",
+                  defaultValue: "📋 Planning de ce soir — {{nom_event}}\n\n⏰ Arrivée : {{heure_debut}} (30min avant l'ouverture)\n📍 Adresse : {{adresse}}\n👔 Dress code : {{dress_code}}\n\nTon rôle : {{role}}\n\nContact sur place : Alex Martin (@alex_coord)\n\nBonne soirée ! 🎉",
+                  hint: "Variables : {{nom_event}}, {{heure_debut}}, {{adresse}}, {{dress_code}}, {{role}}",
+                },
+                {
+                  key: "envoi_delai",
+                  label: "Envoi du planning",
+                  type: "select",
+                  defaultValue: "24h",
+                  options: [
+                    { label: "Le matin J (8h00)", value: "morning" },
+                    { label: "6h avant", value: "6h" },
+                    { label: "24h avant", value: "24h" },
+                    { label: "Manuel uniquement", value: "manual" },
+                  ],
+                },
+              ]}
+            />
+
+          </div>
+        </section>
+
       </main>
     </div>
   );
