@@ -1134,8 +1134,10 @@ function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
             <span key={t} style={{ color: C.textTertiary, fontSize: 12 }}>✓ {t}</span>
           ))}
         </div>
-        <div style={{ textAlign: "center", marginTop: 20 }}>
-          <button onClick={onDemoPicker} style={{ background: "transparent", border: "none", color: C.textTertiary, fontSize: 13, cursor: "pointer", textDecoration: "underline", ...FF }}>
+        <div style={{ textAlign: "center", marginTop: 24 }}>
+          <button onClick={onDemoPicker} style={{ background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 12, color: C.dark, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "10px 24px", display: "inline-flex", alignItems: "center", gap: 6, transition: "all 0.15s", ...FF }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.surface; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.bg; }}>
             ← Retour à l'accueil
           </button>
         </div>
