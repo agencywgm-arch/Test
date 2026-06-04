@@ -332,6 +332,12 @@ function useStore(restaurantId) {
     setTimeout(() => setNotifications(p => p.filter(x => x.id !== n.id)), 5000);
   }, []);
 
+  // Add to bell history only — no toast shown
+  const silentNotif = useCallback((msg, type = "info") => {
+    const n = { id: Date.now(), msg, type, ts: new Date() };
+    setNotifHistory(p => [n, ...p.slice(0, 49)]);
+  }, []);
+
   // Launch a campaign: creates a promo + increments send_count live
   const launchCampaign = useCallback(async (campaignData, isDemo) => {
     const newPromo = {
@@ -448,7 +454,7 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, silentNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1551,7 +1557,7 @@ function AlertBubbles({ store, restaurant }) {
 
   function dismissAlert(id) {
     const alert = allAlerts.find(a => a.id === id);
-    if (alert) store.pushNotif(`${alert.icon} ${alert.label} — ${alert.text}`, alert.type === "campaign" ? "info" : "warning");
+    if (alert) store.silentNotif(`${alert.icon} ${alert.label} — ${alert.text}`, alert.type === "campaign" ? "info" : "warning");
     setDismissed(prev => new Set([...prev, id]));
   }
 
