@@ -169,13 +169,8 @@ export default async function Staff() {
                   {/* Contacts */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {membre.whatsapp && (
-                      <div style={{ color: "#71717a", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ color: "#25d366", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
                         <span>📱</span> {membre.whatsapp}
-                      </div>
-                    )}
-                    {membre.telegramId && (
-                      <div style={{ color: "#71717a", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                        <span>✈️</span> {membre.telegramId}
                       </div>
                     )}
                     {membre.email && (
@@ -242,7 +237,6 @@ export default async function Staff() {
                     prenom: membre.prenom,
                     nom: membre.nom,
                     whatsapp: membre.whatsapp,
-                    telegramId: membre.telegramId,
                   }} />
                 </div>
               );
@@ -255,7 +249,6 @@ export default async function Staff() {
             prenom: s.prenom,
             nom: s.nom,
             whatsapp: s.whatsapp,
-            telegramId: s.telegramId,
           }))} />
         </section>
 
@@ -277,38 +270,45 @@ export default async function Staff() {
             <span style={{
               padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
               background: "rgba(16,185,129,0.15)", color: "#10b981",
-            }}>Telegram · n8n</span>
+            }}>WhatsApp · n8n</span>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
             <AgentConfigPanel
-              agentId="agent-staff-telegram"
-              agentName="Agent 3 — Bot Telegram Staff"
-              agentDescription="Envoie les convocations, recueille les confirmations et alerte le promoteur en temps réel"
-              icon="🤖"
-              color="#10b981"
+              agentId="agent-staff-whatsapp"
+              agentName="Agent 3 — Convocations WhatsApp Staff"
+              agentDescription="Envoie les convocations via WhatsApp Business, recueille les confirmations et alerte le promoteur"
+              icon="📲"
+              color="#25d366"
               fields={[
                 {
-                  key: "telegram_bot_token",
-                  label: "Token Bot Telegram",
+                  key: "wa_business_token",
+                  label: "Token WhatsApp Business API",
                   type: "text",
-                  placeholder: "123456789:AAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                  placeholder: "EAAxxxxxxxxxxxxxxxxxxxxxxxxx",
                   secret: true,
-                  hint: "Récupérer via @BotFather sur Telegram",
+                  hint: "Meta Business → WhatsApp → API Access",
                 },
                 {
-                  key: "promoteur_chat_id",
-                  label: "Ton Chat ID Telegram (promoteur)",
+                  key: "wa_phone_number_id",
+                  label: "Phone Number ID (expéditeur)",
                   type: "text",
-                  placeholder: "123456789",
-                  hint: "Récupérer via @userinfobot",
+                  placeholder: "123456789012345",
+                  hint: "WhatsApp Business Manager → numéro de téléphone",
+                },
+                {
+                  key: "promoteur_whatsapp",
+                  label: "Ton numéro WhatsApp (alertes)",
+                  type: "text",
+                  placeholder: "+33612345678",
+                  hint: "Format international — tu recevras les confirmations ici",
                 },
                 {
                   key: "convocation_message",
                   label: "Message de convocation",
                   type: "textarea",
-                  defaultValue: "🎯 Bonjour {{prenom}} ! Tu es convoqué(e) pour : {{nom_event}}\n📅 {{date}} · {{heure_debut}} → {{heure_fin}}\n📍 {{lieu}}\n\nConfirme ta présence :\n✅ OUI je suis là\n❌ NON je ne peux pas",
+                  defaultValue: "🎯 Bonjour {{prenom}} ! Tu es convoqué(e) pour : {{nom_event}}\n📅 {{date}} · {{heure_debut}} → {{heure_fin}}\n📍 {{lieu}}\n\nConfirme ta présence en répondant :\n✅ OUI\n❌ NON",
                   hint: "Variables : {{prenom}}, {{nom_event}}, {{date}}, {{lieu}}, {{heure_debut}}, {{heure_fin}}",
                 },
                 {
@@ -329,7 +329,7 @@ export default async function Staff() {
                   type: "select",
                   defaultValue: "yes",
                   options: [
-                    { label: "Oui — m'alerter sur Telegram", value: "yes" },
+                    { label: "Oui — m'alerter par WhatsApp", value: "yes" },
                     { label: "Non", value: "no" },
                   ],
                 },
@@ -337,7 +337,7 @@ export default async function Staff() {
                   key: "webhook_url",
                   label: "Webhook n8n (réception confirmations)",
                   type: "text",
-                  defaultValue: "https://ton-n8n.railway.app/webhook/staff-confirm",
+                  defaultValue: "https://ton-n8n.railway.app/webhook/staff-whatsapp",
                   placeholder: "https://...",
                 },
               ]}

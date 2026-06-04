@@ -146,14 +146,14 @@ async function main() {
 
   // ── Staff ──────────────────────────────────────────────────────
   const staffList = [
-    { id: "st-1", prenom: "Alex", nom: "Martin", role: "Coordinateur", fiabilite: 5, telegramId: "@alex_coord", whatsapp: "+33612345678" },
-    { id: "st-2", prenom: "Sara", nom: "Dupont", role: "Hôtesse", fiabilite: 4, telegramId: "@sara_hotesse", whatsapp: "+33623456789" },
-    { id: "st-3", prenom: "Romain", nom: "Bernard", role: "Sécurité", fiabilite: 5, telegramId: "@romain_secu", whatsapp: "+33634567890" },
-    { id: "st-4", prenom: "Nina", nom: "Leroy", role: "Hôtesse", fiabilite: 3, telegramId: null, whatsapp: "+33645678901" },
-    { id: "st-5", prenom: "Karim", nom: "Benali", role: "DJ", fiabilite: 5, telegramId: "@djkarim", whatsapp: "+33656789012" },
-    { id: "st-6", prenom: "Lucas", nom: "Moreau", role: "Photographe", fiabilite: 4, telegramId: "@lucas_photo", whatsapp: "+33667890123" },
-    { id: "st-7", prenom: "Jade", nom: "Petit", role: "Hôtesse", fiabilite: 4, telegramId: "@jade_hostess", whatsapp: "+33678901234" },
-    { id: "st-8", prenom: "Thomas", nom: "Girard", role: "Manager", fiabilite: 5, telegramId: "@thomas_mgr", whatsapp: "+33689012345" },
+    { id: "st-1", prenom: "Alex", nom: "Martin", role: "Coordinateur", fiabilite: 5, whatsapp: "+33612345678" },
+    { id: "st-2", prenom: "Sara", nom: "Dupont", role: "Hôtesse", fiabilite: 4, whatsapp: "+33623456789" },
+    { id: "st-3", prenom: "Romain", nom: "Bernard", role: "Sécurité", fiabilite: 5, whatsapp: "+33634567890" },
+    { id: "st-4", prenom: "Nina", nom: "Leroy", role: "Hôtesse", fiabilite: 3, whatsapp: "+33645678901" },
+    { id: "st-5", prenom: "Karim", nom: "Benali", role: "DJ", fiabilite: 5, whatsapp: "+33656789012" },
+    { id: "st-6", prenom: "Lucas", nom: "Moreau", role: "Photographe", fiabilite: 4, whatsapp: "+33667890123" },
+    { id: "st-7", prenom: "Jade", nom: "Petit", role: "Hôtesse", fiabilite: 4, whatsapp: "+33678901234" },
+    { id: "st-8", prenom: "Thomas", nom: "Girard", role: "Manager", fiabilite: 5, whatsapp: "+33689012345" },
   ];
 
   const staffMap: Record<string, { id: string }> = {};
@@ -167,7 +167,6 @@ async function main() {
         nom: s.nom,
         role: s.role,
         fiabilite: s.fiabilite,
-        telegramId: s.telegramId ?? null,
         whatsapp: s.whatsapp,
         email: `${s.prenom.toLowerCase()}@demo.com`,
       },

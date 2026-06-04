@@ -51,7 +51,6 @@ model Staff {
   id         String           @id @default(cuid())
   prenom     String
   nom        String
-  telegramId String?
   whatsapp   String?
   email      String?
   role       String
