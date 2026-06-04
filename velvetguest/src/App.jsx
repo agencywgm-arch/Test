@@ -1030,8 +1030,8 @@ function DemoCustomerPage({ onBack, onSignup }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function SignupPage({ onDone, onDemo, onDemoPicker }) {
-  const [mode, setMode] = useState("signup");
+function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
+  const [mode, setMode] = useState(initialMode);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [accountType, setAccountType] = useState("solo");
   const [groupName, setGroupName] = useState("");
@@ -1200,8 +1200,16 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   async function createFranchiseGroup() {
     setCreatingFranchise(true);
     setFranchiseError("");
-    // Check if group already exists (maybe RLS was the issue before)
-    const { data: existing } = await supabase.from("franchise_groups").select("*").eq("owner_id", user.id).single();
+    // Check localStorage cache first
+    try {
+      const cached = localStorage.getItem(`vg_fg_${user.id}`);
+      if (cached) {
+        const grp = JSON.parse(cached);
+        if (grp?.id) { setCreatingFranchise(false); if (onFranchiseCreated) onFranchiseCreated(grp); return; }
+      }
+    } catch {}
+    // Check if group already exists in Supabase
+    const { data: existing } = await supabase.from("franchise_groups").select("*").eq("owner_id", user.id).maybeSingle();
     if (existing) {
       setCreatingFranchise(false);
       if (onFranchiseCreated) onFranchiseCreated(existing);
@@ -6380,6 +6388,8 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   const [savingGroup, setSavingGroup] = useState(false);
   // Analytics expand
   const [expandChart, setExpandChart] = useState(null);
+  // AI alert explanation
+  const [alertExplain, setAlertExplain] = useState(null); // { restaurant, stat }
 
   useEffect(() => {
     if (!group) return;
@@ -6584,6 +6594,24 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   async function removeStaff(id) {
     if (!isDemo) await supabase.from("restaurant_staff").delete().eq("id", id);
     setStaffList(p => p.filter(s => s.id !== id));
+  }
+
+  function generateAlertExplanation(r, s) {
+    const lines = [];
+    const drop = Math.abs(s.growth);
+    lines.push(`**${r.logo_emoji} ${r.name}** affiche une baisse de **${drop}%** du chiffre d'affaires sur 7 jours.`);
+    lines.push("");
+    if (s.avg_basket < 12) lines.push(`🔸 **Panier moyen bas (${s.avg_basket.toFixed(2)} €)** : les clients commandent peu ou optent pour les articles les moins chers. Envisagez des offres combinées ou des suggestions de compléments.`);
+    if (s.orders_7j < 20) lines.push(`🔸 **Volume de commandes faible (${s.orders_7j} cmds / 7j)** : le trafic entrant est insuffisant. Une campagne de relance ciblée ou une promotion de lancement de semaine pourrait aider.`);
+    if (drop > 20) lines.push(`🔸 **Baisse sévère (>${drop}%)** : une chute aussi marquée suggère un événement ponctuel — fermeture imprévue, problème de qualité signalé, ou forte concurrence locale. Vérifiez les avis clients récents.`);
+    if (drop > 10 && drop <= 20) lines.push(`🔸 **Baisse modérée** : tendance qui s'installe sur la semaine. Comparez les plages horaires : la baisse est-elle concentrée le soir ou le midi ?`);
+    if (s.avg_basket >= 15 && s.orders_7j < 30) lines.push(`🔸 **Panier solide mais trafic en berne** : vos clients habituels restent fidèles mais vous perdez de nouveaux visiteurs. Activez une campagne d'acquisition (QR codes, réseaux sociaux).`);
+    lines.push("");
+    lines.push("**Recommandations immédiates :**");
+    lines.push("1. Lancer une campagne SMS/email ciblée sur ce restaurant (onglet Campagnes)");
+    lines.push("2. Vérifier le temps de préparation moyen — un ralentissement cuisine impacte la satisfaction");
+    lines.push("3. Analyser les avis des 7 derniers jours pour détecter un problème récurrent");
+    return lines.join("\n");
   }
 
   function exportCSV() {
@@ -6791,17 +6819,43 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
               {/* Alerts */}
               {alerts.length > 0 && (
                 <Surface style={{ padding: "20px 24px", border: `1.5px solid ${C.accent}20` }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 12 }}>🔴 Alertes performance</h3>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔴 Alertes performance</h3>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Cliquez sur une alerte pour obtenir une analyse IA</p>
                   {alerts.map(a => {
                     const r = restaurants.find(x => x.id === a.restaurant_id);
+                    const s = getStat(a.restaurant_id);
+                    const isOpen = alertExplain?.restaurant?.id === a.restaurant_id;
                     return r ? (
-                      <div key={a.restaurant_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                        <span style={{ fontSize: 18 }}>{r.logo_emoji}</span>
-                        <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</span>
-                          <span style={{ color: C.textSecondary, fontSize: 13 }}> — région {r.region || "N/A"}</span>
+                      <div key={a.restaurant_id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <div onClick={() => setAlertExplain(isOpen ? null : { restaurant: r, stat: s })}
+                          style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer", transition: "opacity 0.15s" }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+                          onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+                          <span style={{ fontSize: 18 }}>{r.logo_emoji}</span>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</span>
+                            <span style={{ color: C.textSecondary, fontSize: 13 }}> — région {r.region || "N/A"}</span>
+                          </div>
+                          <Tag color={C.accent}>⬇ {Math.abs(a.growth)}% de baisse</Tag>
+                          <span style={{ fontSize: 13, color: C.textTertiary }}>{isOpen ? "▲" : "▼"}</span>
                         </div>
-                        <Tag color={C.accent}>⬇ {Math.abs(a.growth)}% de baisse</Tag>
+                        {isOpen && (
+                          <div style={{ background: C.bg, borderRadius: 12, padding: "16px 18px", marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                              <span style={{ fontSize: 18 }}>🤖</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>Analyse IA</span>
+                            </div>
+                            {generateAlertExplanation(r, s).split("\n").map((line, i) => {
+                              if (!line.trim()) return <div key={i} style={{ height: 8 }} />;
+                              const bold = line.replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`);
+                              return <p key={i} dangerouslySetInnerHTML={{ __html: bold }} style={{ fontSize: 13, color: C.text, lineHeight: 1.6, margin: "2px 0" }} />;
+                            })}
+                            <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                              <Btn variant="primary" size="sm" onClick={() => { setAlertExplain(null); setTab("campaigns"); }}>📧 Lancer une campagne</Btn>
+                              <Btn variant="ghost" size="sm" onClick={() => onRestaurant && onRestaurant(r, s)}>📊 Voir le dashboard</Btn>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : null;
                   })}
@@ -7571,6 +7625,7 @@ export default function App() {
 
 function Dashboard() {
   const [page, setPage] = useState("loading");
+  const [authInitialMode, setAuthInitialMode] = useState("signup");
   const [user, setUser] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
   const [franchiseGroup, setFranchiseGroup] = useState(null);
@@ -7669,8 +7724,8 @@ function Dashboard() {
   return (
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
-      {page === "landing" && <LandingPage onDemo={startDemo} onSignup={() => setPage("signup")} onLogin={() => setPage("signup")} />}
-      {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(data)); setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
+      {page === "landing" && <LandingPage onDemo={startDemo} onSignup={() => { setAuthInitialMode("signup"); setPage("signup"); }} onLogin={() => { setAuthInitialMode("login"); setPage("signup"); }} />}
+      {page === "signup" && <SignupPage initialMode={authInitialMode} onDone={async (u, grp) => { setUser(u); if (grp) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).maybeSingle(); if (data) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(data)); setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
