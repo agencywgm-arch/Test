@@ -1187,14 +1187,13 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   }
 
   useEffect(() => {
-    if (franchiseGroup) { onFranchise(); return; }
     supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
       .then(({ data }) => {
         const list = data ?? [];
         setRestaurants(list);
         setLoadingList(false);
       });
-  }, [user.id, franchiseGroup]);
+  }, [user.id]);
 
   const [franchiseError, setFranchiseError] = useState("");
 
@@ -7520,7 +7519,7 @@ function Dashboard() {
       {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(data)); setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
       {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : setPage("restaurants")} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
