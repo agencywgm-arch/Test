@@ -6641,15 +6641,13 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                 <div style={{ fontSize: 11, color: C.textTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
               </div>
             </div>
-            {restaurants.length > 0 && onRestaurant && (
-              <button onClick={() => onRestaurant(restaurants[0], getStat(restaurants[0].id))}
-                style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, ...FF }}>
-                <span>{restaurants[0].logo_emoji || "🍽️"}</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{restaurants[0].name}</span>
-              </button>
-            )}
-            <button onClick={onBack} style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
-              {isDemo ? "← Retour accueil" : "← Mes restaurants"}
+            <button onClick={() => setTab("establishments")}
+              style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: tab === "establishments" ? C.bg : "transparent", color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, ...FF }}>
+              <span>👥</span> Mes établissements
+            </button>
+            <button onClick={isDemo ? onBack : onBack}
+              style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
+              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
             </button>
           </div>
         </aside>
@@ -6668,9 +6666,16 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
             </div>
           </div>
           {!isMobile && (
-            <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
-              {isDemo ? "← Retour accueil" : "← Mes restaurants"}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setTab("establishments")} style={{ background: tab === "establishments" ? C.dark : C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: tab === "establishments" ? C.white : C.textSecondary, cursor: "pointer", ...FF }}>
+                👥 Mes établissements
+              </button>
+              {isDemo && (
+                <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                  ← Retour accueil
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -7520,7 +7525,7 @@ function Dashboard() {
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : setPage("restaurants")} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
           const s = stat || DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
