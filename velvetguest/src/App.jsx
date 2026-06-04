@@ -5990,6 +5990,153 @@ function MiniChart({ data, color = C.accentBlue, height = 80 }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LINE CHART — SVG smooth line with area, tooltip on hover
+// ─────────────────────────────────────────────────────────────────────────────
+function LineChart({ data, color = C.accentBlue, height = 160, unit = "", fullscreen = false, multiSeries }) {
+  const [hover, setHover] = useState(null);
+  const svgRef = useRef(null);
+  const PAD = { top: 12, right: 12, bottom: 32, left: fullscreen ? 56 : 44 };
+
+  const series = multiSeries || [{ data, color, label: "" }];
+  const allValues = series.flatMap(s => s.data.map(d => d.value));
+  const maxVal = Math.max(...allValues, 1);
+  const minVal = Math.min(...allValues, 0);
+  const range = maxVal - minVal || 1;
+  const n = series[0].data.length;
+
+  function xPct(i) { return PAD.left + (i / (n - 1)) * (100 - PAD.left - PAD.right); }
+  function yPct(v) { return PAD.top + (1 - (v - minVal) / range) * (100 - PAD.top - PAD.bottom); }
+
+  function makePath(pts) {
+    if (pts.length < 2) return "";
+    const coords = pts.map((p, i) => ({ x: xPct(i), y: yPct(p.value) }));
+    let d = `M ${coords[0].x} ${coords[0].y}`;
+    for (let i = 1; i < coords.length; i++) {
+      const cp1x = (coords[i - 1].x + coords[i].x) / 2;
+      d += ` C ${cp1x} ${coords[i - 1].y} ${cp1x} ${coords[i].y} ${coords[i].x} ${coords[i].y}`;
+    }
+    return d;
+  }
+
+  function makeArea(pts, col) {
+    const path = makePath(pts);
+    if (!path) return null;
+    const last = pts[pts.length - 1];
+    const first = pts[0];
+    return path + ` L ${xPct(pts.length - 1)} ${100 - PAD.bottom} L ${xPct(0)} ${100 - PAD.bottom} Z`;
+  }
+
+  // Y-axis ticks
+  const yTicks = Array.from({ length: 5 }, (_, i) => {
+    const v = minVal + (range * i) / 4;
+    return { v, y: yPct(v) };
+  });
+
+  // X-axis labels — show ~6 labels max
+  const step = Math.max(1, Math.floor(n / 6));
+  const xLabels = series[0].data.filter((_, i) => i % step === 0 || i === n - 1).map((d, idx) => {
+    const origIdx = idx === 0 ? 0 : Math.min(idx * step, n - 1);
+    return { label: d.label, x: xPct(origIdx) };
+  });
+
+  function onSvgMove(e) {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * 100;
+    const idx = Math.round(((px - PAD.left) / (100 - PAD.left - PAD.right)) * (n - 1));
+    if (idx >= 0 && idx < n) setHover(idx);
+  }
+
+  const formatVal = v => unit === "€" ? `${v >= 1000 ? (v / 1000).toFixed(1) + "k" : v.toFixed(0)} €` : String(Math.round(v));
+
+  return (
+    <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
+      <svg ref={svgRef} width="100%" height={height} style={{ display: "block", overflow: "visible" }}
+        viewBox={`0 0 100 100`} preserveAspectRatio="none"
+        onMouseMove={onSvgMove}>
+        {/* Y-axis grid lines */}
+        {yTicks.map((t, i) => (
+          <line key={i} x1={PAD.left} x2={100 - PAD.right} y1={t.y} y2={t.y}
+            stroke={C.border} strokeWidth="0.4" vectorEffect="non-scaling-stroke" />
+        ))}
+        {/* Area fills */}
+        {series.map((s, si) => (
+          <path key={si} d={makeArea(s.data)} fill={s.color} opacity={0.1} />
+        ))}
+        {/* Lines */}
+        {series.map((s, si) => (
+          <path key={si} d={makePath(s.data)} fill="none" stroke={s.color} strokeWidth={fullscreen ? "0.5" : "0.8"} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        ))}
+        {/* Hover vertical line */}
+        {hover !== null && (
+          <line x1={xPct(hover)} x2={xPct(hover)} y1={PAD.top} y2={100 - PAD.bottom}
+            stroke={C.borderStrong} strokeWidth="0.5" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
+        )}
+        {/* Hover dots */}
+        {hover !== null && series.map((s, si) => (
+          <circle key={si} cx={xPct(hover)} cy={yPct(s.data[hover]?.value ?? 0)} r="1.5"
+            fill={s.color} vectorEffect="non-scaling-stroke" />
+        ))}
+        {/* Y-axis labels */}
+        {yTicks.filter((_, i) => i % 2 === 0).map((t, i) => (
+          <text key={i} x={PAD.left - 1} y={t.y} textAnchor="end" dominantBaseline="middle"
+            style={{ fontSize: fullscreen ? "3px" : "4px", fill: C.textTertiary, fontFamily: "system-ui" }}>
+            {formatVal(t.v)}
+          </text>
+        ))}
+        {/* X-axis labels */}
+        {xLabels.map((l, i) => (
+          <text key={i} x={l.x} y={100 - PAD.bottom + 6} textAnchor="middle"
+            style={{ fontSize: fullscreen ? "3px" : "4px", fill: C.textTertiary, fontFamily: "system-ui" }}>
+            {l.label}
+          </text>
+        ))}
+      </svg>
+      {/* Tooltip */}
+      {hover !== null && (
+        <div style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", background: C.dark, color: C.white, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, pointerEvents: "none", whiteSpace: "nowrap", zIndex: 10, ...FF }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>{series[0].data[hover]?.label}</div>
+          {series.map((s, si) => (
+            <div key={si} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {series.length > 1 && <div style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />}
+              {series.length > 1 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>{s.label}:</span>}
+              <span>{formatVal(s.data[hover]?.value ?? 0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHART MODAL — fullscreen chart expansion
+// ─────────────────────────────────────────────────────────────────────────────
+function ChartModal({ title, subtitle, children, onClose }) {
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, ...FF }}
+      onClick={onClose}>
+      <div style={{ background: C.white, borderRadius: 20, width: "100%", maxWidth: 900, maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.3)" }}
+        onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.dark, letterSpacing: "-0.02em" }}>{title}</h3>
+            {subtitle && <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 4 }}>{subtitle}</p>}
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: C.textSecondary }}>×</button>
+        </div>
+        <div style={{ padding: "24px" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FRANCHISE DASHBOARD — multi-restaurant group view
 // ─────────────────────────────────────────────────────────────────────────────
 function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
@@ -6020,6 +6167,8 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
   // Group settings
   const [groupForm, setGroupForm] = useState({ name: group?.name || "", logo_emoji: group?.logo_emoji || "🏢" });
   const [savingGroup, setSavingGroup] = useState(false);
+  // Analytics expand
+  const [expandChart, setExpandChart] = useState(null);
 
   useEffect(() => {
     if (!group) return;
@@ -6176,17 +6325,62 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
   }
 
   // Analytics data: 30-day bar chart (demo: random)
+  // Deterministic pseudo-random (no re-render flicker)
+  function seededVal(seed, min, max) {
+    const x = Math.sin(seed + 1) * 10000;
+    return min + (x - Math.floor(x)) * (max - min);
+  }
+
   const chartData30 = Array.from({ length: 30 }, (_, i) => {
     const d = new Date(Date.now() - (29 - i) * 86400000);
     const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
     const base = isDemo ? totalCa7j / 7 : 0;
-    const value = isDemo ? Math.round(base * (0.7 + Math.random() * 0.6)) : 0;
+    const value = isDemo ? Math.round(base * (isWeekend ? 1.3 : 0.85) * (0.8 + seededVal(i * 7, 0, 0.4))) : 0;
     return { label, value };
   });
   const chartOrders30 = Array.from({ length: 30 }, (_, i) => {
     const d = new Date(Date.now() - (29 - i) * 86400000);
     const label = `${d.getDate()}/${d.getMonth() + 1}`;
-    const value = isDemo ? Math.round(totalOrdersToday * (0.7 + Math.random() * 0.6)) : 0;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const value = isDemo ? Math.round(totalOrdersToday * (isWeekend ? 1.25 : 0.9) * (0.75 + seededVal(i * 11, 0, 0.5))) : 0;
+    return { label, value };
+  });
+  const chartAvgBasket30 = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(Date.now() - (29 - i) * 86400000);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const base = isDemo ? totalCa7j / Math.max(totalOrdersToday * 7, 1) : 0;
+    const value = isDemo ? Math.round((base * (0.9 + seededVal(i * 3, 0, 0.2))) * 10) / 10 : 0;
+    return { label, value };
+  });
+  const chartGrowth30 = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(Date.now() - (29 - i) * 86400000);
+    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const value = isDemo ? Math.round((seededVal(i * 5, -15, 25))) : 0;
+    return { label, value };
+  });
+  // Per-restaurant CA series for multi-line chart
+  const chartPerResto30 = restaurants.map((r, ri) => {
+    const stat = getStat(r.id);
+    const COLORS_CHART = [C.accentBlue, C.accentGreen, C.accentOrange, C.accentPurple, C.accent];
+    return {
+      label: r.name,
+      color: COLORS_CHART[ri % COLORS_CHART.length],
+      data: Array.from({ length: 30 }, (_, i) => {
+        const d = new Date(Date.now() - (29 - i) * 86400000);
+        const label = `${d.getDate()}/${d.getMonth() + 1}`;
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+        const base = stat.ca_7j / 7;
+        const value = isDemo ? Math.round(base * (isWeekend ? 1.3 : 0.85) * (0.7 + seededVal(i * 7 + ri * 31, 0, 0.6))) : 0;
+        return { label, value };
+      }),
+    };
+  });
+  // Hourly distribution (heatmap data)
+  const HOURLY_LABELS = ["10h","11h","12h","13h","14h","15h","16h","17h","18h","19h","20h","21h","22h"];
+  const hourlyData = HOURLY_LABELS.map((label, i) => {
+    const isPeak = i >= 2 && i <= 4 || i >= 7 && i <= 10;
+    const value = isDemo ? Math.round(totalOrdersToday * (isPeak ? 0.12 : 0.04) * (0.7 + seededVal(i * 13, 0, 0.6))) : 0;
     return { label, value };
   });
 
@@ -6533,66 +6727,220 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
           )}
 
           {/* ── Tab: Analytics ── */}
-          {tab === "analytics" && (
-            <div className="fade-in">
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 20, letterSpacing: "-0.03em" }}>Analytics réseau</h2>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 24 }}>
-                <Surface style={{ padding: 24 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>CA réseau — 30 jours</h3>
-                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Chiffre d'affaires total toutes enseignes</p>
-                  <MiniChart data={chartData30} color={C.accentBlue} height={100} />
-                </Surface>
-                <Surface style={{ padding: 24 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Commandes — 30 jours</h3>
-                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 12 }}>Nombre total de commandes par jour</p>
-                  <MiniChart data={chartOrders30} color={C.accentGreen} height={100} />
-                </Surface>
-              </div>
-              {/* Top dishes (demo) */}
-              <Surface style={{ padding: 24, marginBottom: 20 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Top 5 plats du réseau</h3>
-                {(isDemo ? [
-                  { name: "Steak Frites", emoji: "🥩", count: 324, revenue: 6448 },
-                  { name: "Burger Maison", emoji: "🍔", count: 289, revenue: 4016 },
-                  { name: "Salade César", emoji: "🥗", count: 201, revenue: 1809 },
-                  { name: "Poulet Rôti", emoji: "🍗", count: 178, revenue: 2759 },
-                  { name: "Pasta Carbonara", emoji: "🍝", count: 156, revenue: 2262 },
-                ] : []).map((d, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <span style={{ fontWeight: 700, color: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.textTertiary, fontSize: 14, width: 20 }}>{i+1}</span>
-                    <span style={{ fontSize: 20 }}>{d.emoji}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{d.name}</div>
-                      <div style={{ fontSize: 12, color: C.textSecondary }}>{d.count} commandes · {d.revenue} €</div>
+          {tab === "analytics" && (() => {
+            const TOP_DISHES = [
+              { name: "Steak Frites", emoji: "🥩", count: 1247, revenue: 24815, trend: 12 },
+              { name: "Burger Maison", emoji: "🍔", count: 1089, revenue: 15127, trend: 8 },
+              { name: "Salade César", emoji: "🥗", count: 876, revenue: 7884, trend: -3 },
+              { name: "Poulet Rôti", emoji: "🍗", count: 743, revenue: 11517, trend: 5 },
+              { name: "Pasta Carbonara", emoji: "🍝", count: 612, revenue: 8874, trend: 18 },
+              { name: "Tarte Tatin", emoji: "🥧", count: 534, revenue: 4005, trend: 2 },
+              { name: "Vin Rouge", emoji: "🍷", count: 489, revenue: 2690, trend: -7 },
+            ];
+            const DAYS_WEEK = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+            const weekdayCA = DAYS_WEEK.map((label, i) => ({
+              label,
+              value: isDemo ? Math.round(totalCa7j * [0.13,0.12,0.14,0.15,0.16,0.18,0.12][i]) : 0,
+            }));
+
+            function ChartCard({ id, title, subtitle, children, fullData, color, unit, multiSeries }) {
+              return (
+                <Surface style={{ padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                    <div>
+                      <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{title}</h3>
+                      {subtitle && <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>{subtitle}</p>}
                     </div>
-                    <div style={{ width: 80, height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${(d.count / 324) * 100}%`, background: C.accentBlue, borderRadius: 3 }} />
+                    <button onClick={() => setExpandChart({ id, title, subtitle, fullData, color, unit, multiSeries })}
+                      style={{ padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", fontSize: 11, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                      ⛶ Agrandir
+                    </button>
+                  </div>
+                  {children}
+                </Surface>
+              );
+            }
+
+            return (
+              <div className="fade-in">
+                {/* Expand modal */}
+                {expandChart && (
+                  <ChartModal title={expandChart.title} subtitle={expandChart.subtitle} onClose={() => setExpandChart(null)}>
+                    {expandChart.multiSeries ? (
+                      <>
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
+                          {expandChart.multiSeries.map(s => (
+                            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <div style={{ width: 12, height: 3, borderRadius: 2, background: s.color }} />
+                              <span style={{ fontSize: 12, color: C.textSecondary }}>{s.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <LineChart multiSeries={expandChart.multiSeries} height={320} unit={expandChart.unit} fullscreen />
+                      </>
+                    ) : (
+                      <LineChart data={expandChart.fullData} color={expandChart.color} height={320} unit={expandChart.unit} fullscreen />
+                    )}
+                  </ChartModal>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>Analytics réseau</h2>
+                  <Tag color={C.accentBlue}>30 derniers jours</Tag>
+                </div>
+
+                {/* KPI row */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                  {[
+                    { label: "CA réseau 30j", value: isDemo ? `${(totalCa7j * 4.28).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} €` : "—", trend: "+14%", color: C.accentBlue },
+                    { label: "Commandes 30j", value: isDemo ? (totalOrdersToday * 28).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ") : "—", trend: "+9%", color: C.accentGreen },
+                    { label: "Ticket moyen", value: isDemo ? `${(totalCa7j / Math.max(totalOrdersToday * 7, 1)).toFixed(2)} €` : "—", trend: "+4%", color: C.accentOrange },
+                    { label: "Taux croissance", value: isDemo ? "+11%" : "—", trend: "vs M-1", color: C.accentPurple },
+                  ].map(k => (
+                    <Surface key={k.label} style={{ padding: "16px 18px" }}>
+                      <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 6 }}>{k.label}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, letterSpacing: "-0.03em" }}>{k.value}</div>
+                      <div style={{ fontSize: 11, color: k.color, fontWeight: 600, marginTop: 4 }}>{k.trend}</div>
+                    </Surface>
+                  ))}
+                </div>
+
+                {/* Charts row 1: CA + commandes */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <ChartCard id="ca30" title="CA réseau — 30 jours" subtitle="Chiffre d'affaires consolidé (€)" fullData={chartData30} color={C.accentBlue} unit="€">
+                    <LineChart data={chartData30} color={C.accentBlue} height={140} unit="€" />
+                  </ChartCard>
+                  <ChartCard id="orders30" title="Commandes — 30 jours" subtitle="Nombre de commandes par jour" fullData={chartOrders30} color={C.accentGreen} unit="">
+                    <LineChart data={chartOrders30} color={C.accentGreen} height={140} unit="" />
+                  </ChartCard>
+                </div>
+
+                {/* Charts row 2: ticket moyen + croissance */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <ChartCard id="basket" title="Ticket moyen — 30 jours" subtitle="Panier moyen par commande (€)" fullData={chartAvgBasket30} color={C.accentOrange} unit="€">
+                    <LineChart data={chartAvgBasket30} color={C.accentOrange} height={140} unit="€" />
+                  </ChartCard>
+                  <ChartCard id="growth" title="Croissance jour/jour (%)" subtitle="Variation vs même jour J-7" fullData={chartGrowth30} color={C.accentPurple} unit="">
+                    <LineChart data={chartGrowth30} color={C.accentPurple} height={140} unit="" />
+                  </ChartCard>
+                </div>
+
+                {/* Multi-line: CA par restaurant */}
+                <Surface style={{ padding: 20, marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <div>
+                      <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>CA par établissement — 30 jours</h3>
+                      <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>Comparaison des courbes de chiffre d'affaires</p>
+                    </div>
+                    <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                        {chartPerResto30.map(s => (
+                          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <div style={{ width: 10, height: 3, borderRadius: 2, background: s.color }} />
+                            <span style={{ fontSize: 11, color: C.textSecondary }}>{s.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => setExpandChart({ id: "perResto", title: "CA par établissement — 30 jours", subtitle: "Comparaison des courbes", multiSeries: chartPerResto30, unit: "€" })}
+                        style={{ padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", fontSize: 11, color: C.textSecondary, cursor: "pointer", ...FF, flexShrink: 0 }}>
+                        ⛶ Agrandir
+                      </button>
                     </div>
                   </div>
-                ))}
-                {!isDemo && <p style={{ color: C.textTertiary, fontSize: 14 }}>Données agrégées disponibles après activation.</p>}
-              </Surface>
-              {/* Répartition par région */}
-              {restaurants.some(r => r.region) && (
-                <Surface style={{ padding: 24 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 16 }}>Répartition par région</h3>
-                  {Array.from(new Set(restaurants.map(r => r.region).filter(Boolean))).map(region => {
-                    const restoInRegion = restaurants.filter(r => r.region === region);
-                    const regionCa = restoInRegion.reduce((s, r) => s + getStat(r.id).ca_7j, 0);
-                    return (
-                      <div key={region} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                        <div>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{region}</span>
-                          <span style={{ color: C.textSecondary, fontSize: 13, marginLeft: 8 }}>{restoInRegion.length} établissement{restoInRegion.length !== 1 ? "s" : ""}</span>
-                        </div>
-                        <span style={{ fontWeight: 700, color: C.dark }}>{regionCa.toFixed(0)} €</span>
-                      </div>
-                    );
-                  })}
+                  <LineChart multiSeries={chartPerResto30} height={160} unit="€" />
                 </Surface>
-              )}
-            </div>
-          )}
+
+                {/* Row 3: heures + jours semaine */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <Surface style={{ padding: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                      <div>
+                        <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>Affluence horaire</h3>
+                        <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>Commandes par heure (réseau)</p>
+                      </div>
+                      <button onClick={() => setExpandChart({ id: "hourly", title: "Affluence horaire", subtitle: "Commandes par tranche horaire", fullData: hourlyData, color: C.accentBlue, unit: "" })}
+                        style={{ padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", fontSize: 11, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                        ⛶ Agrandir
+                      </button>
+                    </div>
+                    <MiniChart data={hourlyData} color={C.accentBlue} height={90} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                      {hourlyData.filter((_, i) => i % 3 === 0 || i === hourlyData.length - 1).map(d => (
+                        <span key={d.label} style={{ fontSize: 10, color: C.textTertiary }}>{d.label}</span>
+                      ))}
+                    </div>
+                  </Surface>
+                  <Surface style={{ padding: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                      <div>
+                        <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>CA par jour de semaine</h3>
+                        <p style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>Performance par jour</p>
+                      </div>
+                      <button onClick={() => setExpandChart({ id: "weekday", title: "CA par jour de semaine", subtitle: "Chiffre d'affaires moyen par jour", fullData: weekdayCA, color: C.accentOrange, unit: "€" })}
+                        style={{ padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 8, background: "transparent", fontSize: 11, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                        ⛶ Agrandir
+                      </button>
+                    </div>
+                    <MiniChart data={weekdayCA} color={C.accentOrange} height={90} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                      {weekdayCA.map(d => <span key={d.label} style={{ fontSize: 10, color: C.textTertiary }}>{d.label}</span>)}
+                    </div>
+                  </Surface>
+                </div>
+
+                {/* Top dishes */}
+                <Surface style={{ padding: 20, marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 16 }}>🏆 Top plats du réseau — 30 jours</h3>
+                  {TOP_DISHES.map((d, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                      <span style={{ fontWeight: 800, color: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.textTertiary, fontSize: 13, width: 18, textAlign: "right" }}>{i+1}</span>
+                      <span style={{ fontSize: 18 }}>{d.emoji}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{d.name}</span>
+                          <span style={{ fontSize: 12, color: C.textSecondary }}>{d.count} cmd · {d.revenue.toLocaleString()} €</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${(d.count / TOP_DISHES[0].count) * 100}%`, background: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.accentBlue, borderRadius: 3, transition: "width 0.6s" }} />
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: d.trend >= 0 ? C.accentGreen : C.accent, width: 36, textAlign: "right" }}>
+                        {d.trend >= 0 ? "↑" : "↓"}{Math.abs(d.trend)}%
+                      </span>
+                    </div>
+                  ))}
+                </Surface>
+
+                {/* Region breakdown */}
+                {restaurants.some(r => r.region) && (
+                  <Surface style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 16 }}>📍 Performance par région</h3>
+                    {Array.from(new Set(restaurants.map(r => r.region).filter(Boolean))).map(region => {
+                      const restoInRegion = restaurants.filter(r => r.region === region);
+                      const regionCa = restoInRegion.reduce((s, r) => s + getStat(r.id).ca_7j, 0);
+                      const regionOrders = restoInRegion.reduce((s, r) => s + getStat(r.id).orders_7j, 0);
+                      const totalCaAll = stats.reduce((s, st) => s + st.ca_7j, 0);
+                      return (
+                        <div key={region} style={{ marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <div>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{region}</span>
+                              <span style={{ color: C.textSecondary, fontSize: 12, marginLeft: 8 }}>{restoInRegion.length} étab.</span>
+                              <span style={{ color: C.textSecondary, fontSize: 12, marginLeft: 8 }}>· {regionOrders} cmd/7j</span>
+                            </div>
+                            <span style={{ fontWeight: 800, fontSize: 14, color: C.dark }}>{regionCa.toFixed(0)} €</span>
+                          </div>
+                          <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${totalCaAll ? (regionCa / totalCaAll) * 100 : 0}%`, background: C.accentBlue, borderRadius: 3 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Surface>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Tab: Settings ── */}
           {tab === "settings" && (
