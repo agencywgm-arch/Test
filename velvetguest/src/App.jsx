@@ -6368,7 +6368,8 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   const [campSegment, setCampSegment] = useState("all");
   const [campTarget, setCampTarget] = useState("all");
   const [campSelected, setCampSelected] = useState([]);
-  const [campSending, setCampSending] = useState(false);
+  const [campSendToClients, setCampSendToClients] = useState(true);
+  const [campSendToEstabs, setCampSendToEstabs] = useState(false);
   const [campGenLoading, setCampGenLoading] = useState(false);
   // Modals
   const [editResto, setEditResto] = useState(null);
@@ -6482,23 +6483,30 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
     if (!campSubject.trim() || !campBody.trim()) return;
     setCampSending(true);
     const targets = campTarget === "all" ? restaurants.map(r => r.id) : campSelected;
+    const recipients = [];
+    if (campSendToClients) recipients.push(`clients:${campSegment}`);
+    if (campSendToEstabs) recipients.push(`establishments:${campTarget}`);
     if (!isDemo) {
       const { data: newCamp } = await supabase.from("group_campaigns").insert({
         group_id: group.id, created_by: user.id,
         subject: campSubject, html_body: campBody,
         segment: campSegment, target: campTarget,
         restaurant_ids: targets,
+        send_to_clients: campSendToClients,
+        send_to_establishments: campSendToEstabs,
         status: send ? "sent" : "draft",
         sent_at: send ? new Date().toISOString() : null,
       }).select().single();
       if (send && newCamp) {
         for (const rId of targets) {
-          await supabase.functions.invoke("send-campaign", { body: { campaign_id: newCamp.id, restaurant_id: rId } }).catch(() => {});
+          await supabase.functions.invoke("send-campaign", { body: { campaign_id: newCamp.id, restaurant_id: rId, send_to_clients: campSendToClients, send_to_establishments: campSendToEstabs } }).catch(() => {});
         }
       }
     }
     setCampaigns(prev => [{
       id: "new_" + Date.now(), subject: campSubject, segment: campSegment,
+      send_to_clients: campSendToClients, send_to_establishments: campSendToEstabs,
+      recipients,
       status: send ? "sent" : "draft", sent_at: send ? new Date().toISOString() : null,
       created_at: new Date().toISOString(),
     }, ...prev]);
@@ -6965,42 +6973,82 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                     <textarea value={campBody} onChange={e => setCampBody(e.target.value)} placeholder="<h2>Votre message</h2>..."
                       rows={6} style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", resize: "vertical", ...FF }} />
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <div>
-                      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Segment</label>
-                      <select value={campSegment} onChange={e => setCampSegment(e.target.value)}
-                        style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", ...FF }}>
-                        <option value="all">Tous les clients</option>
-                        <option value="top_clients">Top clients</option>
-                        <option value="inactive">Inactifs</option>
-                      </select>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Destinataires</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {/* Clients toggle */}
+                      <div style={{ padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${campSendToClients ? C.accentBlue : C.border}`, background: campSendToClients ? C.accentBlue + "10" : C.bg, cursor: "pointer", transition: "all 0.15s" }}
+                        onClick={() => setCampSendToClients(p => !p)}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${campSendToClients ? C.accentBlue : C.border}`, background: campSendToClients ? C.accentBlue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {campSendToClients && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>👤 Clients</div>
+                            <div style={{ fontSize: 11, color: C.textSecondary }}>Email envoyé aux clients de tes restaurants</div>
+                          </div>
+                        </div>
+                        {campSendToClients && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                            <label style={{ display: "block", color: C.textSecondary, fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Segment clients</label>
+                            <select value={campSegment} onChange={e => { e.stopPropagation(); setCampSegment(e.target.value); }}
+                              onClick={e => e.stopPropagation()}
+                              style={{ width: "100%", background: C.surface, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, color: C.text, outline: "none", ...FF }}>
+                              <option value="all">Tous les clients</option>
+                              <option value="top_clients">Top clients (les plus fidèles)</option>
+                              <option value="inactive">Inactifs (n'ont pas commandé)</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      {/* Établissements toggle */}
+                      <div style={{ padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${campSendToEstabs ? C.accentGreen : C.border}`, background: campSendToEstabs ? C.accentGreen + "10" : C.bg, cursor: "pointer", transition: "all 0.15s" }}
+                        onClick={() => setCampSendToEstabs(p => !p)}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${campSendToEstabs ? C.accentGreen : C.border}`, background: campSendToEstabs ? C.accentGreen : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {campSendToEstabs && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>🏢 Établissements</div>
+                            <div style={{ fontSize: 11, color: C.textSecondary }}>Email envoyé aux managers de tes restaurants</div>
+                          </div>
+                        </div>
+                        {campSendToEstabs && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                            <label style={{ display: "block", color: C.textSecondary, fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Établissements ciblés</label>
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: 12, cursor: "pointer" }} onClick={e => e.stopPropagation()}>
+                              <input type="radio" name="estab_target" checked={campTarget === "all"} onChange={() => { setCampTarget("all"); setCampSelected([]); }} />
+                              Tous les établissements
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }} onClick={e => e.stopPropagation()}>
+                              <input type="radio" name="estab_target" checked={campTarget === "select"} onChange={() => setCampTarget("select")} />
+                              Sélectionner des établissements
+                            </label>
+                            {campTarget === "select" && (
+                              <div style={{ marginTop: 8, paddingLeft: 4 }} onClick={e => e.stopPropagation()}>
+                                {restaurants.map(r => (
+                                  <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, cursor: "pointer", fontSize: 12 }}>
+                                    <input type="checkbox" checked={campSelected.includes(r.id)}
+                                      onChange={e => setCampSelected(prev => e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id))} />
+                                    <span>{r.logo_emoji}</span>
+                                    <span style={{ color: C.dark }}>{r.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Cible</label>
-                      <select value={campTarget} onChange={e => { setCampTarget(e.target.value); setCampSelected([]); }}
-                        style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.text, outline: "none", ...FF }}>
-                        <option value="all">Tous les établissements</option>
-                        <option value="select">Sélection</option>
-                      </select>
-                    </div>
+                    {!campSendToClients && !campSendToEstabs && (
+                      <p style={{ fontSize: 12, color: C.accent, marginTop: 6 }}>⚠️ Sélectionne au moins un type de destinataire</p>
+                    )}
                   </div>
-                  {campTarget === "select" && (
-                    <div style={{ marginBottom: 14, padding: "12px 16px", background: C.bg, borderRadius: 10 }}>
-                      {restaurants.map(r => (
-                        <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
-                          <input type="checkbox" checked={campSelected.includes(r.id)}
-                            onChange={e => setCampSelected(prev => e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id))} />
-                          <span style={{ fontSize: 14 }}>{r.logo_emoji}</span>
-                          <span style={{ fontSize: 13, color: C.dark }}>{r.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
                   <div style={{ display: "flex", gap: 10 }}>
                     <Btn variant="ghost" size="sm" full disabled={!campSubject || !campBody || campSending} onClick={() => saveCampaign(false)}>
                       Sauvegarder brouillon
                     </Btn>
-                    <Btn variant="blue" size="sm" full disabled={!campSubject || !campBody || campSending} onClick={() => saveCampaign(true)}>
+                    <Btn variant="blue" size="sm" full disabled={!campSubject || !campBody || campSending || (!campSendToClients && !campSendToEstabs)} onClick={() => saveCampaign(true)}>
                       {campSending ? "Envoi..." : "📤 Envoyer"}
                     </Btn>
                   </div>
@@ -7018,7 +7066,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                       </div>
                       <div style={{ fontSize: 12, color: C.textTertiary }}>
                         {c.sent_at ? `Envoyée le ${new Date(c.sent_at).toLocaleDateString("fr-FR")}` : `Créée le ${new Date(c.created_at).toLocaleDateString("fr-FR")}`}
-                        {c.segment && ` · Segment: ${c.segment}`}
+                        {(c.send_to_clients || c.send_to_establishments) && (
+                          <span> · {[c.send_to_clients && "👤 Clients", c.send_to_establishments && "🏢 Établissements"].filter(Boolean).join(" + ")}</span>
+                        )}
                       </div>
                     </div>
                   ))}
