@@ -1196,13 +1196,34 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
       });
   }, [user.id, franchiseGroup]);
 
+  const [franchiseError, setFranchiseError] = useState("");
+
   async function createFranchiseGroup() {
     setCreatingFranchise(true);
+    setFranchiseError("");
+    // Check if group already exists (maybe RLS was the issue before)
+    const { data: existing } = await supabase.from("franchise_groups").select("*").eq("owner_id", user.id).single();
+    if (existing) {
+      setCreatingFranchise(false);
+      if (onFranchiseCreated) onFranchiseCreated(existing);
+      return;
+    }
     const { data, error } = await supabase.from("franchise_groups")
       .insert({ owner_id: user.id, name: "Mon Groupe", logo_emoji: "🏢", plan: "franchise" })
       .select().single();
-    setCreatingFranchise(false);
-    if (data && onFranchiseCreated) onFranchiseCreated(data);
+    if (error) {
+      setFranchiseError(`Erreur : ${error.message}`);
+      setCreatingFranchise(false);
+      return;
+    }
+    if (data) {
+      // Link existing restaurants to the new group
+      if (restaurants.length > 0) {
+        await supabase.from("restaurants").update({ group_id: data.id }).eq("owner_id", user.id);
+      }
+      setCreatingFranchise(false);
+      if (onFranchiseCreated) onFranchiseCreated(data);
+    }
   }
 
   function slugify(name) {
@@ -1267,14 +1288,24 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
           </div>
         )}
         {!franchiseGroup && !loadingList && (
-          <div style={{ marginBottom: 24, padding: "16px 20px", borderRadius: 14, border: `1.5px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>🏢 Gérer plusieurs restaurants ?</div>
-              <div style={{ fontSize: 12, color: C.textSecondary }}>Créez un groupe franchise pour piloter tout votre réseau depuis un seul dashboard.</div>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ padding: "16px 20px", borderRadius: 14, border: `1.5px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>🏢 Gérer plusieurs restaurants ?</div>
+                <div style={{ fontSize: 12, color: C.textSecondary }}>Créez un groupe franchise pour piloter tout votre réseau depuis un seul dashboard.</div>
+              </div>
+              <Btn variant="primary" size="sm" onClick={createFranchiseGroup} disabled={creatingFranchise} style={{ flexShrink: 0 }}>
+                {creatingFranchise ? "Création..." : "Créer un groupe →"}
+              </Btn>
             </div>
-            <Btn variant="primary" size="sm" onClick={createFranchiseGroup} disabled={creatingFranchise} style={{ flexShrink: 0 }}>
-              {creatingFranchise ? "Création..." : "Créer un groupe →"}
-            </Btn>
+            {franchiseError && (
+              <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, background: "#FFF0F0", border: `1px solid ${C.accent}40`, fontSize: 13, color: C.accent }}>
+                ⚠️ {franchiseError}
+                <div style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>
+                  Vérifiez les politiques RLS dans Supabase (franchise_groups : INSERT + SELECT pour authenticated).
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
@@ -1556,8 +1587,6 @@ function AlertBubbles({ store, restaurant }) {
   ].filter(a => !dismissed.has(a.id));
 
   function dismissAlert(id) {
-    const alert = allAlerts.find(a => a.id === id);
-    if (alert) store.silentNotif(`${alert.icon} ${alert.label} — ${alert.text}`, alert.type === "campaign" ? "info" : "warning");
     setDismissed(prev => new Set([...prev, id]));
   }
 
@@ -7406,10 +7435,30 @@ function Dashboard() {
         const u = data.session.user;
         const userData = { id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email };
         setUser(userData);
-        // Check for franchise group → redirect directly to franchise dashboard
-        const { data: grp } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
-        if (grp) { setFranchiseGroup(grp); setPage("franchise"); }
-        else setPage("restaurants");
+
+        // 1. Check localStorage cache first (instant, no RLS issues)
+        const cached = localStorage.getItem(`vg_fg_${u.id}`);
+        if (cached) {
+          try {
+            const grp = JSON.parse(cached);
+            setFranchiseGroup(grp);
+            setPage("franchise");
+            // Refresh from Supabase in background to keep cache fresh
+            supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single()
+              .then(({ data: fresh }) => { if (fresh) localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(fresh)); });
+            return;
+          } catch {}
+        }
+
+        // 2. Fallback: query Supabase
+        const { data: grp, error } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
+        if (grp) {
+          localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp));
+          setFranchiseGroup(grp);
+          setPage("franchise");
+        } else {
+          setPage("restaurants");
+        }
       } else {
         setPage("landing");
       }
@@ -7422,6 +7471,7 @@ function Dashboard() {
 
 
   async function handleLogout() {
+    if (user?.id) localStorage.removeItem(`vg_fg_${user.id}`);
     await supabase.auth.signOut();
     setUser(null); setRestaurant(null); setFranchiseGroup(null); setPage("landing");
   }
@@ -7445,10 +7495,10 @@ function Dashboard() {
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
       {page === "landing" && <LandingPage onDemo={startDemo} onSignup={() => setPage("signup")} onLogin={() => setPage("signup")} />}
-      {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
+      {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(data)); setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { setFranchiseGroup(grp); setPage("franchise"); }} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} />}
       {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
