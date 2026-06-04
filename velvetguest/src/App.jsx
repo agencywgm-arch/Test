@@ -1124,15 +1124,11 @@ function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
             {loading ? "..." : mode === "signup" ? "Créer mon compte →" : "Se connecter →"}
           </Btn>
         </Surface>
-        <div style={{ display: "flex", justifyContent: "center", gap: 24, marginTop: 24 }}>
-          {["30 jours gratuits", "Sans carte bancaire", "Support 7j/7"].map(t => (
-            <span key={t} style={{ color: C.textTertiary, fontSize: 12 }}>✓ {t}</span>
-          ))}
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+          <span style={{ color: C.textTertiary, fontSize: 12 }}>✓ Support 7j/7</span>
         </div>
-        <div style={{ textAlign: "center", marginTop: 24 }}>
-          <button onClick={onDemoPicker} style={{ background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 12, color: C.dark, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "10px 24px", display: "inline-flex", alignItems: "center", gap: 6, transition: "all 0.15s", ...FF }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.surface; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.bg; }}>
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <button onClick={onDemoPicker} style={{ background: C.dark, border: "none", borderRadius: 12, color: C.white, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "10px 24px", display: "inline-flex", alignItems: "center", gap: 6, ...FF }}>
             ← Retour à l'accueil
           </button>
         </div>
