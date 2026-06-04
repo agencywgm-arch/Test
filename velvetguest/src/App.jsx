@@ -1709,7 +1709,7 @@ function SettingsTab({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, onClient, onFranchise }) {
+function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onCuisine, onClient, onFranchise }) {
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
   const isMobile = useIsMobile();
@@ -1798,13 +1798,18 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Avatar name={user.name || user.email} size={30} />
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
                 <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
               </div>
             </div>
+            {user.id !== "demo" && onLogout && (
+              <button onClick={onLogout} style={{ width: "100%", padding: "7px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
+                ⏻ Déconnexion
+              </button>
+            )}
           </div>
         </aside>
       )}
@@ -1914,6 +1919,12 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
                     <span style={{ fontSize: 11, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.dark : C.textSecondary }}>{t.label}</span>
                   </button>
                 ))}
+                {user.id !== "demo" && onLogout && (
+                  <button onClick={onLogout} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: "12px 4px", border: "none", background: "none", borderRadius: 12, cursor: "pointer", ...FF }}>
+                    <span style={{ fontSize: 22 }}>⏻</span>
+                    <span style={{ fontSize: 11, fontWeight: 400, color: C.textSecondary }}>Déco.</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -7283,7 +7294,7 @@ function Dashboard() {
         }
         setPage("dashboard");
       }} />}
-      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
