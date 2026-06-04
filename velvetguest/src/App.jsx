@@ -1180,15 +1180,12 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   }
 
   useEffect(() => {
-    // If user has a franchise group, redirect immediately
     if (franchiseGroup) { onFranchise(); return; }
     supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
       .then(({ data }) => {
         const list = data ?? [];
         setRestaurants(list);
         setLoadingList(false);
-        // Solo user with exactly 1 restaurant → jump straight to dashboard
-        if (list.length === 1) onSelect(mapRestaurant(list[0]));
       });
   }, [user.id, franchiseGroup]);
 
@@ -6295,7 +6292,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
       return;
     }
     Promise.all([
-      supabase.from("restaurants").select("*").eq("group_id", group.id).order("name"),
+      supabase.from("restaurants").select("*").or(`group_id.eq.${group.id},owner_id.eq.${user.id}`).order("name"),
       supabase.from("group_campaigns").select("*").eq("group_id", group.id).order("created_at", { ascending: false }),
       supabase.from("group_members").select("*").eq("group_id", group.id),
     ]).then(([restoRes, campRes, memRes]) => {
@@ -6562,7 +6559,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
             </div>
           </div>
           {!isMobile && (
-            <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>← Mes restaurants</button>
+            <button onClick={onBack} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
+              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
+            </button>
           )}
         </div>
 
