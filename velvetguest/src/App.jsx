@@ -6440,8 +6440,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   const [inviteForm, setInviteForm] = useState({ email: "", role: "manager" });
   const [inviting, setInviting] = useState(false);
   // Group settings
-  const [groupForm, setGroupForm] = useState({ name: group?.name || "", logo_emoji: group?.logo_emoji || "🏢" });
+  const [groupForm, setGroupForm] = useState({ name: group?.name || "", logo_emoji: group?.logo_emoji || "🏢", logo_url: group?.logo_url || "" });
   const [savingGroup, setSavingGroup] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   // Analytics expand
   const [expandChart, setExpandChart] = useState(null);
   // AI alert explanation
@@ -6574,11 +6575,31 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
     setCampGenLoading(false);
   }
 
+  async function uploadGroupLogo(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    if (isDemo) {
+      const url = URL.createObjectURL(file);
+      setGroupForm(p => ({ ...p, logo_url: url }));
+      setUploadingLogo(false);
+      return;
+    }
+    const ext = file.name.split(".").pop();
+    const path = `group-logos/${group.id}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
+    if (!upErr) {
+      const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
+      setGroupForm(p => ({ ...p, logo_url: publicUrl }));
+    }
+    setUploadingLogo(false);
+  }
+
   async function saveGroupSettings() {
     setSavingGroup(true);
-    const updated = { ...group, name: groupForm.name, logo_emoji: groupForm.logo_emoji };
+    const updated = { ...group, name: groupForm.name, logo_emoji: groupForm.logo_emoji, logo_url: groupForm.logo_url };
     if (!isDemo) {
-      await supabase.from("franchise_groups").update({ name: groupForm.name, logo_emoji: groupForm.logo_emoji }).eq("id", group.id);
+      await supabase.from("franchise_groups").update({ name: groupForm.name, logo_emoji: groupForm.logo_emoji, logo_url: groupForm.logo_url }).eq("id", group.id);
     }
     if (onGroupUpdate) onGroupUpdate(updated);
     setSavingGroup(false);
@@ -6784,7 +6805,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
           <div style={{ padding: "20px 16px 16px" }}>
             <Logo size={16} onClick={onHome} />
             <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg }}>
-              <div style={{ fontSize: 22 }}>{groupForm.logo_emoji || group.logo_emoji}</div>
+              {groupForm.logo_url || group.logo_url
+                ? <img src={groupForm.logo_url || group.logo_url} alt="logo" style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover" }} />
+                : <div style={{ fontSize: 22 }}>{groupForm.logo_emoji || group.logo_emoji}</div>}
               <div>
                 <div style={{ fontSize: 11, color: C.textTertiary, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Groupe</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, letterSpacing: "-0.01em" }}>{groupForm.name || group.name}</div>
@@ -7455,9 +7478,33 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                       style={{ width: "100%", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.text, outline: "none", ...FF }} />
                   </div>
                   <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji logo</label>
-                    <input value={groupForm.logo_emoji} onChange={e => setGroupForm(p => ({ ...p, logo_emoji: e.target.value }))}
-                      style={{ width: 80, background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 20, color: C.text, outline: "none", textAlign: "center", ...FF }} />
+                    <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Logo du groupe</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {/* Preview */}
+                      <div style={{ width: 64, height: 64, borderRadius: 16, background: C.bg, border: `1.5px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                        {groupForm.logo_url
+                          ? <img src={groupForm.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <span style={{ fontSize: 28 }}>{groupForm.logo_emoji || "🏢"}</span>}
+                      </div>
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {/* Emoji */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input value={groupForm.logo_emoji} onChange={e => setGroupForm(p => ({ ...p, logo_emoji: e.target.value }))}
+                            style={{ width: 56, background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "8px", fontSize: 20, color: C.text, outline: "none", textAlign: "center", ...FF }} />
+                          <span style={{ fontSize: 12, color: C.textSecondary }}>ou</span>
+                          {/* Photo upload */}
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", background: C.bg, border: `1.5px solid ${C.border}`, borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.dark, whiteSpace: "nowrap" }}>
+                            {uploadingLogo ? "⏳ Upload..." : "📷 Photo"}
+                            <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadGroupLogo} disabled={uploadingLogo} />
+                          </label>
+                          {groupForm.logo_url && (
+                            <button onClick={() => setGroupForm(p => ({ ...p, logo_url: "" }))}
+                              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: C.textTertiary }}>✕</button>
+                          )}
+                        </div>
+                        <p style={{ fontSize: 11, color: C.textTertiary, margin: 0 }}>JPG, PNG ou WebP · max 2 Mo</p>
+                      </div>
+                    </div>
                   </div>
                   <div style={{ marginBottom: 20 }}>
                     <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Plan</label>
