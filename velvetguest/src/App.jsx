@@ -1605,14 +1605,14 @@ function SettingsTab({ restaurant }) {
 
   async function save() {
     if (restaurant.id === "demo") {
-      store.addNotif({ type: "warning", text: "Indisponible en mode démo" });
+      store.pushNotif("Indisponible en mode démo", "warning");
       return;
     }
     setSaving(true);
     const { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
     setSaving(false);
-    if (error) store.addNotif({ type: "warning", text: "Erreur : " + error.message });
-    else store.addNotif({ type: "success", text: "✅ Configuration enregistrée" });
+    if (error) store.pushNotif("Erreur : " + error.message, "warning");
+    else store.pushNotif("✅ Configuration enregistrée", "success");
   }
 
   const inputStyle = (focused) => ({ width: "100%", background: focused ? "#fff" : "#F5F5F7", border: `1.5px solid ${focused ? "#1D1D1F" : "transparent"}`, borderRadius: 12, padding: "12px 44px 12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", transition: "all 0.15s", fontFamily: "'Figtree', -apple-system, sans-serif" });
@@ -2001,7 +2001,6 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   useEffect(() => {
     if (restaurant.id === "demo") {
       if (restaurant._demoStats) {
-        // Generate coherent 7-day breakdown from franchise stats
         const s = restaurant._demoStats;
         const ratios = [0.12, 0.10, 0.16, 0.18, 0.15, 0.17, 0.12];
         setWeeklyRev(ratios.map((r, i) => Math.round(s.ca_7j * r + (i === 6 ? s.ca_today * 0.1 : 0))));
@@ -2009,6 +2008,12 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
         setWeeklyRev(DEMO_WEEKLY_REV);
       }
       return;
+    }
+    // For real franchise restaurants, build weekly from _realStats if available while Supabase loads
+    if (restaurant._realStats) {
+      const s = restaurant._realStats;
+      const ratios = [0.12, 0.10, 0.16, 0.18, 0.15, 0.17, 0.12];
+      setWeeklyRev(ratios.map((r, i) => Math.round(s.ca_7j * r + (i === 6 ? s.ca_today * 0.1 : 0))));
     }
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6); weekAgo.setHours(0, 0, 0, 0);
     supabase.from("orders").select("total, created_at")
@@ -2020,11 +2025,12 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
           const idx = Math.floor((new Date(o.created_at) - weekAgo) / 86400000);
           if (idx >= 0 && idx < 7) totals[idx] += Number(o.total);
         });
-        setWeeklyRev(totals);
+        // Only update if we got real data, else keep the _realStats estimate
+        if ((data ?? []).length > 0 || !restaurant._realStats) setWeeklyRev(totals);
       });
   }, [restaurant.id]);
 
-  const ds = restaurant._demoStats;
+  const ds = restaurant._demoStats || restaurant._realStats;
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const rev = ds ? ds.ca_today : store.revenue;
@@ -5668,7 +5674,7 @@ function CustomerPage({ slug, tableNum }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 22 }}>{restaurant.logo_emoji}</span>
+                  <span style={{ fontSize: 22 }}>{restaurant.emoji || restaurant.logo_emoji}</span>
                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{restaurant.name}</p>
                 </div>
                 <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
@@ -6588,7 +6594,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
                   const maxCa = Math.max(...stats.map(st => st.ca_7j), 1);
                   const pct = (s.ca_7j / maxCa) * 100;
                   return (
-                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: onRestaurant ? "pointer" : "default" }} onClick={() => onRestaurant && onRestaurant(r)}>
+                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: onRestaurant ? "pointer" : "default" }} onClick={() => onRestaurant && onRestaurant(r, getStat(r.id))}>
                       <div style={{ width: 28, fontSize: 14, fontWeight: 700, color: i < 3 ? ["#FFD700","#C0C0C0","#CD7F32"][i] : C.textTertiary, textAlign: "center" }}>{i < 3 ? ["🥇","🥈","🥉"][i] : `#${i+1}`}</div>
                       <div style={{ fontSize: 20 }}>{r.logo_emoji}</div>
                       <div style={{ flex: 1 }}>
@@ -6818,7 +6824,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         {onRestaurant && (
-                          <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r)}>Gérer</Btn>
+                          <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r, s)}>Gérer</Btn>
                         )}
                         <Btn variant="ghost" size="sm" full onClick={() => { setEditResto(r); setEditForm({ region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
                       </div>
@@ -7281,14 +7287,14 @@ function Dashboard() {
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onRestaurant={r => {
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
-          const stat = DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
-          setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji, _demoStats: stat });
+          const s = stat || DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
+          setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji, _demoStats: s });
           setFromFranchise(true);
         } else {
-          setRestaurant(r);
+          setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || r.emoji || "🍽️", logo_emoji: r.logo_emoji || r.emoji || "🍽️", scans: 0, rating: null, orders: 0, _realStats: stat });
           setFromFranchise(true);
         }
         setPage("dashboard");
