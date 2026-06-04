@@ -1288,23 +1288,51 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
         )}
         {!franchiseGroup && !loadingList && (
           <div style={{ marginBottom: 24 }}>
-            <div style={{ padding: "16px 20px", borderRadius: 14, border: `1.5px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>🏢 Gérer plusieurs restaurants ?</div>
-                <div style={{ fontSize: 12, color: C.textSecondary }}>Créez un groupe franchise pour piloter tout votre réseau depuis un seul dashboard.</div>
-              </div>
-              <Btn variant="primary" size="sm" onClick={createFranchiseGroup} disabled={creatingFranchise} style={{ flexShrink: 0 }}>
-                {creatingFranchise ? "Création..." : "Créer un groupe →"}
-              </Btn>
-            </div>
-            {franchiseError && (
-              <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, background: "#FFF0F0", border: `1px solid ${C.accent}40`, fontSize: 13, color: C.accent }}>
-                ⚠️ {franchiseError}
-                <div style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>
-                  Vérifiez les politiques RLS dans Supabase (franchise_groups : INSERT + SELECT pour authenticated).
-                </div>
-              </div>
-            )}
+            {(() => {
+              try {
+                const cached = localStorage.getItem(`vg_fg_${user.id}`);
+                const cachedGroup = cached ? JSON.parse(cached) : null;
+                if (cachedGroup?.id) {
+                  return (
+                    <div style={{ marginBottom: 4, background: "linear-gradient(135deg, #1C1C1E, #2C2C2E)", borderRadius: 18, padding: "20px 24px", cursor: "pointer" }} onClick={onFranchise}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                          <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{cachedGroup.logo_emoji || "🏢"}</div>
+                          <div>
+                            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Ma Franchise</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>{cachedGroup.name}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 18px" }}>
+                          <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>Accéder →</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+              } catch {}
+              return (
+                <>
+                  <div style={{ padding: "16px 20px", borderRadius: 14, border: `1.5px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>🏢 Gérer plusieurs restaurants ?</div>
+                      <div style={{ fontSize: 12, color: C.textSecondary }}>Créez un groupe franchise pour piloter tout votre réseau depuis un seul dashboard.</div>
+                    </div>
+                    <Btn variant="primary" size="sm" onClick={createFranchiseGroup} disabled={creatingFranchise} style={{ flexShrink: 0 }}>
+                      {creatingFranchise ? "Création..." : "Créer un groupe →"}
+                    </Btn>
+                  </div>
+                  {franchiseError && (
+                    <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, background: "#FFF0F0", border: `1px solid ${C.accent}40`, fontSize: 13, color: C.accent }}>
+                      ⚠️ {franchiseError}
+                      <div style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>
+                        Vérifiez les politiques RLS dans Supabase (franchise_groups : INSERT + SELECT pour authenticated).
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
@@ -7577,9 +7605,9 @@ function Dashboard() {
             }
           } catch {}
 
-          // 2. Query Supabase for franchise group
+          // 2. Query Supabase for franchise group (maybeSingle = no error if 0 rows)
           try {
-            const grpRes = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
+            const grpRes = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).maybeSingle();
             if (grpRes?.data) {
               localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grpRes.data));
               setFranchiseGroup(grpRes.data);
@@ -7618,9 +7646,9 @@ function Dashboard() {
 
 
   async function handleLogout() {
-    if (user?.id) localStorage.removeItem(`vg_fg_${user.id}`);
     await supabase.auth.signOut();
     setUser(null); setRestaurant(null); setFranchiseGroup(null); setPage("landing");
+    // NOTE: keep localStorage cache so next login finds franchise group instantly
   }
 
   if (page === "loading") return (
