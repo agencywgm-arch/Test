@@ -1175,10 +1175,22 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
     setDeleteTarget(null); setDeleting(false); setDeleteInput("");
   }
 
+  function mapRestaurant(r) {
+    return { id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji, logo_emoji: r.logo_emoji, scans: 0, revenue: 3840, rating: null, orders: 0 };
+  }
+
   useEffect(() => {
+    // If user has a franchise group, redirect immediately
+    if (franchiseGroup) { onFranchise(); return; }
     supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
-      .then(({ data }) => { setRestaurants(data ?? []); setLoadingList(false); });
-  }, [user.id]);
+      .then(({ data }) => {
+        const list = data ?? [];
+        setRestaurants(list);
+        setLoadingList(false);
+        // Solo user with exactly 1 restaurant → jump straight to dashboard
+        if (list.length === 1) onSelect(mapRestaurant(list[0]));
+      });
+  }, [user.id, franchiseGroup]);
 
   function slugify(name) {
     return name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -1203,11 +1215,6 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
     setCreating(false);
   }
 
-  const mapRestaurant = r => ({
-    id: r.id, name: r.name, address: r.address, tables: r.tables_count,
-    status: "active", emoji: r.logo_emoji, scans: 0, revenue: 3840, rating: null, orders: 0,
-  });
-
   return (
     <div style={{ minHeight: "100vh", background: C.bg, ...FF }}>
       <style>{css}</style>
@@ -1231,22 +1238,29 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
       </nav>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
         {franchiseGroup && (
-          <div style={{ marginBottom: 20 }}>
-            <button onClick={onFranchise} style={{ width: "100%", background: C.dark, color: C.white, border: "none", borderRadius: 14, padding: "14px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, ...FF, transition: "all 0.2s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#333"}
-              onMouseLeave={e => e.currentTarget.style.background = C.dark}>
-              <span style={{ fontSize: 20 }}>{franchiseGroup.logo_emoji}</span>
-              <span>🏢 Dashboard Franchise — {franchiseGroup.name}</span>
-              <span style={{ marginLeft: "auto", opacity: 0.7 }}>→</span>
-            </button>
+          <div style={{ marginBottom: 28, background: "linear-gradient(135deg, #1C1C1E, #2C2C2E)", borderRadius: 18, padding: "24px 28px", cursor: "pointer" }} onClick={onFranchise}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>{franchiseGroup.logo_emoji}</div>
+                <div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Ma Franchise</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>{franchiseGroup.name}</div>
+                </div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 18px", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>Accéder →</span>
+              </div>
+            </div>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 36 }}>
           <div>
             <p style={{ color: C.textSecondary, fontSize: 15, marginBottom: 4 }}>{greet}, <strong style={{ color: C.dark }}>{first}</strong> 👋</p>
-            <h1 style={{ fontSize: 34, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>Mes restaurants</h1>
+            <h1 style={{ fontSize: 34, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>
+              {restaurants.length <= 1 ? "Mon restaurant" : "Mes restaurants"}
+            </h1>
           </div>
-          <Btn variant="primary" onClick={() => setShowCreate(true)}>+ Nouveau restaurant</Btn>
+          {restaurants.length === 0 && <Btn variant="primary" onClick={() => setShowCreate(true)}>+ Créer mon restaurant</Btn>}
         </div>
 
         {loadingList ? (
@@ -1284,11 +1298,6 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
                 </Surface>
               );
             })}
-            <div onClick={() => setShowCreate(true)} style={{ border: `2px dashed ${C.border}`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, gap: 8, transition: "all 0.2s" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.textSecondary }}>+</div>
-              <span style={{ color: C.textSecondary, fontSize: 14, fontWeight: 500 }}>Ajouter un restaurant</span>
-            </div>
           </div>
         )}
       </div>
