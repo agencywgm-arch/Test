@@ -1044,7 +1044,6 @@ function SignupPage({ onDone, onDemo, onDemoPicker }) {
           options: { data: { name: form.name } },
         });
         if (err) throw err;
-        // If group/franchise, create franchise_groups entry
         if (accountType !== "solo" && signUpData?.user) {
           await supabase.from("franchise_groups").insert({
             owner_id: signUpData.user.id,
@@ -1056,7 +1055,9 @@ function SignupPage({ onDone, onDemo, onDemoPicker }) {
       } else {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (err) throw err;
-        onDone({ name: data.user.user_metadata?.name || form.email.split("@")[0], email: data.user.email, id: data.user.id });
+        const u = { name: data.user.user_metadata?.name || form.email.split("@")[0], email: data.user.email, id: data.user.id };
+        const { data: grp } = await supabase.from("franchise_groups").select("*").eq("owner_id", data.user.id).single();
+        onDone(u, grp || null);
       }
     } catch (err) {
       setError(err.message);
@@ -1095,23 +1096,25 @@ function SignupPage({ onDone, onDemo, onDemoPicker }) {
           <InputField label="Adresse email" type="email" placeholder="jean@restaurant.fr" value={form.email} onChange={f("email")} />
           <InputField label="Mot de passe" type="password" placeholder="8 caractères minimum" value={form.password} onChange={f("password")} />
           {mode === "signup" && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Type de compte</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {[["solo", "🍽️", "Restaurant indépendant"], ["group", "🏢", "Groupe de restaurants"], ["franchise", "🏪", "Franchise"]].map(([val, emoji, label]) => (
-                  <label key={val} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${accountType === val ? C.dark : C.border}`, background: accountType === val ? C.dark + "06" : C.bg, cursor: "pointer", transition: "all 0.15s" }}>
-                    <input type="radio" name="accountType" value={val} checked={accountType === val} onChange={() => setAccountType(val)} style={{ accentColor: C.dark }} />
-                    <span style={{ fontSize: 16 }}>{emoji}</span>
-                    <span style={{ fontSize: 14, fontWeight: accountType === val ? 600 : 400, color: C.dark }}>{label}</span>
-                  </label>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Type de compte</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: accountType !== "solo" ? 12 : 0 }}>
+                {[
+                  { val: "solo", emoji: "🍽️", title: "Restaurant", desc: "Un seul établissement" },
+                  { val: "franchise", emoji: "🏢", title: "Franchise / Groupe", desc: "Plusieurs établissements" },
+                ].map(({ val, emoji, title, desc }) => (
+                  <button key={val} type="button" onClick={() => setAccountType(val)}
+                    style={{ padding: "14px 12px", borderRadius: 12, border: `2px solid ${accountType === val ? C.dark : C.border}`, background: accountType === val ? C.dark : C.bg, cursor: "pointer", textAlign: "center", transition: "all 0.15s", ...FF }}>
+                    <div style={{ fontSize: 24, marginBottom: 6 }}>{emoji}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: accountType === val ? C.white : C.dark, marginBottom: 3 }}>{title}</div>
+                    <div style={{ fontSize: 11, color: accountType === val ? "rgba(255,255,255,0.6)" : C.textTertiary }}>{desc}</div>
+                  </button>
                 ))}
               </div>
               {accountType !== "solo" && (
-                <div style={{ marginTop: 10 }}>
-                  <InputField label={`Nom du ${accountType === "franchise" ? "réseau franchise" : "groupe"}`}
-                    placeholder={accountType === "franchise" ? "ex: Brasseries du Nord" : "ex: Groupe Martin"}
-                    value={groupName} onChange={e => setGroupName(e.target.value)} />
-                </div>
+                <InputField label="Nom du réseau / groupe"
+                  placeholder="ex: Brasseries du Nord, Groupe Martin..."
+                  value={groupName} onChange={e => setGroupName(e.target.value)} autoFocus />
               )}
             </div>
           )}
@@ -1125,13 +1128,9 @@ function SignupPage({ onDone, onDemo, onDemoPicker }) {
             <span key={t} style={{ color: C.textTertiary, fontSize: 12 }}>✓ {t}</span>
           ))}
         </div>
-        <div style={{ textAlign: "center", marginTop: 28 }}>
-          <p style={{ color: C.textTertiary, fontSize: 13, marginBottom: 12 }}>Pas encore prêt à vous inscrire ?</p>
-          <button onClick={onDemoPicker || onDemo} style={{ background: C.accentBlue, border: "none", borderRadius: 14, padding: "14px 32px", fontSize: 16, fontWeight: 800, color: C.white, cursor: "pointer", boxShadow: `0 4px 20px ${C.accentBlue}40`, ...FF, display: "block", width: "100%", marginBottom: 10 }}>
-            🎮 Explorer la démo interactive →
-          </button>
-          <button onClick={onDemo} style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "10px 24px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", ...FF }}>
-            Accès rapide démo restaurant
+        <div style={{ textAlign: "center", marginTop: 20 }}>
+          <button onClick={onDemoPicker} style={{ background: "transparent", border: "none", color: C.textTertiary, fontSize: 13, cursor: "pointer", textDecoration: "underline", ...FF }}>
+            ← Retour à l'accueil
           </button>
         </div>
       </div>
@@ -1285,20 +1284,6 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
                 </Surface>
               );
             })}
-            {/* Demo card */}
-            <div onClick={onDemo} style={{ border: `2px dashed rgba(255,149,0,0.4)`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", minHeight: 200, gap: 0, transition: "all 0.2s", background: "rgba(255,149,0,0.03)" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentOrange; e.currentTarget.style.background = "rgba(255,149,0,0.06)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,149,0,0.4)"; e.currentTarget.style.background = "rgba(255,149,0,0.03)"; }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(255,149,0,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>🎯</div>
-                <span style={{ background: "rgba(255,149,0,0.12)", color: C.accentOrange, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>DÉMO</span>
-              </div>
-              <h3 style={{ fontSize: 17, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Explorer la démo</h3>
-              <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: "auto", lineHeight: 1.5 }}>Testez toutes les fonctionnalités avec un faux restaurant et des données fictives.</p>
-              <div style={{ borderTop: `1px solid rgba(255,149,0,0.2)`, paddingTop: 14, marginTop: 16, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ color: C.accentOrange, fontSize: 13, fontWeight: 600 }}>Accéder à la démo →</span>
-              </div>
-            </div>
             <div onClick={() => setShowCreate(true)} style={{ border: `2px dashed ${C.border}`, borderRadius: 16, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, gap: 8, transition: "all 0.2s" }}
               onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
               <div style={{ width: 40, height: 40, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: C.textSecondary }}>+</div>
@@ -6508,22 +6493,16 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: isMobile ? "column" : "row", ...FF }}>
       <style>{css}</style>
-      {/* Demo banner */}
-      {isDemo && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1002, background: "linear-gradient(90deg,#FF9F0A,#FF6B00)", padding: "7px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>🎯 MODE DÉMO FRANCHISE — Données fictives, aucune modification enregistrée</span>
-        </div>
-      )}
       {/* Desktop sidebar */}
       {!isMobile && (
-        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0, paddingTop: isDemo ? 36 : 0 }}>
+        <aside style={{ width: 220, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
           <div style={{ padding: "20px 16px 16px" }}>
             <Logo size={16} />
-            <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
+            <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg }}>
               <div style={{ fontSize: 22 }}>{group.logo_emoji}</div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{group.name}</div>
-                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Mes restaurants</div>
+                <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>{group.plan || "franchise"}</div>
               </div>
             </div>
           </div>
@@ -6536,19 +6515,22 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant }) {
             ))}
           </nav>
           <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div style={{ width: 30, height: 30, borderRadius: 8, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", color: C.white, fontSize: 13, fontWeight: 700 }}>{(user.name || user.email)[0].toUpperCase()}</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{user.name}</div>
-                <div style={{ fontSize: 11, color: C.textTertiary }}>{user.email}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
+                <div style={{ fontSize: 11, color: C.textTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
               </div>
             </div>
+            <button onClick={onBack} style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
+              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
+            </button>
           </div>
         </aside>
       )}
 
       {/* Main content */}
-      <div style={{ flex: 1, overflow: "auto", paddingTop: isDemo ? (isMobile ? 44 : 0) : 0, paddingBottom: isMobile ? 70 : 0 }}>
+      <div style={{ flex: 1, overflow: "auto", paddingBottom: isMobile ? 70 : 0 }}>
         {/* Header */}
         <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: isMobile ? "12px 16px" : "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -7232,11 +7214,15 @@ function Dashboard() {
   const T = TRANSLATIONS[lang] || TRANSLATIONS.fr;
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (data.session?.user) {
         const u = data.session.user;
-        setUser({ id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email });
-        setPage("restaurants");
+        const userData = { id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email };
+        setUser(userData);
+        // Check for franchise group → redirect directly to franchise dashboard
+        const { data: grp } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
+        if (grp) { setFranchiseGroup(grp); setPage("franchise"); }
+        else setPage("restaurants");
       } else {
         setPage("landing");
       }
@@ -7247,11 +7233,6 @@ function Dashboard() {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!user || user.id === "demo") return;
-    supabase.from("franchise_groups").select("*").eq("owner_id", user.id).single()
-      .then(({ data }) => { if (data) setFranchiseGroup(data); });
-  }, [user]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -7277,11 +7258,11 @@ function Dashboard() {
     <LangCtx.Provider value={{ lang, setLang, T }}>
     <StoreCtx.Provider value={store}>
       {page === "landing" && <LandingPage onDemo={startDemo} onSignup={() => setPage("signup")} onLogin={() => setPage("signup")} />}
-      {page === "signup" && <SignupPage onDone={u => { setUser(u); setPage("restaurants"); }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
+      {page === "signup" && <SignupPage onDone={async (u, grp) => { setUser(u); if (grp) { setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single(); if (data) { setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => user ? setPage("restaurants") : setPage("landing")} onRestaurant={r => {
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onRestaurant={r => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
           const stat = DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
