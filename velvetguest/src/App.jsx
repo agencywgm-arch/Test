@@ -1824,9 +1824,17 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
               <div style={{ fontSize: 20 }}>{restaurant.emoji}</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{restaurant.name}</div>
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               {active.length > 0 && <button onClick={() => setTab("orders")} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", ...FF }}>{active.length} cmd</button>}
               <button onClick={onCuisine} style={{ background: ready.length > 0 ? C.accentGreen : C.bg, color: ready.length > 0 ? "#fff" : C.textSecondary, border: "none", borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>🍳</button>
+              <button onClick={() => setNotifOpen(o => !o)} style={{ position: "relative", width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${C.border}`, background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, cursor: "pointer" }}>
+                🔔
+                {store.notifHistory.length > 0 && (
+                  <span style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 8, background: C.accent, color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", border: "2px solid #fff" }}>
+                    {store.notifHistory.length > 99 ? "99+" : store.notifHistory.length}
+                  </span>
+                )}
+              </button>
             </div>
           </header>
         ) : (
@@ -1839,36 +1847,50 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onCuisine, on
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <Btn variant="ghost" size="sm" onClick={onCuisine}>🍳 {T.btn_kitchen}{ready.length > 0 ? ` (${ready.length})` : ""}</Btn>
               <Btn variant="primary" size="sm" onClick={onClient}>📱 {T.btn_client}</Btn>
-              <button onClick={() => setNotifOpen(o => !o)} style={{ position: "relative", width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: notifOpen ? C.bg : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, cursor: "pointer" }}>
+              <button onClick={() => setNotifOpen(o => !o)} style={{ position: "relative", width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${notifOpen ? C.dark : C.border}`, background: notifOpen ? C.bg : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, cursor: "pointer" }}>
                 🔔
-                {store.notifHistory.length > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: C.accent }} />}
+                {store.notifHistory.length > 0 && (
+                  <span style={{ position: "absolute", top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, background: C.accent, color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", border: "2px solid #fff" }}>
+                    {store.notifHistory.length > 99 ? "99+" : store.notifHistory.length}
+                  </span>
+                )}
               </button>
             </div>
           </header>
         )}
         {notifOpen && (
-          <div style={{ position: "fixed", top: 56, right: 16, width: 340, maxHeight: 480, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 12px 40px rgba(0,0,0,0.14)", zIndex: 200, display: "flex", flexDirection: "column", ...FF }}>
-            <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>🔔 Notifications</span>
-              <button onClick={() => setNotifOpen(false)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
-            </div>
-            <div style={{ overflowY: "auto", flex: 1 }}>
-              {store.notifHistory.length === 0 ? (
-                <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Aucune notification</div>
-              ) : store.notifHistory.map(n => {
-                const colors = { info: C.accentBlue, success: C.accentGreen, warning: C.accentOrange, new: C.accent };
-                return (
-                  <div key={n.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: colors[n.type] || C.accentBlue, marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, color: C.dark }}>{n.msg}</div>
-                      <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>{n.ts?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+          <>
+            <div onClick={() => setNotifOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 198 }} />
+            <div style={{ position: "fixed", top: isMobile ? 52 : 56, right: isMobile ? 8 : 16, left: isMobile ? 8 : "auto", width: isMobile ? "auto" : 340, maxHeight: 480, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 12px 40px rgba(0,0,0,0.18)", zIndex: 199, display: "flex", flexDirection: "column", ...FF }}>
+              <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>🔔 Notifications</span>
+                  {store.notifHistory.length > 0 && (
+                    <span style={{ background: C.bg, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, color: C.textSecondary }}>{store.notifHistory.length} aujourd'hui</span>
+                  )}
+                </div>
+                <button onClick={() => setNotifOpen(false)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: C.textSecondary, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {store.notifHistory.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Aucune notification pour l'instant</div>
+                ) : store.notifHistory.map(n => {
+                  const colors = { info: C.accentBlue, success: C.accentGreen, warning: C.accentOrange, new: C.accent };
+                  const icons = { info: "ℹ️", success: "✅", warning: "⚠️", new: "🆕" };
+                  return (
+                    <div key={n.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{icons[n.type] || "🔔"}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, color: C.dark, lineHeight: 1.4 }}>{n.msg}</div>
+                        <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 3 }}>{n.ts?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                      </div>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: colors[n.type] || C.accentBlue, marginTop: 5, flexShrink: 0 }} />
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          </>
         )}
         <div style={{ padding: isMobile ? "12px 12px" : "28px 32px" }}>
           {tab === "overview" && <OverviewTab store={store} restaurant={restaurant} onCuisine={onCuisine} onClient={onClient} />}
