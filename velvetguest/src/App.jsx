@@ -7430,43 +7430,56 @@ function Dashboard() {
   const T = TRANSLATIONS[lang] || TRANSLATIONS.fr;
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (data.session?.user) {
-        const u = data.session.user;
-        const userData = { id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email };
-        setUser(userData);
+    async function initSession() {
+      try {
+        const sessionRes = await supabase.auth.getSession();
+        const u = sessionRes?.data?.session?.user;
+        if (u) {
+          const userData = { id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email };
+          setUser(userData);
 
-        // 1. Check localStorage cache first (instant, no RLS issues)
-        const cached = localStorage.getItem(`vg_fg_${u.id}`);
-        if (cached) {
+          // 1. Check localStorage cache first (instant, survives RLS issues)
           try {
-            const grp = JSON.parse(cached);
-            setFranchiseGroup(grp);
-            setPage("franchise");
-            // Refresh from Supabase in background to keep cache fresh
-            supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single()
-              .then(({ data: fresh }) => { if (fresh) localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(fresh)); });
-            return;
+            const cached = localStorage.getItem(`vg_fg_${u.id}`);
+            if (cached) {
+              const grp = JSON.parse(cached);
+              if (grp && grp.id) {
+                setFranchiseGroup(grp);
+                setPage("franchise");
+                // Refresh in background
+                supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single()
+                  .then(res => { if (res?.data) localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(res.data)); });
+                return;
+              }
+            }
           } catch {}
-        }
 
-        // 2. Fallback: query Supabase
-        const { data: grp, error } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
-        if (grp) {
-          localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp));
-          setFranchiseGroup(grp);
-          setPage("franchise");
-        } else {
+          // 2. Query Supabase
+          try {
+            const grpRes = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single();
+            if (grpRes?.data) {
+              localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grpRes.data));
+              setFranchiseGroup(grpRes.data);
+              setPage("franchise");
+              return;
+            }
+          } catch {}
+
           setPage("restaurants");
+        } else {
+          setPage("landing");
         }
-      } else {
+      } catch {
         setPage("landing");
       }
+    }
+    initSession();
+
+    const authListener = supabase.auth.onAuthStateChange((_e, session) => {
+      if (!session) { setUser(null); setFranchiseGroup(null); setPage("landing"); }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) { setUser(null); setPage("landing"); }
-    });
-    return () => subscription.unsubscribe();
+    const subscription = authListener?.data?.subscription;
+    return () => { try { subscription?.unsubscribe(); } catch {} };
   }, []);
 
 
