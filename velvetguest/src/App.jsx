@@ -1688,7 +1688,7 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SettingsTab({ restaurant }) {
   const store = useContext(StoreCtx);
-  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "" };
+  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false };
   const [settings, setSettings] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
@@ -1697,7 +1697,7 @@ function SettingsTab({ restaurant }) {
     if (restaurant.id === "demo") return;
     supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
       .then(({ data, error }) => {
-        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "" });
+        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
         else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
@@ -1768,6 +1768,7 @@ function SettingsTab({ restaurant }) {
 
   const emailOk = !!settings.resend_api_key;
   const stripeOk = !!(settings.stripe_publishable_key && settings.stripe_secret_key);
+  const googleOk = !!(settings.google_review_url && settings.google_review_enabled);
 
   return (
     <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1789,12 +1790,33 @@ function SettingsTab({ restaurant }) {
         <ExtLink href="https://dashboard.stripe.com/apikeys">Obtenir vos clés Stripe</ExtLink>
       </Surface>
 
+      {/* Google Reviews */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>⭐ Avis Google</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Après chaque commande QR, proposez à vos clients de laisser un avis Google sur votre établissement.</p>
+        <TxtField label="URL de votre page avis Google" field="google_review_url" placeholder="https://g.page/r/xxxxx/review" />
+        <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 16, marginTop: -10 }}>
+          Trouvez votre lien sur <a href="https://business.google.com" target="_blank" rel="noreferrer" style={{ color: C.accentBlue }}>Google Business Profile</a> → Demander des avis
+        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.bg, borderRadius: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Activer le bouton "Laisser un avis Google"</div>
+            <div style={{ fontSize: 12, color: C.textSecondary }}>S'affiche après chaque commande si l'URL est renseignée</div>
+          </div>
+          <div onClick={() => setSettings(p => ({ ...p, google_review_enabled: !p.google_review_enabled }))}
+            style={{ width: 44, height: 26, borderRadius: 13, background: settings.google_review_enabled ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+            <div style={{ position: "absolute", top: 3, left: settings.google_review_enabled ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
+          </div>
+        </div>
+      </Surface>
+
       {/* Status */}
       <Surface style={{ padding: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 16 }}>📊 Statut de configuration</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <StatusBadge label="Email" ok={emailOk} hint={emailOk ? "Clé Resend configurée — campagnes actives." : "Renseignez votre clé Resend pour activer les campagnes email."} />
-<StatusBadge label="Stripe" ok={stripeOk} hint={stripeOk ? "Clés Stripe configurées — paiement en ligne actif." : "Renseignez les deux clés Stripe pour activer le paiement en ligne."} />
+          <StatusBadge label="Stripe" ok={stripeOk} hint={stripeOk ? "Clés Stripe configurées — paiement en ligne actif." : "Renseignez les deux clés Stripe pour activer le paiement en ligne."} />
+          <StatusBadge label="Avis Google" ok={googleOk} hint={googleOk ? "Bouton Google activé — affiché après chaque commande QR." : "Renseignez l'URL Google et activez le toggle pour afficher le bouton."} />
         </div>
       </Surface>
 
@@ -5594,6 +5616,7 @@ function CustomerPage({ slug, tableNum }) {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const [activePromos, setActivePromos] = useState([]);
+  const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -5624,6 +5647,11 @@ function CustomerPage({ slug, tableNum }) {
         try {
           const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
           setActivePromos(promos ?? []);
+        } catch {}
+        // Google review settings
+        try {
+          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled").eq("restaurant_id", resto.id).maybeSingle();
+          if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
         } catch {}
         setStep("menu");
       } catch {
@@ -6056,6 +6084,28 @@ function CustomerPage({ slug, tableNum }) {
               </div>
               {rating > 0 && <p style={{ color: C.accentGreen, fontWeight: 600, fontSize: 14 }}>Merci pour votre avis ! 🙏</p>}
             </div>
+
+            {/* Google Review CTA */}
+            {googleReviewUrl && (
+              <div style={{ background: C.white, borderRadius: 16, padding: "20px", marginBottom: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Laissez-nous un avis Google</p>
+                  </div>
+                  <p style={{ fontSize: 13, color: C.textSecondary, textAlign: "center", margin: 0 }}>Votre avis aide d'autres clients à nous découvrir. Ça prend 30 secondes ! 🙏</p>
+                  <a href={googleReviewUrl} target="_blank" rel="noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "13px 20px", background: "#4285F4", color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", textDecoration: "none", justifyContent: "center", fontFamily: "'Figtree', -apple-system, sans-serif" }}>
+                    ⭐ Laisser un avis sur Google
+                  </a>
+                </div>
+              </div>
+            )}
 
             <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
           </div>
