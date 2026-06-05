@@ -2,43 +2,15 @@
 
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
-
-// ─── Photo library ─────────────────────────────────────────────────────────────
-
-const PHOTOS = [
-  { id: "1414235077428-338989a2e8c0", label: "Brasserie",       cat: "Restaurant" },
-  { id: "1517248135467-4c7edcad34c4", label: "Lumières",        cat: "Restaurant" },
-  { id: "1551218372-a8789b81b253",    label: "Gastronomie",     cat: "Restaurant" },
-  { id: "1484659619872-2cb81cd62a0f", label: "Salle élégante",  cat: "Restaurant" },
-  { id: "1466978913421-dad2ebd01d17", label: "Ambiance",        cat: "Restaurant" },
-  { id: "1552566626-52f8b828a9d4",    label: "Comptoir",        cat: "Bar" },
-  { id: "1492571350019-22de08371d37", label: "Cocktails",       cat: "Bar" },
-  { id: "1527361455-5a1f43a7a103",    label: "Bar luxe",        cat: "Bar" },
-  { id: "1572116469-44eedcec4c4c",    label: "Bar néon",        cat: "Bar" },
-  { id: "1519864600265-abb23847ef5b", label: "Rooftop",         cat: "Paris" },
-  { id: "1502602493604-6018e1c46f7a", label: "Paris nuit",      cat: "Paris" },
-  { id: "1503917988258-f87a78e3c995", label: "Tour Eiffel",     cat: "Paris" },
-  { id: "1508214751196-bcfd4ca60f91", label: "Club VIP",        cat: "Club" },
-  { id: "1566073771259-470192a08c2a", label: "Dancefloor",      cat: "Club" },
-  { id: "1529636798458-a8ed4d2c15de", label: "Lounge",          cat: "Club" },
-  { id: "1473116763249-eb81d4fa6e6e", label: "Terrasse",        cat: "Terrasse" },
-  { id: "1510759790077-97bf33b9e8c4", label: "Garden bar",      cat: "Terrasse" },
-];
-const CATS = ["Tous", "Restaurant", "Bar", "Paris", "Club", "Terrasse"];
-
-function thumbUrl(id: string) {
-  return `https://images.unsplash.com/photo-${id}?fit=crop&w=200&h=200&q=70`;
-}
-function fullUrl(id: string) {
-  return `https://images.unsplash.com/photo-${id}?fit=crop&w=1080&h=1080&q=85`;
-}
+import { RESTAURANTS_PARIS, type ParisRestaurant } from "@/lib/restaurants-paris";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Slide { titre: string; phrase: string; }
+interface Slide { titre: string; phrase: string; photoId?: string; }
 type ThemeKey = "violet_nuit" | "luxe_noir" | "rose_parisien" | "or_champagne";
 
 interface Config {
+  restaurantId: string;
   restaurant: string;
   photoId: string;
   theme: ThemeKey;
@@ -60,6 +32,8 @@ interface AutoConfig {
   intervalDays: number;
   lastRun: string | null;
   nextRun: string | null;
+  restaurantMode: "fixed" | "random";
+  fixedRestaurantId: string;
 }
 
 // ─── Themes ───────────────────────────────────────────────────────────────────
@@ -71,29 +45,40 @@ const THEMES: Record<ThemeKey, { name: string; accent: string; title: string; te
   or_champagne:  { name: "Or Champagne",  accent: "#fcd34d", title: "#fef3c7", text: "#fde68a" },
 };
 
-const DEFAULT_CONFIG: Config = {
-  restaurant: "Le Perchoir Marais",
-  photoId: PHOTOS[0].id,
-  theme: "violet_nuit",
-  gradientStart: 20,
-  gradientIntensity: 90,
-  titleFontSize: 68,
-  textFontSize: 40,
-  showBranding: true,
-  brandingText: "nightlife.paris",
-  ctaText: "DM pour participer",
-  showCounter: true,
-  slides: [
-    { titre: "Paris vue d'en haut",       phrase: "Là où chaque soirée devient un souvenir" },
-    { titre: "Une sélection pointue",     phrase: "Profil Instagram requis · Gratuit · Exclusif" },
-    { titre: "L'ambiance qui fait tout",  phrase: "Lumières tamisées, musique curatée, compagnie parfaite" },
-    { titre: "Rejoins les prochains",     phrase: "Places limitées — envoie-nous un DM maintenant" },
-  ],
-  caption: "✨ Soirée exclusive à Paris — profil Instagram requis 🌙\n\nSélection basée sur ton profil. Gratuit. Inoubliable.",
-  hashtags: "#nightlifeparis #paris #soiree #restaurant #luxe #parisbynight",
+function makeConfig(r: ParisRestaurant): Config {
+  return {
+    restaurantId: r.id,
+    restaurant: r.nom,
+    photoId: r.photoId,
+    theme: "violet_nuit",
+    gradientStart: 20,
+    gradientIntensity: 90,
+    titleFontSize: 68,
+    textFontSize: 40,
+    showBranding: true,
+    brandingText: "nightlife.paris",
+    ctaText: "DM pour participer",
+    showCounter: true,
+    slides: r.slides.map(s => ({ ...s, photoId: r.photoId })),
+    caption: r.caption,
+    hashtags: r.hashtags,
+  };
+}
+
+const DEFAULT_CONFIG: Config = makeConfig(RESTAURANTS_PARIS[0]);
+const DEFAULT_AUTO: AutoConfig = {
+  enabled: false, intervalDays: 7, lastRun: null, nextRun: null,
+  restaurantMode: "random", fixedRestaurantId: RESTAURANTS_PARIS[0].id,
 };
 
-const DEFAULT_AUTO: AutoConfig = { enabled: false, intervalDays: 7, lastRun: null, nextRun: null };
+// ─── Photo helpers ─────────────────────────────────────────────────────────────
+
+function thumbUrl(id: string) {
+  return `https://images.unsplash.com/photo-${id}?fit=crop&w=300&h=300&q=70`;
+}
+function fullUrl(id: string) {
+  return `https://images.unsplash.com/photo-${id}?fit=crop&w=1080&h=1080&q=85`;
+}
 
 // ─── Canvas helpers ────────────────────────────────────────────────────────────
 
@@ -195,8 +180,7 @@ async function renderSlide(canvas: HTMLCanvasElement, cfg: Config, slide: Slide,
   const isLast = idx === cfg.slides.length - 1;
   if (isLast && cfg.ctaText) {
     ctx.font = "bold 38px system-ui,sans-serif";
-    const bTxtW = ctx.measureText(cfg.ctaText).width;
-    const bW = bTxtW + 80, bH = 78, bX = pad, bY = H - 150;
+    const bW = ctx.measureText(cfg.ctaText).width + 80, bH = 78, bX = pad, bY = H - 150;
     rrect(ctx, bX, bY, bW, bH, 39); ctx.fillStyle = theme.accent; ctx.fill();
     ctx.fillStyle = "#000000"; ctx.fillText(cfg.ctaText, bX + 40, bY + 50);
   }
@@ -228,8 +212,34 @@ function RangeSlider({ label, value, min, max, onChange }: {
   );
 }
 
-const lbl: CSSProperties = { color: "#a1a1aa", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" };
-const inp: CSSProperties = { display: "block", width: "100%", padding: "8px 10px", background: "#09090b", border: "1px solid #3f3f46", borderRadius: 8, color: "white", fontSize: 13, boxSizing: "border-box", outline: "none" };
+const lbl: CSSProperties = {
+  color: "#a1a1aa", fontSize: 11, fontWeight: 600,
+  textTransform: "uppercase", letterSpacing: "0.06em",
+};
+const inp: CSSProperties = {
+  display: "block", width: "100%", padding: "8px 10px",
+  background: "#09090b", border: "1px solid #3f3f46", borderRadius: 8,
+  color: "white", fontSize: 13, boxSizing: "border-box", outline: "none",
+};
+
+// ─── TYPE BADGE COLORS ─────────────────────────────────────────────────────────
+
+const TYPE_COLOR: Record<string, string> = {
+  "Rooftop Bar": "#a78bfa",
+  "Gastronomique": "#f59e0b",
+  "Club Membres": "#ef4444",
+  "Club Légendaire": "#ef4444",
+  "Club / Restaurant": "#f472b6",
+  "Restaurant Historique": "#fcd34d",
+  "Hôtel / Bar": "#06b6d4",
+  "Hôtel / Café": "#06b6d4",
+  "Terrasse / Jardin": "#10b981",
+  "Brasserie Luxe": "#f59e0b",
+  "Brasserie Palace": "#f59e0b",
+  "Bar / Restaurant Design": "#a78bfa",
+  "Bistronomie": "#10b981",
+  "Restaurant Italien": "#f472b6",
+};
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -241,17 +251,26 @@ export default function CarouselGeneratorInline() {
   const [rendering, setRendering] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [catFilter, setCatFilter] = useState("Tous");
   const [saved, setSaved] = useState(false);
+  const [showAllRestaurants, setShowAllRestaurants] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     try {
-      const s = localStorage.getItem("cg_config_v2");
+      const s = localStorage.getItem("cg_config_v3");
       if (s) setCfg(c => ({ ...c, ...JSON.parse(s) }));
-      const a = localStorage.getItem("cg_auto_v2");
+      const a = localStorage.getItem("cg_auto_v3");
       if (a) setAuto(x => ({ ...x, ...JSON.parse(a) }));
     } catch {}
+  }, []);
+
+  // Auto-gen check on mount
+  useEffect(() => {
+    if (!auto.enabled || !auto.nextRun) return;
+    if (new Date() >= new Date(auto.nextRun)) {
+      submitCarousel(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const doRender = useCallback(async () => {
@@ -263,42 +282,63 @@ export default function CarouselGeneratorInline() {
 
   useEffect(() => { doRender(); }, [doRender]);
 
-  // Auto-gen check on mount
-  useEffect(() => {
-    if (!auto.enabled || !auto.nextRun) return;
-    if (new Date() >= new Date(auto.nextRun)) {
-      submitCarousel(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function set<K extends keyof Config>(k: K, v: Config[K]) { setCfg(c => ({ ...c, [k]: v })); }
+
+  function selectRestaurant(r: ParisRestaurant) {
+    setCfg(c => ({
+      ...c,
+      restaurantId: r.id,
+      restaurant: r.nom,
+      photoId: r.photoId,
+      slides: r.slides.map(s => ({ ...s, photoId: r.photoId })),
+      caption: r.caption,
+      hashtags: r.hashtags,
+    }));
+    setActiveSlide(0);
+  }
+
+  function pickRandom() {
+    const r = RESTAURANTS_PARIS[Math.floor(Math.random() * RESTAURANTS_PARIS.length)];
+    selectRestaurant(r);
+  }
 
   function setSlide(i: number, k: keyof Slide, v: string) {
     setCfg(c => { const slides = [...c.slides]; slides[i] = { ...slides[i], [k]: v }; return { ...c, slides }; });
   }
 
   function saveConfig() {
-    localStorage.setItem("cg_config_v2", JSON.stringify(cfg));
-    localStorage.setItem("cg_auto_v2", JSON.stringify(auto));
+    localStorage.setItem("cg_config_v3", JSON.stringify(cfg));
+    localStorage.setItem("cg_auto_v3", JSON.stringify(auto));
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
 
   async function submitCarousel(isAuto = false) {
     if (submitting) return;
+    let submitCfg = cfg;
+
+    if (isAuto && auto.restaurantMode === "random") {
+      const r = RESTAURANTS_PARIS[Math.floor(Math.random() * RESTAURANTS_PARIS.length)];
+      submitCfg = { ...makeConfig(r), theme: cfg.theme, brandingText: cfg.brandingText, ctaText: cfg.ctaText };
+    } else if (isAuto && auto.restaurantMode === "fixed") {
+      const r = RESTAURANTS_PARIS.find(x => x.id === auto.fixedRestaurantId) ?? RESTAURANTS_PARIS[0];
+      submitCfg = { ...makeConfig(r), theme: cfg.theme, brandingText: cfg.brandingText, ctaText: cfg.ctaText };
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/contenu/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          restaurant: cfg.restaurant,
-          slides: cfg.slides,
-          caption: cfg.caption,
-          hashtags: cfg.hashtags,
-          scoreGlobal: 8.5,
-          scoreViral: 8.0,
-          scoreLuxe: 8.5,
+          restaurant: submitCfg.restaurant,
+          slides: submitCfg.slides,
+          caption: submitCfg.caption,
+          hashtags: submitCfg.hashtags,
+          scoreGlobal: (submitCfg.restaurant === cfg.restaurant
+            ? RESTAURANTS_PARIS.find(r => r.id === cfg.restaurantId)
+            : RESTAURANTS_PARIS.find(r => r.id === submitCfg.restaurantId))?.scoreViral ?? 8.5,
+          scoreViral: RESTAURANTS_PARIS.find(r => r.id === submitCfg.restaurantId)?.scoreViral ?? 8.0,
+          scoreLuxe: RESTAURANTS_PARIS.find(r => r.id === submitCfg.restaurantId)?.scoreLuxe ?? 8.0,
         }),
       });
       if (res.ok) {
@@ -309,7 +349,7 @@ export default function CarouselGeneratorInline() {
           const next = new Date(now.getTime() + auto.intervalDays * 86400000);
           const newAuto = { ...auto, lastRun: now.toISOString(), nextRun: next.toISOString() };
           setAuto(newAuto);
-          localStorage.setItem("cg_auto_v2", JSON.stringify(newAuto));
+          localStorage.setItem("cg_auto_v3", JSON.stringify(newAuto));
         }
       }
     } catch {}
@@ -323,15 +363,13 @@ export default function CarouselGeneratorInline() {
 
   function setAutoInterval(days: number) {
     setAuto(a => {
-      const next = a.lastRun
-        ? new Date(new Date(a.lastRun).getTime() + days * 86400000).toISOString()
-        : new Date(Date.now() + days * 86400000).toISOString();
-      return { ...a, intervalDays: days, nextRun: next };
+      const base = a.lastRun ? new Date(a.lastRun) : new Date();
+      return { ...a, intervalDays: days, nextRun: new Date(base.getTime() + days * 86400000).toISOString() };
     });
   }
 
-  const filtered = catFilter === "Tous" ? PHOTOS : PHOTOS.filter(p => p.cat === catFilter);
   const theme = THEMES[cfg.theme];
+  const visibleRestaurants = showAllRestaurants ? RESTAURANTS_PARIS : RESTAURANTS_PARIS.slice(0, 6);
 
   return (
     <div style={{ marginTop: 48 }}>
@@ -351,13 +389,14 @@ export default function CarouselGeneratorInline() {
         <div style={{ flex: 1 }}>
           <div style={{ color: "white", fontWeight: 700, fontSize: 15 }}>Générateur de carrousels</div>
           <div style={{ color: "#71717a", fontSize: 12, marginTop: 1 }}>
-            Crée tes slides 1080×1080 avec vraies photos — soumet directement dans la file de validation
+            {cfg.restaurant
+              ? `Restaurant sélectionné : ${cfg.restaurant} · Soumet directement dans la file`
+              : "Choisis un vrai restaurant parisien → génère les slides → soumet dans la file"}
           </div>
         </div>
         <span style={{
-          color: "#71717a", fontSize: 18, lineHeight: 1,
+          color: "#71717a", fontSize: 18, lineHeight: 1, display: "inline-block",
           transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s",
-          display: "inline-block",
         }}>▾</span>
       </button>
 
@@ -366,16 +405,112 @@ export default function CarouselGeneratorInline() {
           background: "#18181b", border: "1px solid #27272a", borderTop: "none",
           borderRadius: "0 0 14px 14px", padding: 20,
         }}>
+
+          {/* ─── Restaurant Picker ─── */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={lbl}>Choisir un restaurant parisien</div>
+              <button onClick={pickRandom} style={{
+                padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: "rgba(124,58,237,0.15)", color: "#a78bfa",
+                border: "1px solid rgba(124,58,237,0.3)", cursor: "pointer",
+              }}>🎲 Au hasard</button>
+            </div>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+              gap: 10,
+            }}>
+              {visibleRestaurants.map(r => {
+                const selected = cfg.restaurantId === r.id;
+                const typeColor = TYPE_COLOR[r.type] ?? "#71717a";
+                return (
+                  <button key={r.id} onClick={() => selectRestaurant(r)} style={{
+                    background: selected ? "rgba(124,58,237,0.1)" : "#09090b",
+                    border: `2px solid ${selected ? "#a78bfa" : "#27272a"}`,
+                    borderRadius: 12, overflow: "hidden", cursor: "pointer", padding: 0,
+                    textAlign: "left", transition: "border-color 0.15s",
+                  }}>
+                    {/* Photo */}
+                    <div style={{ position: "relative", aspectRatio: "16/9", overflow: "hidden" }}>
+                      <img
+                        src={thumbUrl(r.photoId)}
+                        alt={r.nom}
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                      {selected && (
+                        <div style={{
+                          position: "absolute", inset: 0,
+                          background: "rgba(124,58,237,0.35)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 22,
+                        }}>✓</div>
+                      )}
+                      {/* Type badge */}
+                      <div style={{
+                        position: "absolute", top: 6, left: 6,
+                        background: `${typeColor}22`, color: typeColor,
+                        border: `1px solid ${typeColor}55`,
+                        padding: "1px 7px", borderRadius: 20, fontSize: 9, fontWeight: 600,
+                        backdropFilter: "blur(4px)",
+                      }}>{r.type}</div>
+                    </div>
+                    {/* Info */}
+                    <div style={{ padding: "8px 10px" }}>
+                      <div style={{ color: "white", fontWeight: 700, fontSize: 12, lineHeight: 1.2, marginBottom: 2 }}>
+                        {r.nom}
+                      </div>
+                      <div style={{ color: "#52525b", fontSize: 10 }}>
+                        {r.quartier} · {r.arrondissement}
+                      </div>
+                      <div style={{ color: "#71717a", fontSize: 10, marginTop: 3, lineHeight: 1.3 }}>
+                        {r.description}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {RESTAURANTS_PARIS.length > 6 && (
+              <button onClick={() => setShowAllRestaurants(v => !v)} style={{
+                marginTop: 10, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12,
+                background: "#09090b", border: "1px solid #27272a", color: "#71717a", cursor: "pointer",
+              }}>
+                {showAllRestaurants
+                  ? "▲ Voir moins"
+                  : `▼ Voir tous les ${RESTAURANTS_PARIS.length} restaurants`}
+              </button>
+            )}
+          </div>
+
+          {/* ─── Main layout: config + preview ─── */}
           <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
 
             {/* ─── Config panel ─── */}
             <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
 
-              <div>
-                <div style={lbl}>Restaurant</div>
-                <input value={cfg.restaurant} onChange={e => set("restaurant", e.target.value)}
-                  style={{ ...inp, marginTop: 6 }} />
-              </div>
+              {/* Selected restaurant info */}
+              {cfg.photoId && (
+                <div style={{
+                  background: "#09090b", borderRadius: 10, padding: "10px 12px",
+                  display: "flex", gap: 10, alignItems: "center",
+                  border: "1px solid #27272a",
+                }}>
+                  <img src={thumbUrl(cfg.photoId)} alt="" loading="lazy" style={{
+                    width: 52, height: 52, borderRadius: 8, objectFit: "cover", flexShrink: 0,
+                  }} />
+                  <div>
+                    <div style={{ color: "white", fontWeight: 700, fontSize: 13 }}>{cfg.restaurant}</div>
+                    <div style={{ color: "#52525b", fontSize: 11, marginTop: 2 }}>
+                      {RESTAURANTS_PARIS.find(r => r.id === cfg.restaurantId)?.quartier ?? ""} · {" "}
+                      {RESTAURANTS_PARIS.find(r => r.id === cfg.restaurantId)?.type ?? ""}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <div style={lbl}>Thème</div>
@@ -392,50 +527,6 @@ export default function CarouselGeneratorInline() {
                 </div>
               </div>
 
-              {/* Photo picker */}
-              <div style={{ background: "#09090b", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={lbl}>Photo d'ambiance</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "8px 0 10px" }}>
-                  {CATS.map(c => (
-                    <button key={c} onClick={() => setCatFilter(c)} style={{
-                      padding: "2px 9px", borderRadius: 20, fontSize: 10, fontWeight: 500,
-                      background: catFilter === c ? "rgba(124,58,237,0.2)" : "transparent",
-                      color: catFilter === c ? "#a78bfa" : "#52525b",
-                      border: `1px solid ${catFilter === c ? "#7c3aed44" : "#3f3f46"}`,
-                      cursor: "pointer",
-                    }}>{c}</button>
-                  ))}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
-                  {filtered.map(p => (
-                    <div key={p.id} onClick={() => set("photoId", p.id)} style={{
-                      position: "relative", borderRadius: 7, overflow: "hidden",
-                      cursor: "pointer", aspectRatio: "1",
-                      outline: cfg.photoId === p.id ? `2px solid ${theme.accent}` : "2px solid transparent",
-                      outlineOffset: 1,
-                    }}>
-                      <img src={thumbUrl(p.id)} alt={p.label} loading="lazy"
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      {cfg.photoId === p.id && (
-                        <div style={{
-                          position: "absolute", inset: 0,
-                          background: `${theme.accent}44`,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 16, color: "white",
-                        }}>✓</div>
-                      )}
-                      <div style={{
-                        position: "absolute", bottom: 0, left: 0, right: 0,
-                        background: "linear-gradient(transparent,rgba(0,0,0,0.75))",
-                        padding: "10px 3px 3px", fontSize: 8, color: "white",
-                        textAlign: "center", lineHeight: 1.1,
-                      }}>{p.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Gradient */}
               <div style={{ background: "#09090b", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ ...lbl, marginBottom: 10 }}>Dégradé</div>
                 <RangeSlider label="Début (%)" value={cfg.gradientStart} min={0} max={80}
@@ -444,7 +535,6 @@ export default function CarouselGeneratorInline() {
                   onChange={v => set("gradientIntensity", v)} />
               </div>
 
-              {/* Typography */}
               <div style={{ background: "#09090b", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ ...lbl, marginBottom: 10 }}>Typographie</div>
                 <RangeSlider label="Titre (px)" value={cfg.titleFontSize} min={40} max={110}
@@ -453,7 +543,6 @@ export default function CarouselGeneratorInline() {
                   onChange={v => set("textFontSize", v)} />
               </div>
 
-              {/* Branding */}
               <div style={{ background: "#09090b", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ ...lbl, marginBottom: 8 }}>Branding</div>
                 {[
@@ -477,7 +566,6 @@ export default function CarouselGeneratorInline() {
                   placeholder="DM pour participer" style={{ ...inp, marginTop: 6 }} />
               </div>
 
-              {/* Caption + hashtags */}
               <div style={{ background: "#09090b", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={lbl}>Caption Instagram</div>
                 <textarea value={cfg.caption} onChange={e => set("caption", e.target.value)}
@@ -493,7 +581,7 @@ export default function CarouselGeneratorInline() {
 
             </div>
 
-            {/* ─── Right: Preview + Slides ─── */}
+            {/* ─── Preview + Slides ─── */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
 
               <div style={{ background: "#09090b", borderRadius: 12, padding: 14 }}>
@@ -507,7 +595,8 @@ export default function CarouselGeneratorInline() {
                       { label: "Suiv →", dis: activeSlide === cfg.slides.length - 1, fn: () => setActiveSlide(s => Math.min(cfg.slides.length - 1, s + 1)) },
                     ].map(b => (
                       <button key={b.label} onClick={b.fn} disabled={b.dis} style={{
-                        padding: "5px 12px", borderRadius: 7, fontSize: 12, cursor: b.dis ? "default" : "pointer",
+                        padding: "5px 12px", borderRadius: 7, fontSize: 12,
+                        cursor: b.dis ? "default" : "pointer",
                         background: "#18181b", border: "1px solid #27272a",
                         color: b.dis ? "#3f3f46" : "#a1a1aa",
                       }}>{b.label}</button>
@@ -536,13 +625,12 @@ export default function CarouselGeneratorInline() {
                 </div>
               </div>
 
-              {/* Slides list */}
               <div style={{ background: "#09090b", borderRadius: 12, padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <span style={lbl}>Slides ({cfg.slides.length})</span>
                   <button onClick={() => {
                     if (cfg.slides.length >= 10) return;
-                    setCfg(c => ({ ...c, slides: [...c.slides, { titre: "Nouveau slide", phrase: "Votre texte ici" }] }));
+                    setCfg(c => ({ ...c, slides: [...c.slides, { titre: "Nouveau slide", phrase: "Votre texte ici", photoId: c.photoId }] }));
                   }} style={{
                     padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
                     background: "rgba(124,58,237,0.2)", color: "#a78bfa",
@@ -604,7 +692,7 @@ export default function CarouselGeneratorInline() {
               border: submitted ? "1px solid rgba(16,185,129,0.3)" : "none",
               cursor: submitting ? "default" : "pointer",
             }}>
-              {submitted ? "✅ Soumis dans la file !" : submitting ? "⏳ En cours…" : "🚀 Générer & Soumettre"}
+              {submitted ? "✅ Soumis dans la file !" : submitting ? "⏳ En cours…" : `🚀 Générer & Soumettre — ${cfg.restaurant}`}
             </button>
           </div>
 
@@ -617,7 +705,7 @@ export default function CarouselGeneratorInline() {
               <div>
                 <div style={{ color: "white", fontWeight: 600, fontSize: 14 }}>Auto-génération</div>
                 <div style={{ color: "#52525b", fontSize: 12, marginTop: 1 }}>
-                  Soumet automatiquement une nouvelle proposition à chaque ouverture après l'intervalle choisi
+                  Soumet automatiquement un nouveau carrousel à chaque ouverture de la page après l'intervalle
                 </div>
               </div>
               <button onClick={() => toggleAuto(!auto.enabled)} style={{
@@ -626,17 +714,51 @@ export default function CarouselGeneratorInline() {
                 position: "relative", flexShrink: 0, marginLeft: 16, transition: "background 0.2s",
               }}>
                 <span style={{
-                  position: "absolute", top: 3,
-                  left: auto.enabled ? 23 : 3,
-                  width: 18, height: 18, borderRadius: "50%",
-                  background: "white", transition: "left 0.2s",
-                  display: "block",
+                  position: "absolute", top: 3, left: auto.enabled ? 23 : 3,
+                  width: 18, height: 18, borderRadius: "50%", background: "white",
+                  transition: "left 0.2s", display: "block",
                 }} />
               </button>
             </div>
 
             {auto.enabled && (
-              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+
+                {/* Restaurant mode */}
+                <div>
+                  <div style={{ ...lbl, marginBottom: 7 }}>Restaurant (auto)</div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    {[
+                      { v: "random" as const, label: "🎲 Aléatoire (tous les restaurants)" },
+                      { v: "fixed" as const, label: "📌 Restaurant fixe" },
+                    ].map(opt => (
+                      <button key={opt.v} onClick={() => setAuto(a => ({ ...a, restaurantMode: opt.v }))} style={{
+                        flex: 1, padding: "7px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                        background: auto.restaurantMode === opt.v ? "rgba(124,58,237,0.2)" : "#18181b",
+                        color: auto.restaurantMode === opt.v ? "#a78bfa" : "#52525b",
+                        border: `1px solid ${auto.restaurantMode === opt.v ? "#7c3aed44" : "#27272a"}`,
+                        cursor: "pointer",
+                      }}>{opt.label}</button>
+                    ))}
+                  </div>
+                  {auto.restaurantMode === "fixed" && (
+                    <select
+                      value={auto.fixedRestaurantId}
+                      onChange={e => setAuto(a => ({ ...a, fixedRestaurantId: e.target.value }))}
+                      style={{
+                        width: "100%", padding: "8px 10px",
+                        background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8,
+                        color: "white", fontSize: 13, outline: "none", cursor: "pointer",
+                      }}
+                    >
+                      {RESTAURANTS_PARIS.map(r => (
+                        <option key={r.id} value={r.id}>{r.nom} — {r.quartier}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Interval */}
                 <div>
                   <div style={{ ...lbl, marginBottom: 7 }}>Intervalle</div>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -653,6 +775,8 @@ export default function CarouselGeneratorInline() {
                     ))}
                   </div>
                 </div>
+
+                {/* Schedule status */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {auto.lastRun && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

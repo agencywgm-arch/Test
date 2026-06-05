@@ -121,15 +121,105 @@ export async function seedIfEmpty() {
 
     const D5ago = new Date(Date.now() - 5 * 86400000);
     const D12ago = new Date(Date.now() - 12 * 86400000);
+
+    // Each slide includes photoId so CarouselViewer shows the real restaurant photo
+    const mkSlides = (photoId: string, items: { titre: string; phrase: string }[]) =>
+      JSON.stringify(items.map(s => ({ ...s, photoId })));
+
     const contenus = [
-      { id: "ct-1", restaurant: "Le Perchoir Marais", scoreGlobal: 8.5, scoreViral: 9, scoreLuxe: 8, statut: "EN_ATTENTE", publishedAt: null, caption: "🌅 Paris comme tu ne l'as jamais vécu. Le Perchoir Marais t'attend pour nos prochains dîners exclusifs. Gratuit. Sélectif. Inoubliable. #nightlifeparis #dinerexclusif #rooftopparis", hashtags: "#nightlifeparis #rooftopparis #lifestyle #paris #luxe", slides: JSON.stringify([{ titre: "Paris vue d'en haut", phrase: "Quand le coucher de soleil se mêle au champagne sur les toits" }, { titre: "Une cuisine d'exception", phrase: "Chaque plat raconte une histoire de saveurs méditerranéennes" }, { titre: "L'ambiance qui fait tout", phrase: "Musique, lumières tamisées et compagnie parfaite" }, { titre: "Rejoins nos dîners privés", phrase: "Envoie-nous un message pour participer gratuitement" }]) },
-      { id: "ct-2", restaurant: "Brach Paris", scoreGlobal: 7.5, scoreViral: 7, scoreLuxe: 8, statut: "VALIDE", publishedAt: null, caption: "✨ Brach Paris — là où le luxe discret rencontre l'atmosphère la plus exclusive. Nos événements privés arrivent. #paris #luxe #soiree", hashtags: "#paris #luxe #soireeprivee #brach #lifestyle", slides: JSON.stringify([{ titre: "Hôtel particulier discret", phrase: "Un palace caché au cœur du 16ème" }, { titre: "Bar signature", phrase: "Les cocktails les plus photographiés de tout Paris" }, { titre: "Soirée intime & triée", phrase: "50 invitées. Aucune pub. Tout le frisson." }, { titre: "Ta prochaine soirée", phrase: "Envoie un DM pour rejoindre la liste VIP" }]) },
-      { id: "ct-3", restaurant: "Girafe Paris", scoreGlobal: 9.2, scoreViral: 9, scoreLuxe: 9, statut: "EN_ATTENTE", publishedAt: null, caption: "🗼 La Tour Eiffel comme toile de fond. Notre prochain dîner chez Girafe sera inoubliable. Places limitées. DM pour candidater.", hashtags: "#giraferestaurant #paris #toureiffel #luxe #nightlifeparis", slides: JSON.stringify([{ titre: "Vue sur la Tour Eiffel", phrase: "Dîner avec le plus beau décor du monde en fond" }, { titre: "Cuisine franco-méditerranéenne", phrase: "Des saveurs qui transportent, une vue qui captive" }, { titre: "Privatisation exclusive", phrase: "Une sélection pointue, une atmosphère électrique" }, { titre: "Sois des nôtres", phrase: "Réponds à notre story pour rejoindre la prochaine soirée" }]) },
-      { id: "ct-4", restaurant: "Loulou Restaurant", scoreGlobal: 6.8, scoreViral: 6, scoreLuxe: 7, statut: "REFUSE", publishedAt: null, caption: "🌿 Loulou au Louvre — le spot parisien qu'on ne présente plus.", hashtags: "#loulouparis #louvre #paris #restaurant", slides: JSON.stringify([{ titre: "Jardin des Tuileries", phrase: "Un restaurant suspendu entre Paris et l'art" }, { titre: "Cuisine italienne chic", phrase: "Les meilleures pâtes fraîches dans un cadre incomparable" }]) },
-      { id: "ct-5", restaurant: "Lapérouse", scoreGlobal: 8.0, scoreViral: 7, scoreLuxe: 9, statut: "PUBLIE", publishedAt: D5ago, caption: "🕯️ Lapérouse — le rendez-vous secret des Parisiens depuis 1766. Notre prochain dîner privé dans les salons historiques.", hashtags: "#laperouse #paris #gastronomie #luxury #nightlifeparis", slides: JSON.stringify([{ titre: "Le restaurant le plus mystérieux de Paris", phrase: "Depuis 1766, Lapérouse garde ses secrets" }, { titre: "Salons privés historiques", phrase: "Chaque cabinet raconte une romance parisienne" }, { titre: "Expérience sensorielle totale", phrase: "Cuisine gastronomique dans un décor de velours et d'or" }, { titre: "Une soirée hors du temps", phrase: "Places rares. Accès sur invitation uniquement." }]) },
-      { id: "ct-6", restaurant: "Terass Hotel Rooftop", scoreGlobal: 8.8, scoreViral: 9, scoreLuxe: 8, statut: "PUBLIE", publishedAt: D12ago, caption: "🌇 Terass Hotel — Montmartre au coucher du soleil. Notre prochaine soirée privée : bientôt.", hashtags: "#montmartre #rooftopparis #cocktails #paris #nightlife", slides: JSON.stringify([{ titre: "Montmartre vu du ciel", phrase: "Le rooftop le plus photogénique du 18ème" }, { titre: "Cocktails sunset", phrase: "Quand le soleil se couche sur Sacré-Cœur depuis ton verre" }, { titre: "Les meilleures personnes", phrase: "Un cercle sélect qui se retrouve chaque semaine" }, { titre: "La prochaine fois c'est toi", phrase: "Réponds à notre story pour rejoindre la liste" }]) },
-      { id: "ct-7", restaurant: "Brasserie Lutetia", scoreGlobal: 7.2, scoreViral: 6, scoreLuxe: 8, statut: "EN_ATTENTE", publishedAt: null, caption: "🦪 Lutetia Paris — notre prochaine soirée gastronomique dans ce palace historique. Candidatures ouvertes.", hashtags: "#lutetia #palace #paris #gastronomie", slides: JSON.stringify([{ titre: "L'hôtel des artistes", phrase: "Le Lutetia, palace Saint-Germain au passé légendaire" }, { titre: "Brasserie d'exception", phrase: "Les huîtres les plus fraîches et le champagne en abondance" }, { titre: "Soirée très select", phrase: "30 places. Ambiance feutrée. Robe exigée." }]) },
-      { id: "ct-8", restaurant: "Silencio Club", scoreGlobal: 9.0, scoreViral: 9, scoreLuxe: 9, statut: "VALIDE", publishedAt: null, caption: "🖤 Silencio — le club conçu par David Lynch. Notre prochaine soirée privée dans les coulisses de Paris. Accès ultra-sélectif.", hashtags: "#silencio #paris #club #luxury #nightlifeparis", slides: JSON.stringify([{ titre: "Le club le plus secret de Paris", phrase: "Imaginé par David Lynch, accessible aux élus" }, { titre: "Architecture unique", phrase: "Chaque salle est une œuvre d'art habitée" }, { titre: "La nuit parisienne dans sa version la plus pure", phrase: "Ni vu ni connu, juste ressenti" }, { titre: "Tu veux entrer ?", phrase: "La liste est fermée. Envoie un DM quand même." }]) },
+      {
+        id: "ct-1", restaurant: "Le Perchoir Marais",
+        scoreGlobal: 8.5, scoreViral: 9, scoreLuxe: 8, statut: "EN_ATTENTE", publishedAt: null,
+        caption: "🌅 Paris comme tu ne l'as jamais vécu. Le Perchoir Marais t'attend pour nos prochains dîners exclusifs. Gratuit. Sélectif. Inoubliable.",
+        hashtags: "#leperchoir #rooftopparis #marais #nightlifeparis #sunset",
+        slides: mkSlides("1519864600265-abb23847ef5b", [
+          { titre: "Paris vue d'en haut", phrase: "Le coucher de soleil depuis Le Perchoir — chaque soir un tableau différent" },
+          { titre: "Dîner au sommet", phrase: "Cuisine méditerranéenne avec les toits de Paris pour décor" },
+          { titre: "L'ambiance qui fait tout", phrase: "Musique curatée, lumières tamisées, cercle très select" },
+          { titre: "Rejoins le prochain dîner", phrase: "Places limitées — envoie-nous un DM pour candidater" },
+        ]),
+      },
+      {
+        id: "ct-2", restaurant: "Brach Paris",
+        scoreGlobal: 7.5, scoreViral: 7, scoreLuxe: 8, statut: "VALIDE", publishedAt: null,
+        caption: "✨ Brach Paris — là où le luxe discret rencontre l'atmosphère la plus exclusive. Nos événements privés arrivent.",
+        hashtags: "#brach #paris16 #luxe #soireeprivee #philippestarck",
+        slides: mkSlides("1492571350019-22de08371d37", [
+          { titre: "Hôtel particulier discret", phrase: "Un palace caché au cœur du 16ème" },
+          { titre: "Bar signature", phrase: "Les cocktails les plus photographiés de tout Paris" },
+          { titre: "Soirée intime & ultra-triée", phrase: "50 invitées max. Aucune pub. Tout le frisson." },
+          { titre: "Ta prochaine soirée", phrase: "Envoie un DM pour rejoindre la liste VIP" },
+        ]),
+      },
+      {
+        id: "ct-3", restaurant: "Girafe Restaurant",
+        scoreGlobal: 9.2, scoreViral: 9.5, scoreLuxe: 9.2, statut: "EN_ATTENTE", publishedAt: null,
+        caption: "🗼 La Tour Eiffel comme toile de fond. Notre prochain dîner chez Girafe sera inoubliable. Places très limitées.",
+        hashtags: "#giraferestaurant #toureiffel #trocadero #luxeparis #gastronomie",
+        slides: mkSlides("1503917988258-f87a78e3c995", [
+          { titre: "La Tour Eiffel en fond", phrase: "Dîner face au monument le plus célèbre du monde" },
+          { titre: "Cuisine franco-méditerranéenne", phrase: "Des saveurs qui transportent, une vue qui captive" },
+          { titre: "La salle la plus photogénique de Paris", phrase: "Chaque angle est une carte postale" },
+          { titre: "Sois des nôtres", phrase: "Réponds à notre story pour rejoindre le prochain dîner privé" },
+        ]),
+      },
+      {
+        id: "ct-4", restaurant: "Loulou Restaurant",
+        scoreGlobal: 6.8, scoreViral: 6, scoreLuxe: 7, statut: "REFUSE", publishedAt: null,
+        caption: "🌿 Loulou au Jardin des Tuileries — nos brunchs et dîners dans le jardin le plus chic de Paris.",
+        hashtags: "#loulouparis #louvre #tuileries #paris1er #brunch",
+        slides: mkSlides("1473116763249-eb81d4fa6e6e", [
+          { titre: "Jardin des Tuileries, table dressée", phrase: "Un restaurant suspendu entre Paris et l'art" },
+          { titre: "Cuisine italienne chic", phrase: "Les meilleures pâtes fraîches avec le Louvre en fond" },
+        ]),
+      },
+      {
+        id: "ct-5", restaurant: "Lapérouse",
+        scoreGlobal: 8.0, scoreViral: 7, scoreLuxe: 9, statut: "PUBLIE", publishedAt: D5ago,
+        caption: "🕯️ Lapérouse — le rendez-vous secret des Parisiens depuis 1766. Notre prochain dîner privé dans les salons historiques.",
+        hashtags: "#laperouse #paris #gastronomie #luxury #saintgermain",
+        slides: mkSlides("1551218372-a8789b81b253", [
+          { titre: "Le restaurant le plus mystérieux de Paris", phrase: "Depuis 1766, Lapérouse garde ses secrets" },
+          { titre: "Salons privés hors du temps", phrase: "Chaque cabinet raconte une romance parisienne" },
+          { titre: "Cuisine gastronomique dans un décor d'or", phrase: "Velours, bougies et dîner d'exception" },
+          { titre: "Une soirée que l'on n'oublie pas", phrase: "Places rares. Accès sur invitation uniquement." },
+        ]),
+      },
+      {
+        id: "ct-6", restaurant: "Terass Hotel Rooftop",
+        scoreGlobal: 8.8, scoreViral: 9, scoreLuxe: 8, statut: "PUBLIE", publishedAt: D12ago,
+        caption: "🌇 Terass Hotel — Montmartre au coucher du soleil. Notre prochaine soirée privée : bientôt.",
+        hashtags: "#montmartre #rooftopparis #cocktails #paris18 #nightlife",
+        slides: mkSlides("1502602493604-6018e1c46f7a", [
+          { titre: "Montmartre vu du ciel", phrase: "Le rooftop le plus photogénique du 18ème" },
+          { titre: "Cocktails au coucher du soleil", phrase: "Quand Sacré-Cœur illumine ton verre" },
+          { titre: "Les meilleures personnes de Paris", phrase: "Un cercle sélect qui se retrouve chaque semaine" },
+          { titre: "La prochaine fois, c'est toi", phrase: "Réponds à notre story pour rejoindre la liste" },
+        ]),
+      },
+      {
+        id: "ct-7", restaurant: "Brasserie Lutetia",
+        scoreGlobal: 7.2, scoreViral: 6, scoreLuxe: 8, statut: "EN_ATTENTE", publishedAt: null,
+        caption: "🦪 Lutetia Paris — notre prochaine soirée gastronomique dans ce palace historique. Candidatures ouvertes.",
+        hashtags: "#lutetia #palace #saintgermain #brasserie #gastronomie",
+        slides: mkSlides("1414235077428-338989a2e8c0", [
+          { titre: "L'hôtel des artistes depuis 1910", phrase: "Picasso, Hemingway, Gainsbourg — tous ont dormi ici" },
+          { titre: "Brasserie d'exception", phrase: "Les meilleures huîtres et le champagne en abondance" },
+          { titre: "Soirée très select", phrase: "30 places. Ambiance feutrée. Tenue de rigueur." },
+        ]),
+      },
+      {
+        id: "ct-8", restaurant: "Silencio Club",
+        scoreGlobal: 9.0, scoreViral: 9, scoreLuxe: 9, statut: "VALIDE", publishedAt: null,
+        caption: "🖤 Silencio — le club imaginé par David Lynch. Notre prochaine soirée privée dans les coulisses de Paris. Accès ultra-sélectif.",
+        hashtags: "#silencio #davidlynch #paris #clubparis #nightlifeparis",
+        slides: mkSlides("1508214751196-bcfd4ca60f91", [
+          { titre: "Le club le plus secret de Paris", phrase: "Imaginé par David Lynch, réservé aux élus" },
+          { titre: "Architecture unique au monde", phrase: "Chaque salle est une œuvre d'art habitée" },
+          { titre: "La nuit dans sa version la plus pure", phrase: "Ni vu ni connu, juste ressenti" },
+          { titre: "Tu veux entrer ?", phrase: "La liste est fermée. Envoie un DM quand même." },
+        ]),
+      },
     ];
     for (const c of contenus) {
       await prisma.contenu.upsert({ where: { id: c.id }, update: {}, create: c });
