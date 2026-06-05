@@ -3,12 +3,13 @@ import bcrypt from "bcryptjs";
 
 export async function seedIfEmpty() {
   try {
-    // Vérifie si des données existent déjà
-    const count = await prisma.evenement.count();
-    if (count > 0) {
+    // Vérifie si les participants existent déjà
+    const count = await prisma.participant.count();
+    if (count >= 25) {
       console.log("✅ DB déjà peuplée, seed ignoré");
       return;
     }
+    console.log(`ℹ️ ${count} participants trouvés — reseed en cours...`);
 
     console.log("🌱 DB vide — lancement du seed démo...");
 
