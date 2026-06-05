@@ -339,7 +339,7 @@ async function main() {
   for (const c of contenus) {
     await prisma.contenu.upsert({
       where: { id: c.id },
-      update: {},
+      update: { slides: c.slides },
       create: {
         id: c.id,
         restaurant: c.restaurant,
