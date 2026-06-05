@@ -18,7 +18,7 @@ const GRADIENTS = [
 ];
 
 function photoUrl(id: string) {
-  return `https://images.unsplash.com/photo-${id}?fit=crop&w=600&h=600&q=80`;
+  return `https://images.unsplash.com/photo-${id}?fit=crop&w=640&h=640&q=80`;
 }
 
 export function CarouselViewer({
@@ -34,15 +34,16 @@ export function CarouselViewer({
 }) {
   const [current, setCurrent] = useState(0);
   const [showCaption, setShowCaption] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   if (slides.length === 0) return null;
 
-  const prev = () => setCurrent(i => (i - 1 + slides.length) % slides.length);
-  const next = () => setCurrent(i => (i + 1) % slides.length);
+  const prev = () => { setCurrent(i => (i - 1 + slides.length) % slides.length); };
+  const next = () => { setCurrent(i => (i + 1) % slides.length); };
   const slide = slides[current];
 
-  // Use first slide's photoId for the whole carousel (one photo per carousel)
-  const sharedPhotoId = slides[0]?.photoId ?? slide.photoId ?? null;
+  const rawPhotoId = slides[0]?.photoId ?? slide.photoId ?? null;
+  const sharedPhotoId = imgError ? null : rawPhotoId;
   const gradient = GRADIENTS[current % GRADIENTS.length];
 
   return (
@@ -65,150 +66,133 @@ export function CarouselViewer({
             width: 30, height: 30, borderRadius: "50%",
             background: "linear-gradient(135deg, #7c3aed, #db2777)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 13, fontWeight: 700, color: "white",
-          }}>
-            N
-          </div>
-          <div>
+            fontSize: 13, fontWeight: 700, color: "white", flexShrink: 0,
+          }}>N</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>nightlife.paris</div>
-            <div style={{ color: "#71717a", fontSize: 10 }}>{restaurant}</div>
+            <div style={{ color: "#71717a", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{restaurant}</div>
           </div>
-          <div style={{ marginLeft: "auto", color: "#52525b", fontSize: 18 }}>···</div>
+          <div style={{ color: "#52525b", fontSize: 18, flexShrink: 0 }}>···</div>
         </div>
 
-        {/* Slide area */}
-        <div style={{ position: "relative", aspectRatio: "1", overflow: "hidden" }}>
+        {/* Slide area — paddingBottom trick for reliable square */}
+        <div style={{ position: "relative", width: "100%", paddingBottom: "100%", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0 }}>
 
-          {/* Background: real photo or gradient */}
-          {sharedPhotoId ? (
-            <img
-              src={photoUrl(sharedPhotoId)}
-              alt={restaurant}
-              style={{
-                position: "absolute", inset: 0, width: "100%", height: "100%",
-                objectFit: "cover", display: "block",
-              }}
-            />
-          ) : (
+            {/* Background */}
+            {sharedPhotoId ? (
+              <img
+                key={rawPhotoId}
+                src={photoUrl(sharedPhotoId)}
+                alt=""
+                onError={() => setImgError(true)}
+                style={{
+                  position: "absolute", inset: 0, width: "100%", height: "100%",
+                  objectFit: "cover", display: "block",
+                }}
+              />
+            ) : (
+              <div style={{
+                position: "absolute", inset: 0,
+                background: gradient,
+                transition: "background 0.4s ease",
+              }} />
+            )}
+
+            {/* Overlay */}
             <div style={{
               position: "absolute", inset: 0,
-              background: gradient,
-              transition: "background 0.4s ease",
+              background: sharedPhotoId
+                ? "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.04) 70%, rgba(0,0,0,0) 100%)"
+                : "linear-gradient(to top, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.1) 60%)",
             }} />
-          )}
 
-          {/* Dark overlay for text readability */}
-          <div style={{
-            position: "absolute", inset: 0,
-            background: sharedPhotoId
-              ? "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.04) 70%, rgba(0,0,0,0) 100%)"
-              : "linear-gradient(to top, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.1) 60%)",
-          }} />
+            {/* Decorative circles (gradient only) */}
+            {!sharedPhotoId && (
+              <>
+                <div style={{ position: "absolute", width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.06)", top: -40, right: -40 }} />
+                <div style={{ position: "absolute", width: 120, height: 120, borderRadius: "50%", background: "rgba(255,255,255,0.04)", bottom: -20, left: -20 }} />
+              </>
+            )}
 
-          {/* Decorative circles (only without photo) */}
-          {!sharedPhotoId && (
-            <>
+            {/* Slide counter */}
+            <div style={{
+              position: "absolute", top: 14, left: 14, zIndex: 3,
+              background: "rgba(0,0,0,0.45)", borderRadius: 20,
+              padding: "3px 10px", fontSize: 11, color: "rgba(255,255,255,0.85)",
+              fontWeight: 600, backdropFilter: "blur(4px)",
+            }}>
+              {current + 1} / {slides.length}
+            </div>
+
+            {/* Brand badge */}
+            <div style={{
+              position: "absolute", top: 14, right: 14, zIndex: 3,
+              background: "rgba(0,0,0,0.45)", borderRadius: 20,
+              padding: "3px 10px", fontSize: 10, color: "rgba(255,255,255,0.8)",
+              backdropFilter: "blur(4px)",
+            }}>
+              🌙 Nightlife Paris
+            </div>
+
+            {/* Text */}
+            <div style={{ position: "absolute", bottom: 48, left: 18, right: 18, zIndex: 3 }}>
               <div style={{
-                position: "absolute", width: 180, height: 180, borderRadius: "50%",
-                background: "rgba(255,255,255,0.06)", top: -40, right: -40,
-              }} />
+                color: "white", fontWeight: 800, fontSize: 18,
+                lineHeight: 1.25, marginBottom: 10,
+                textShadow: "0 2px 12px rgba(0,0,0,0.8)",
+              }}>
+                {slide.titre}
+              </div>
               <div style={{
-                position: "absolute", width: 120, height: 120, borderRadius: "50%",
-                background: "rgba(255,255,255,0.04)", bottom: -20, left: -20,
-              }} />
-            </>
-          )}
+                color: "rgba(255,255,255,0.88)", fontSize: 13,
+                lineHeight: 1.5, fontStyle: "italic",
+                textShadow: "0 1px 8px rgba(0,0,0,0.7)",
+              }}>
+                {slide.phrase}
+              </div>
+            </div>
 
-          {/* Slide number */}
-          <div style={{
-            position: "absolute", top: 14, left: 14, zIndex: 3,
-            background: "rgba(0,0,0,0.45)", borderRadius: 20,
-            padding: "3px 10px", fontSize: 11, color: "rgba(255,255,255,0.85)",
-            fontWeight: 600, backdropFilter: "blur(4px)",
-          }}>
-            {current + 1} / {slides.length}
+            {/* Arrows */}
+            {slides.length > 1 && (
+              <>
+                <button onClick={prev} style={{
+                  position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+                  width: 34, height: 34, borderRadius: "50%", border: "none",
+                  background: "rgba(0,0,0,0.5)", color: "white", fontSize: 16,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  backdropFilter: "blur(4px)", zIndex: 4,
+                }}>‹</button>
+                <button onClick={next} style={{
+                  position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                  width: 34, height: 34, borderRadius: "50%", border: "none",
+                  background: "rgba(0,0,0,0.5)", color: "white", fontSize: 16,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  backdropFilter: "blur(4px)", zIndex: 4,
+                }}>›</button>
+              </>
+            )}
+
+            {/* Dots */}
+            {slides.length > 1 && (
+              <div style={{
+                position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
+                display: "flex", gap: 6, zIndex: 4,
+              }}>
+                {slides.map((_, i) => (
+                  <button key={i} onClick={() => setCurrent(i)} style={{
+                    width: i === current ? 20 : 6, height: 6, borderRadius: 3, border: "none",
+                    background: i === current ? "white" : "rgba(255,255,255,0.4)",
+                    cursor: "pointer", padding: 0, transition: "all 0.25s ease",
+                  }} />
+                ))}
+              </div>
+            )}
+
           </div>
-
-          {/* Nightlife watermark */}
-          <div style={{
-            position: "absolute", top: 14, right: 14, zIndex: 3,
-            background: "rgba(0,0,0,0.45)", borderRadius: 20,
-            padding: "3px 10px", fontSize: 10, color: "rgba(255,255,255,0.8)",
-            backdropFilter: "blur(4px)",
-          }}>
-            🌙 Nightlife Paris
-          </div>
-
-          {/* Restaurant name badge (when photo present) */}
-          {sharedPhotoId && (
-            <div style={{
-              position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 3,
-              background: "rgba(0,0,0,0.5)", borderRadius: 20,
-              padding: "2px 12px", fontSize: 9, color: "rgba(255,255,255,0.7)",
-              backdropFilter: "blur(4px)", whiteSpace: "nowrap",
-            }}>
-              {restaurant}
-            </div>
-          )}
-
-          {/* Text */}
-          <div style={{
-            position: "absolute", bottom: 48, left: 18, right: 18, zIndex: 3,
-          }}>
-            <div style={{
-              color: "white", fontWeight: 800, fontSize: 18,
-              lineHeight: 1.25, marginBottom: 10,
-              textShadow: "0 2px 12px rgba(0,0,0,0.7)",
-            }}>
-              {slide.titre}
-            </div>
-            <div style={{
-              color: "rgba(255,255,255,0.88)", fontSize: 13,
-              lineHeight: 1.5, fontStyle: "italic",
-              textShadow: "0 1px 8px rgba(0,0,0,0.7)",
-            }}>
-              {slide.phrase}
-            </div>
-          </div>
-
-          {/* Prev / Next arrows */}
-          {slides.length > 1 && (
-            <>
-              <button onClick={prev} style={{
-                position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
-                width: 34, height: 34, borderRadius: "50%", border: "none",
-                background: "rgba(0,0,0,0.5)", color: "white", fontSize: 16,
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                backdropFilter: "blur(4px)", zIndex: 4,
-              }}>‹</button>
-              <button onClick={next} style={{
-                position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-                width: 34, height: 34, borderRadius: "50%", border: "none",
-                background: "rgba(0,0,0,0.5)", color: "white", fontSize: 16,
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                backdropFilter: "blur(4px)", zIndex: 4,
-              }}>›</button>
-            </>
-          )}
-
-          {/* Dot indicators */}
-          {slides.length > 1 && (
-            <div style={{
-              position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
-              display: "flex", gap: 6, zIndex: 4,
-            }}>
-              {slides.map((_, i) => (
-                <button key={i} onClick={() => setCurrent(i)} style={{
-                  width: i === current ? 20 : 6, height: 6, borderRadius: 3, border: "none",
-                  background: i === current ? "white" : "rgba(255,255,255,0.4)",
-                  cursor: "pointer", padding: 0, transition: "all 0.25s ease",
-                }} />
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Fake IG actions */}
+        {/* IG action bar */}
         <div style={{ padding: "10px 14px" }}>
           <div style={{ display: "flex", gap: 14, marginBottom: 8 }}>
             <span style={{ color: "#a1a1aa", fontSize: 20, cursor: "pointer" }}>🤍</span>
@@ -244,7 +228,7 @@ export function CarouselViewer({
       {/* Thumbnails */}
       {slides.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 4 }}>
-          {slides.map((s, i) => (
+          {slides.map((_, i) => (
             <button key={i} onClick={() => setCurrent(i)} style={{
               flexShrink: 0, width: 52, height: 52, borderRadius: 8,
               border: `2px solid ${i === current ? "white" : "transparent"}`,

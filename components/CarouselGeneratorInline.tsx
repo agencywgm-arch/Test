@@ -76,18 +76,19 @@ const DEFAULT_AUTO: AutoConfig = {
 function thumbUrl(id: string) {
   return `https://images.unsplash.com/photo-${id}?fit=crop&w=300&h=300&q=70`;
 }
-function proxyUrl(id: string) {
-  return `/api/photo-proxy?id=${id}&w=1080&h=1080`;
+function canvasUrl(id: string) {
+  // Direct URL — no crossOrigin needed since we never call toDataURL()
+  return `https://images.unsplash.com/photo-${id}?fit=crop&w=1080&h=1080&q=85`;
 }
 
 // ─── Canvas helpers ────────────────────────────────────────────────────────────
 
-// No crossOrigin — proxy is same-origin, avoids CORS cache taint issue
-function loadImg(src: string): Promise<HTMLImageElement> {
+function loadImg(src: string, timeoutMs = 8000): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    const timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); reject(new Error("load error")); };
     img.src = src;
   });
 }
@@ -130,7 +131,7 @@ async function renderSlide(canvas: HTMLCanvasElement, cfg: Config, slide: Slide,
   ctx.fillRect(0, 0, W, H);
 
   try {
-    const img = await loadImg(proxyUrl(cfg.photoId));
+    const img = await loadImg(canvasUrl(cfg.photoId));
     const sc = Math.max(W / img.width, H / img.height);
     const sw = img.width * sc, sh = img.height * sc;
     ctx.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh);
@@ -433,7 +434,8 @@ export default function CarouselGeneratorInline() {
                     textAlign: "left", transition: "border-color 0.15s",
                   }}>
                     {/* Photo */}
-                    <div style={{ position: "relative", aspectRatio: "16/9", overflow: "hidden" }}>
+                    <div style={{ position: "relative", paddingBottom: "56.25%", overflow: "hidden" }}>
+                    <div style={{ position: "absolute", inset: 0 }}>
                       <img
                         src={thumbUrl(r.photoId)}
                         alt={r.nom}
@@ -456,6 +458,7 @@ export default function CarouselGeneratorInline() {
                         padding: "1px 7px", borderRadius: 20, fontSize: 9, fontWeight: 600,
                         backdropFilter: "blur(4px)",
                       }}>{r.type}</div>
+                    </div>
                     </div>
                     {/* Info */}
                     <div style={{ padding: "8px 10px" }}>
