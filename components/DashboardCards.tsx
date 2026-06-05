@@ -173,18 +173,23 @@ function ClientPanel({ enAttente, recents }: { enAttente: ClientMessage[]; recen
   const [tab, setTab] = useState<"attente" | "historique">("attente");
 
   const STATUT_COLOR: Record<string, string> = {
-    EN_ATTENTE: "#f59e0b", ACCEPTEE: "#10b981", REFUSEE: "#ef4444", PRESENTE: "#06b6d4",
+    EN_ATTENTE: "#f59e0b", ACCEPTEE: "#10b981", REFUSEE: "#ef4444", PRESENTE: "#06b6d4", INVITEE: "#7c3aed",
   };
   const STATUT_LABEL: Record<string, string> = {
-    EN_ATTENTE: "En attente", ACCEPTEE: "Acceptée", REFUSEE: "Refusée", PRESENTE: "Présente",
+    EN_ATTENTE: "En attente", ACCEPTEE: "Acceptée", REFUSEE: "Refusée", PRESENTE: "Présente", INVITEE: "Invitée",
   };
+
+  // Tous les participants (en attente + récents fusionnés sans doublon)
+  const tous = recents;
+  const acceptees = tous.filter(p => p.statut === "ACCEPTEE" || p.statut === "PRESENTE");
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {/* Onglets */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {[
-          { key: "attente", label: `En attente (${enAttente.length})`, color: "#db2777" },
-          { key: "historique", label: "Historique DMs", color: "#71717a" },
+          { key: "attente", label: `À traiter (${enAttente.length})`, color: "#f59e0b" },
+          { key: "historique", label: `Toutes (${tous.length})`, color: "#db2777" },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key as "attente" | "historique")} style={{
             padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600,
@@ -196,66 +201,115 @@ function ClientPanel({ enAttente, recents }: { enAttente: ClientMessage[]; recen
         ))}
       </div>
 
+      {/* Compteurs rapides */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        {[
+          { label: "En attente", count: enAttente.length, color: "#f59e0b" },
+          { label: "Acceptées", count: tous.filter(p => p.statut === "ACCEPTEE").length, color: "#10b981" },
+          { label: "Présentes", count: tous.filter(p => p.statut === "PRESENTE").length, color: "#06b6d4" },
+          { label: "Refusées", count: tous.filter(p => p.statut === "REFUSEE").length, color: "#ef4444" },
+        ].map(s => (
+          <div key={s.label} style={{
+            padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+            background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30`,
+          }}>
+            {s.count} {s.label}
+          </div>
+        ))}
+      </div>
+
       {tab === "attente" ? (
         enAttente.length === 0 ? (
           <div style={{ textAlign: "center", padding: "20px 0", color: "#52525b", fontSize: 13 }}>
             ✅ Aucun DM en attente de traitement
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {enAttente.slice(0, 6).map(p => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 420, overflowY: "auto" }}>
+            {enAttente.map(p => (
               <div key={p.id} style={{
-                background: "#09090b", borderRadius: 10, padding: "12px 14px",
-                border: "1px solid rgba(219,39,119,0.2)",
+                background: "#09090b", borderRadius: 10, padding: "11px 14px",
+                border: "1px solid rgba(245,158,11,0.2)",
                 display: "flex", alignItems: "center", gap: 12,
               }}>
                 <div style={{
-                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                  width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
                   background: "linear-gradient(135deg,#7c3aed,#db2777)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "white", fontWeight: 700, fontSize: 14,
+                  color: "white", fontWeight: 700, fontSize: 13,
                 }}>
                   {p.prenom[0]}
                 </div>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: "white", fontWeight: 600, fontSize: 13 }}>{p.prenom}, {p.age} ans</div>
-                  <div style={{ color: "#71717a", fontSize: 11 }}>{p.instagram} · {p.source}</div>
+                  <div style={{ color: "#71717a", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {p.instagram} · {p.source}
+                  </div>
                   {p.evenement && <div style={{ color: "#7c3aed", fontSize: 11 }}>🎟️ {p.evenement}</div>}
                 </div>
                 <span style={{
-                  padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-                  background: `${STATUT_COLOR[p.statut]}22`, color: STATUT_COLOR[p.statut],
+                  padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, flexShrink: 0,
+                  background: `${STATUT_COLOR[p.statut] ?? "#71717a"}22`,
+                  color: STATUT_COLOR[p.statut] ?? "#71717a",
                 }}>
-                  {STATUT_LABEL[p.statut]}
+                  {STATUT_LABEL[p.statut] ?? p.statut}
                 </span>
               </div>
             ))}
-            {enAttente.length > 6 && (
-              <div style={{ textAlign: "center", color: "#52525b", fontSize: 12, padding: "4px 0" }}>
-                + {enAttente.length - 6} autres
-              </div>
-            )}
             <Link href="/participants" style={{
               display: "block", textAlign: "center", padding: "10px",
               borderRadius: 8, fontSize: 12, fontWeight: 600,
-              background: "rgba(219,39,119,0.1)", color: "#db2777",
-              border: "1px solid rgba(219,39,119,0.2)", textDecoration: "none", marginTop: 4,
+              background: "rgba(245,158,11,0.1)", color: "#f59e0b",
+              border: "1px solid rgba(245,158,11,0.2)", textDecoration: "none", marginTop: 4,
             }}>
-              Gérer tous les participants →
+              Accepter / Refuser dans la CRM →
             </Link>
           </div>
         )
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {recents.slice(0, 4).map(p => (
-            <div key={p.id} style={{ background: "#09090b", borderRadius: 12, padding: "12px 14px", border: "1px solid #1f1f23" }}>
-              <div style={{ color: "#a1a1aa", fontWeight: 600, fontSize: 12, marginBottom: 10 }}>
-                {p.prenom} · {p.instagram}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 460, overflowY: "auto" }}>
+          {tous.map(p => (
+            <div key={p.id} style={{
+              background: "#09090b", borderRadius: 10, padding: "11px 14px",
+              border: `1px solid ${(STATUT_COLOR[p.statut] ?? "#27272a") + "25"}`,
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+                background: `${STATUT_COLOR[p.statut] ?? "#71717a"}22`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: STATUT_COLOR[p.statut] ?? "#71717a", fontWeight: 700, fontSize: 13,
+              }}>
+                {p.prenom[0]}
               </div>
-              <MessageBubble from={p.prenom} text={`Bonjour ! Je suis intéressée par vos événements nightlife Paris 🎉 Comment puis-je rejoindre ?`} time={new Date(p.createdAt).toLocaleDateString("fr-FR")} isAgent={false} />
-              <MessageBubble from="Agent" text={`Bonjour ${p.prenom} ! 🌙 Merci pour ton intérêt. Notre prochain événement est très bientôt. Tu es inscrite sur notre liste — nous revenons vers toi très vite ! ✨`} time={new Date(p.createdAt).toLocaleDateString("fr-FR")} isAgent={true} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "white", fontWeight: 600, fontSize: 13 }}>{p.prenom}, {p.age} ans</div>
+                <div style={{ color: "#71717a", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.instagram}
+                </div>
+                {p.evenement && <div style={{ color: "#7c3aed", fontSize: 11 }}>🎟️ {p.evenement}</div>}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <span style={{
+                  padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                  background: `${STATUT_COLOR[p.statut] ?? "#71717a"}22`,
+                  color: STATUT_COLOR[p.statut] ?? "#71717a",
+                }}>
+                  {STATUT_LABEL[p.statut] ?? p.statut}
+                </span>
+                <span style={{ color: "#3f3f46", fontSize: 10 }}>
+                  {new Date(p.createdAt).toLocaleDateString("fr-FR")}
+                </span>
+              </div>
             </div>
           ))}
+          <Link href="/participants" style={{
+            display: "block", textAlign: "center", padding: "10px",
+            borderRadius: 8, fontSize: 12, fontWeight: 600,
+            background: "rgba(219,39,119,0.1)", color: "#db2777",
+            border: "1px solid rgba(219,39,119,0.2)", textDecoration: "none", marginTop: 4,
+          }}>
+            Voir la CRM complète →
+          </Link>
         </div>
       )}
     </div>

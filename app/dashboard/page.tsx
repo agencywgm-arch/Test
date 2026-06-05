@@ -38,11 +38,10 @@ export default async function Dashboard() {
       include: { evenement: { select: { nom: true } } },
       take: 20,
     }),
-    // Participants récents (historique)
+    // Tous les participants (historique complet)
     prisma.participant.findMany({
       orderBy: { createdAt: "desc" },
       include: { evenement: { select: { nom: true } } },
-      take: 10,
     }),
     // Contenus à valider
     prisma.contenu.findMany({
