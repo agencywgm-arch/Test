@@ -6460,6 +6460,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
   const [campSelected, setCampSelected] = useState([]);
   const [campSendToClients, setCampSendToClients] = useState(true);
   const [campSendToEstabs, setCampSendToEstabs] = useState(false);
+  const [campSending, setCampSending] = useState(false);
   const [campGenLoading, setCampGenLoading] = useState(false);
   // Modals
   const [editResto, setEditResto] = useState(null);
