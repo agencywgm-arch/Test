@@ -5,7 +5,8 @@ import { useState } from "react";
 interface Slide {
   titre: string;
   phrase: string;
-  photoId?: string;
+  photoId?: string;   // legacy Unsplash format
+  photoRef?: string;  // Google Maps photo_reference
 }
 
 const GRADIENTS = [
@@ -17,8 +18,16 @@ const GRADIENTS = [
   "linear-gradient(135deg, #06b6d4, #10b981)",
 ];
 
-function photoUrl(id: string) {
-  return `https://images.unsplash.com/photo-${id}?fit=crop&w=640&h=640&q=80`;
+function slidePhotoUrl(slide: Slide): string | null {
+  if (slide.photoRef) return `/api/places/photo?ref=${encodeURIComponent(slide.photoRef)}&maxw=640`;
+  if (slide.photoId) return `https://images.unsplash.com/photo-${slide.photoId}?fit=crop&w=640&h=640&q=80`;
+  return null;
+}
+
+function thumbPhotoUrl(slide: Slide): string | null {
+  if (slide.photoRef) return `/api/places/photo?ref=${encodeURIComponent(slide.photoRef)}&maxw=120`;
+  if (slide.photoId) return `https://images.unsplash.com/photo-${slide.photoId}?fit=crop&w=120&h=120&q=70`;
+  return null;
 }
 
 export function CarouselViewer({
@@ -34,7 +43,7 @@ export function CarouselViewer({
 }) {
   const [current, setCurrent] = useState(0);
   const [showCaption, setShowCaption] = useState(false);
-  const [imgError, setImgError] = useState(false);
+  const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
 
   if (slides.length === 0) return null;
 
@@ -42,8 +51,7 @@ export function CarouselViewer({
   const next = () => { setCurrent(i => (i + 1) % slides.length); };
   const slide = slides[current];
 
-  const rawPhotoId = slides[0]?.photoId ?? slide.photoId ?? null;
-  const sharedPhotoId = imgError ? null : rawPhotoId;
+  const rawUrl = imgErrors[current] ? null : slidePhotoUrl(slide);
   const gradient = GRADIENTS[current % GRADIENTS.length];
 
   return (
@@ -80,12 +88,12 @@ export function CarouselViewer({
           <div style={{ position: "absolute", inset: 0 }}>
 
             {/* Background */}
-            {sharedPhotoId ? (
+            {rawUrl ? (
               <img
-                key={rawPhotoId}
-                src={photoUrl(sharedPhotoId)}
+                key={`${current}-${rawUrl}`}
+                src={rawUrl}
                 alt=""
-                onError={() => setImgError(true)}
+                onError={() => setImgErrors(prev => ({ ...prev, [current]: true }))}
                 style={{
                   position: "absolute", inset: 0, width: "100%", height: "100%",
                   objectFit: "cover", display: "block",
@@ -102,13 +110,13 @@ export function CarouselViewer({
             {/* Overlay */}
             <div style={{
               position: "absolute", inset: 0,
-              background: sharedPhotoId
+              background: rawUrl
                 ? "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.04) 70%, rgba(0,0,0,0) 100%)"
                 : "linear-gradient(to top, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.1) 60%)",
             }} />
 
             {/* Decorative circles (gradient only) */}
-            {!sharedPhotoId && (
+            {!rawUrl && (
               <>
                 <div style={{ position: "absolute", width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.06)", top: -40, right: -40 }} />
                 <div style={{ position: "absolute", width: 120, height: 120, borderRadius: "50%", background: "rgba(255,255,255,0.04)", bottom: -20, left: -20 }} />
@@ -228,27 +236,30 @@ export function CarouselViewer({
       {/* Thumbnails */}
       {slides.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 4 }}>
-          {slides.map((_, i) => (
-            <button key={i} onClick={() => setCurrent(i)} style={{
-              flexShrink: 0, width: 52, height: 52, borderRadius: 8,
-              border: `2px solid ${i === current ? "white" : "transparent"}`,
-              cursor: "pointer", padding: 0, overflow: "hidden",
-              opacity: i === current ? 1 : 0.55, transition: "all 0.2s",
-              position: "relative", background: GRADIENTS[i % GRADIENTS.length],
-            }}>
-              {sharedPhotoId && (
-                <img src={photoUrl(sharedPhotoId)} alt="" style={{
-                  width: "100%", height: "100%", objectFit: "cover", display: "block",
-                }} />
-              )}
-              <div style={{
-                position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)",
-                display: "flex", alignItems: "center", justifyContent: "center",
+          {slides.map((s, i) => {
+            const tUrl = imgErrors[i] ? null : thumbPhotoUrl(s);
+            return (
+              <button key={i} onClick={() => setCurrent(i)} style={{
+                flexShrink: 0, width: 52, height: 52, borderRadius: 8,
+                border: `2px solid ${i === current ? "white" : "transparent"}`,
+                cursor: "pointer", padding: 0, overflow: "hidden",
+                opacity: i === current ? 1 : 0.55, transition: "all 0.2s",
+                position: "relative", background: GRADIENTS[i % GRADIENTS.length],
               }}>
-                <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>{i + 1}</span>
-              </div>
-            </button>
-          ))}
+                {tUrl && (
+                  <img src={tUrl} alt="" style={{
+                    width: "100%", height: "100%", objectFit: "cover", display: "block",
+                  }} />
+                )}
+                <div style={{
+                  position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>{i + 1}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
