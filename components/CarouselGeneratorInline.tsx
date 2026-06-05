@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { RESTAURANTS_PARIS, type ParisRestaurant } from "@/lib/restaurants-paris";
+import GooglePlacesPicker, { type PickedPhoto } from "@/components/GooglePlacesPicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,9 +75,17 @@ const DEFAULT_AUTO: AutoConfig = {
 // ─── Photo helpers ─────────────────────────────────────────────────────────────
 
 function thumbUrl(id: string) {
+  if (id.startsWith("google:")) {
+    const ref = id.slice(7);
+    return `/api/places/photo?ref=${encodeURIComponent(ref)}&maxw=300`;
+  }
   return `https://images.unsplash.com/photo-${id}?fit=crop&w=300&h=300&q=70`;
 }
 function canvasUrl(id: string) {
+  if (id.startsWith("google:")) {
+    const ref = id.slice(7);
+    return `/api/places/photo?ref=${encodeURIComponent(ref)}&maxw=1080`;
+  }
   // Direct URL — no crossOrigin needed since we never call toDataURL()
   return `https://images.unsplash.com/photo-${id}?fit=crop&w=1080&h=1080&q=85`;
 }
@@ -265,12 +274,13 @@ export default function CarouselGeneratorInline() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Photo search
-  const [photoTab, setPhotoTab] = useState<"curated" | "search">("curated");
+  const [photoTab, setPhotoTab] = useState<"curated" | "search" | "google">("google");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchPhoto[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchDone, setSearchDone] = useState(false);
+  const [googlePhotoUrl, setGooglePhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -343,12 +353,24 @@ export default function CarouselGeneratorInline() {
   }
 
   function pickSearchPhoto(photo: SearchPhoto) {
-    // Extract Unsplash photo ID from the URL or use the API id directly
     const photoId = photo.id;
     setCfg(c => ({
       ...c,
       photoId,
       slides: c.slides.map(s => ({ ...s, photoId })),
+    }));
+  }
+
+  function handleGooglePhotoPick(picked: PickedPhoto) {
+    // Store the proxy URL as the photoId sentinel (prefixed with "google:")
+    // canvasUrl() will detect this and use the URL directly
+    const sentinel = `google:${picked.ref}`;
+    setGooglePhotoUrl(picked.url);
+    setCfg(c => ({
+      ...c,
+      photoId: sentinel,
+      restaurant: picked.placeName || c.restaurant,
+      slides: c.slides.map(s => ({ ...s, photoId: sentinel })),
     }));
   }
 
@@ -461,11 +483,12 @@ export default function CarouselGeneratorInline() {
             {/* Tab bar */}
             <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
               {([
-                { key: "curated", label: "🏛️ Restaurants parisiens" },
-                { key: "search",  label: "🔍 Rechercher une photo" },
+                { key: "google",  label: "🗺️ Google Maps" },
+                { key: "curated", label: "🏛️ Liste curatée" },
+                { key: "search",  label: "🔍 Unsplash" },
               ] as const).map(t => (
                 <button key={t.key} onClick={() => setPhotoTab(t.key)} style={{
-                  flex: 1, padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  flex: 1, padding: "9px 8px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                   background: photoTab === t.key ? "rgba(124,58,237,0.18)" : "#09090b",
                   color: photoTab === t.key ? "#a78bfa" : "#52525b",
                   border: `1px solid ${photoTab === t.key ? "rgba(124,58,237,0.5)" : "#27272a"}`,
@@ -473,6 +496,11 @@ export default function CarouselGeneratorInline() {
                 }}>{t.label}</button>
               ))}
             </div>
+
+            {/* ── Tab: Google Maps ── */}
+            {photoTab === "google" && (
+              <GooglePlacesPicker onPick={handleGooglePhotoPick} />
+            )}
 
             {/* ── Tab: Curated restaurants ── */}
             {photoTab === "curated" && (
