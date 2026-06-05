@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { createSession, destroySession, requireAuth } from "@/lib/auth";
+import { createSession, destroySession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -28,9 +28,9 @@ export async function updateParticipantStatut(
   id: string,
   statut: "EN_ATTENTE" | "ACCEPTEE" | "REFUSEE" | "INVITEE" | "PRESENTE"
 ) {
-  await requireAuth();
   await prisma.participant.update({ where: { id }, data: { statut } });
   revalidatePath("/participants");
+  revalidatePath("/dashboard");
 }
 
 export async function createParticipant(data: {
@@ -41,22 +41,22 @@ export async function createParticipant(data: {
   email?: string;
   notes?: string;
 }) {
-  await requireAuth();
   await prisma.participant.create({ data });
   revalidatePath("/participants");
+  revalidatePath("/dashboard");
 }
 
 export async function deleteParticipant(id: string) {
-  await requireAuth();
   await prisma.participant.delete({ where: { id } });
   revalidatePath("/participants");
+  revalidatePath("/dashboard");
 }
 
 export async function assignParticipantEvenement(participantId: string, evenementId: string | null) {
-  await requireAuth();
   await prisma.participant.update({ where: { id: participantId }, data: { evenementId } });
   revalidatePath("/participants");
   revalidatePath("/evenements");
+  revalidatePath("/dashboard");
 }
 
 // ─── Événements ──────────────────────────────────────────────────────────────
@@ -71,26 +71,26 @@ export async function createEvenement(data: {
   dressCode?: string;
   maxParticipants: number;
 }) {
-  await requireAuth();
   await prisma.evenement.create({
     data: { ...data, date: new Date(data.date) },
   });
   revalidatePath("/evenements");
+  revalidatePath("/dashboard");
 }
 
 export async function updateEvenementStatut(
   id: string,
   statut: "PLANIFIE" | "CONFIRME" | "TERMINE" | "ANNULE"
 ) {
-  await requireAuth();
   await prisma.evenement.update({ where: { id }, data: { statut } });
   revalidatePath("/evenements");
+  revalidatePath("/dashboard");
 }
 
 export async function deleteEvenement(id: string) {
-  await requireAuth();
   await prisma.evenement.delete({ where: { id } });
   revalidatePath("/evenements");
+  revalidatePath("/dashboard");
 }
 
 // ─── Contenu ──────────────────────────────────────────────────────────────────
@@ -99,7 +99,6 @@ export async function updateContenuStatut(
   id: string,
   statut: "EN_ATTENTE" | "VALIDE" | "REFUSE" | "PUBLIE"
 ) {
-  await requireAuth();
   await prisma.contenu.update({
     where: { id },
     data: {
@@ -108,6 +107,7 @@ export async function updateContenuStatut(
     },
   });
   revalidatePath("/contenu");
+  revalidatePath("/dashboard");
 }
 
 export async function createContenu(data: {
@@ -119,9 +119,9 @@ export async function createContenu(data: {
   caption?: string;
   hashtags?: string;
 }) {
-  await requireAuth();
   await prisma.contenu.create({ data });
   revalidatePath("/contenu");
+  revalidatePath("/dashboard");
 }
 
 // ─── Staff ───────────────────────────────────────────────────────────────────
@@ -130,13 +130,12 @@ export async function createStaff(data: {
   prenom: string;
   nom: string;
   role: string;
-  telegramId?: string;
   whatsapp?: string;
   email?: string;
 }) {
-  await requireAuth();
   await prisma.staff.create({ data });
   revalidatePath("/staff");
+  revalidatePath("/dashboard");
 }
 
 export async function updateStaffConfirmation(
@@ -144,17 +143,17 @@ export async function updateStaffConfirmation(
   evenementId: string,
   statut: "EN_ATTENTE" | "OUI" | "NON"
 ) {
-  await requireAuth();
   await prisma.staffEvenement.upsert({
     where: { staffId_evenementId: { staffId, evenementId } },
     update: { statut },
     create: { staffId, evenementId, statut },
   });
   revalidatePath("/staff");
+  revalidatePath("/dashboard");
 }
 
 export async function deleteStaff(id: string) {
-  await requireAuth();
   await prisma.staff.delete({ where: { id } });
   revalidatePath("/staff");
+  revalidatePath("/dashboard");
 }

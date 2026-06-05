@@ -1,9 +1,10 @@
 #!/bin/sh
-export DATABASE_URL="${DATABASE_URL:-file:./dev.db}"
+set -e
+
 echo "DATABASE_URL = $DATABASE_URL"
 
 echo "=== Sync schéma Prisma ==="
-npx prisma db push --accept-data-loss
+npx prisma db push
 
 echo "=== Démarrage Next.js (seed automatique au boot) ==="
 exec npx next start
