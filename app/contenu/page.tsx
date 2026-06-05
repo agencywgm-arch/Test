@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { updateContenuStatut } from "@/lib/actions";
 import { CarouselViewer } from "@/components/CarouselViewer";
+import CarouselGeneratorInline from "@/components/CarouselGeneratorInline";
 
 export default async function Contenu() {
 
@@ -193,10 +194,14 @@ export default async function Contenu() {
         )}
 
         {contenus.length === 0 && (
-          <div style={{ textAlign: "center", padding: 60, color: "#52525b" }}>
-            Aucun contenu généré. Les carrousels arrivent automatiquement via l'Agent 1 (n8n + Apify + Gemini).
+          <div style={{ textAlign: "center", padding: "40px 0 20px", color: "#52525b" }}>
+            Aucun contenu généré. Utilise le générateur ci-dessous ou laisse l'Agent 1 (n8n) soumettre automatiquement.
           </div>
         )}
+
+        {/* Inline generator */}
+        <CarouselGeneratorInline />
+
       </main>
     </div>
   );

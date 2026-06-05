@@ -9,7 +9,6 @@ const nav = [
   { href: "/evenements",  icon: "🎟️", label: "Événements" },
   { href: "/contenu",     icon: "✦",  label: "Contenu" },
   { href: "/staff",       icon: "👥", label: "Staff" },
-  { href: "/generateur",  icon: "🎨", label: "Générateur" },
 ];
 
 export default function Sidebar() {
