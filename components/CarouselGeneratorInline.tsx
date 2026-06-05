@@ -244,6 +244,14 @@ const TYPE_COLOR: Record<string, string> = {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
+interface SearchPhoto {
+  id: string;
+  thumb: string;
+  regular: string;
+  alt: string;
+  author: string;
+}
+
 export default function CarouselGeneratorInline() {
   const [open, setOpen] = useState(false);
   const [cfg, setCfg] = useState<Config>(DEFAULT_CONFIG);
@@ -255,6 +263,14 @@ export default function CarouselGeneratorInline() {
   const [saved, setSaved] = useState(false);
   const [showAllRestaurants, setShowAllRestaurants] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Photo search
+  const [photoTab, setPhotoTab] = useState<"curated" | "search">("curated");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchPhoto[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchDone, setSearchDone] = useState(false);
 
   useEffect(() => {
     try {
@@ -301,6 +317,39 @@ export default function CarouselGeneratorInline() {
   function pickRandom() {
     const r = RESTAURANTS_PARIS[Math.floor(Math.random() * RESTAURANTS_PARIS.length)];
     selectRestaurant(r);
+  }
+
+  async function searchPhotos(q: string) {
+    if (!q.trim()) return;
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchDone(false);
+    try {
+      const res = await fetch(`/api/search-photos?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data.error === "no_key") {
+        setSearchError("Clé API Unsplash manquante. Ajoute UNSPLASH_ACCESS_KEY dans les variables Railway.");
+      } else if (data.error) {
+        setSearchError("Erreur de recherche. Réessaie.");
+      } else {
+        setSearchResults(data.photos ?? []);
+        setSearchDone(true);
+        if ((data.photos ?? []).length === 0) setSearchError("Aucune photo trouvée. Essaie d'autres mots-clés.");
+      }
+    } catch {
+      setSearchError("Erreur réseau.");
+    }
+    setSearchLoading(false);
+  }
+
+  function pickSearchPhoto(photo: SearchPhoto) {
+    // Extract Unsplash photo ID from the URL or use the API id directly
+    const photoId = photo.id;
+    setCfg(c => ({
+      ...c,
+      photoId,
+      slides: c.slides.map(s => ({ ...s, photoId })),
+    }));
   }
 
   function setSlide(i: number, k: keyof Slide, v: string) {
@@ -407,85 +456,198 @@ export default function CarouselGeneratorInline() {
           borderRadius: "0 0 14px 14px", padding: 20,
         }}>
 
-          {/* ─── Restaurant Picker ─── */}
+          {/* ─── Photo Source Tabs ─── */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={lbl}>Choisir un restaurant parisien</div>
-              <button onClick={pickRandom} style={{
-                padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                background: "rgba(124,58,237,0.15)", color: "#a78bfa",
-                border: "1px solid rgba(124,58,237,0.3)", cursor: "pointer",
-              }}>🎲 Au hasard</button>
+            {/* Tab bar */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {([
+                { key: "curated", label: "🏛️ Restaurants parisiens" },
+                { key: "search",  label: "🔍 Rechercher une photo" },
+              ] as const).map(t => (
+                <button key={t.key} onClick={() => setPhotoTab(t.key)} style={{
+                  flex: 1, padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  background: photoTab === t.key ? "rgba(124,58,237,0.18)" : "#09090b",
+                  color: photoTab === t.key ? "#a78bfa" : "#52525b",
+                  border: `1px solid ${photoTab === t.key ? "rgba(124,58,237,0.5)" : "#27272a"}`,
+                  cursor: "pointer", transition: "all 0.15s",
+                }}>{t.label}</button>
+              ))}
             </div>
 
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-              gap: 10,
-            }}>
-              {visibleRestaurants.map(r => {
-                const selected = cfg.restaurantId === r.id;
-                const typeColor = TYPE_COLOR[r.type] ?? "#71717a";
-                return (
-                  <button key={r.id} onClick={() => selectRestaurant(r)} style={{
-                    background: selected ? "rgba(124,58,237,0.1)" : "#09090b",
-                    border: `2px solid ${selected ? "#a78bfa" : "#27272a"}`,
-                    borderRadius: 12, overflow: "hidden", cursor: "pointer", padding: 0,
-                    textAlign: "left", transition: "border-color 0.15s",
+            {/* ── Tab: Curated restaurants ── */}
+            {photoTab === "curated" && (
+              <>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <button onClick={pickRandom} style={{
+                    padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    background: "rgba(124,58,237,0.15)", color: "#a78bfa",
+                    border: "1px solid rgba(124,58,237,0.3)", cursor: "pointer",
+                  }}>🎲 Au hasard</button>
+                </div>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                  gap: 10,
+                }}>
+                  {visibleRestaurants.map(r => {
+                    const selected = cfg.restaurantId === r.id;
+                    const typeColor = TYPE_COLOR[r.type] ?? "#71717a";
+                    return (
+                      <button key={r.id} onClick={() => selectRestaurant(r)} style={{
+                        background: selected ? "rgba(124,58,237,0.1)" : "#09090b",
+                        border: `2px solid ${selected ? "#a78bfa" : "#27272a"}`,
+                        borderRadius: 12, overflow: "hidden", cursor: "pointer", padding: 0,
+                        textAlign: "left", transition: "border-color 0.15s",
+                      }}>
+                        <div style={{ position: "relative", paddingBottom: "56.25%", overflow: "hidden" }}>
+                          <div style={{ position: "absolute", inset: 0 }}>
+                            <img src={thumbUrl(r.photoId)} alt={r.nom} loading="lazy"
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            {selected && (
+                              <div style={{
+                                position: "absolute", inset: 0, background: "rgba(124,58,237,0.35)",
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
+                              }}>✓</div>
+                            )}
+                            <div style={{
+                              position: "absolute", top: 6, left: 6,
+                              background: `${typeColor}22`, color: typeColor,
+                              border: `1px solid ${typeColor}55`,
+                              padding: "1px 7px", borderRadius: 20, fontSize: 9, fontWeight: 600,
+                              backdropFilter: "blur(4px)",
+                            }}>{r.type}</div>
+                          </div>
+                        </div>
+                        <div style={{ padding: "8px 10px" }}>
+                          <div style={{ color: "white", fontWeight: 700, fontSize: 12, lineHeight: 1.2, marginBottom: 2 }}>{r.nom}</div>
+                          <div style={{ color: "#52525b", fontSize: 10 }}>{r.quartier} · {r.arrondissement}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {RESTAURANTS_PARIS.length > 6 && (
+                  <button onClick={() => setShowAllRestaurants(v => !v)} style={{
+                    marginTop: 10, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12,
+                    background: "#09090b", border: "1px solid #27272a", color: "#71717a", cursor: "pointer",
                   }}>
-                    {/* Photo */}
-                    <div style={{ position: "relative", paddingBottom: "56.25%", overflow: "hidden" }}>
-                    <div style={{ position: "absolute", inset: 0 }}>
-                      <img
-                        src={thumbUrl(r.photoId)}
-                        alt={r.nom}
-                        loading="lazy"
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      />
-                      {selected && (
-                        <div style={{
-                          position: "absolute", inset: 0,
-                          background: "rgba(124,58,237,0.35)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 22,
-                        }}>✓</div>
-                      )}
-                      {/* Type badge */}
-                      <div style={{
-                        position: "absolute", top: 6, left: 6,
-                        background: `${typeColor}22`, color: typeColor,
-                        border: `1px solid ${typeColor}55`,
-                        padding: "1px 7px", borderRadius: 20, fontSize: 9, fontWeight: 600,
-                        backdropFilter: "blur(4px)",
-                      }}>{r.type}</div>
-                    </div>
-                    </div>
-                    {/* Info */}
-                    <div style={{ padding: "8px 10px" }}>
-                      <div style={{ color: "white", fontWeight: 700, fontSize: 12, lineHeight: 1.2, marginBottom: 2 }}>
-                        {r.nom}
-                      </div>
-                      <div style={{ color: "#52525b", fontSize: 10 }}>
-                        {r.quartier} · {r.arrondissement}
-                      </div>
-                      <div style={{ color: "#71717a", fontSize: 10, marginTop: 3, lineHeight: 1.3 }}>
-                        {r.description}
-                      </div>
-                    </div>
+                    {showAllRestaurants ? "▲ Voir moins" : `▼ Voir tous les ${RESTAURANTS_PARIS.length} restaurants`}
                   </button>
-                );
-              })}
-            </div>
+                )}
+              </>
+            )}
 
-            {RESTAURANTS_PARIS.length > 6 && (
-              <button onClick={() => setShowAllRestaurants(v => !v)} style={{
-                marginTop: 10, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12,
-                background: "#09090b", border: "1px solid #27272a", color: "#71717a", cursor: "pointer",
-              }}>
-                {showAllRestaurants
-                  ? "▲ Voir moins"
-                  : `▼ Voir tous les ${RESTAURANTS_PARIS.length} restaurants`}
-              </button>
+            {/* ── Tab: Photo search ── */}
+            {photoTab === "search" && (
+              <div>
+                {/* Search bar */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && searchPhotos(searchQuery)}
+                    placeholder="Ex : rooftop paris, restaurant luxe, nightclub…"
+                    style={{
+                      flex: 1, padding: "10px 14px",
+                      background: "#09090b", border: "1px solid #3f3f46",
+                      borderRadius: 8, color: "white", fontSize: 13, outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={() => searchPhotos(searchQuery)}
+                    disabled={searchLoading || !searchQuery.trim()}
+                    style={{
+                      padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                      background: searchLoading || !searchQuery.trim()
+                        ? "#27272a"
+                        : "linear-gradient(135deg,#7c3aed,#db2777)",
+                      color: searchLoading || !searchQuery.trim() ? "#52525b" : "white",
+                      border: "none", cursor: searchLoading || !searchQuery.trim() ? "default" : "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {searchLoading ? "⏳" : "Rechercher"}
+                  </button>
+                </div>
+
+                {/* Suggestion chips */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {["rooftop paris", "restaurant luxe paris", "bar nightclub", "champagne soirée", "terrasse paris", "restaurant étoilé"].map(q => (
+                    <button key={q} onClick={() => { setSearchQuery(q); searchPhotos(q); }} style={{
+                      padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 500,
+                      background: "#09090b", border: "1px solid #27272a", color: "#71717a",
+                      cursor: "pointer",
+                    }}>{q}</button>
+                  ))}
+                </div>
+
+                {/* Error */}
+                {searchError && (
+                  <div style={{
+                    background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
+                    borderRadius: 8, padding: "10px 14px", color: "#f87171", fontSize: 12, marginBottom: 10,
+                  }}>{searchError}</div>
+                )}
+
+                {/* Results grid */}
+                {searchResults.length > 0 && (
+                  <>
+                    <div style={{ color: "#52525b", fontSize: 11, marginBottom: 8 }}>
+                      {searchResults.length} photos trouvées — clique pour utiliser
+                    </div>
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                      gap: 8,
+                    }}>
+                      {searchResults.map(photo => {
+                        const isSelected = cfg.photoId === photo.id;
+                        return (
+                          <button key={photo.id} onClick={() => pickSearchPhoto(photo)} style={{
+                            padding: 0, border: `2px solid ${isSelected ? "#a78bfa" : "transparent"}`,
+                            borderRadius: 10, overflow: "hidden", cursor: "pointer",
+                            position: "relative", background: "#09090b",
+                            transition: "border-color 0.15s",
+                          }}>
+                            <div style={{ position: "relative", paddingBottom: "100%", overflow: "hidden" }}>
+                              <div style={{ position: "absolute", inset: 0 }}>
+                                <img src={photo.thumb} alt={photo.alt} loading="lazy"
+                                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                {isSelected && (
+                                  <div style={{
+                                    position: "absolute", inset: 0, background: "rgba(124,58,237,0.4)",
+                                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
+                                  }}>✓</div>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ padding: "4px 6px", textAlign: "left" }}>
+                              <div style={{ color: "#52525b", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                📷 {photo.author}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {!searchDone && !searchLoading && searchResults.length === 0 && (
+                  <div style={{
+                    textAlign: "center", padding: "30px 20px",
+                    background: "#09090b", borderRadius: 10, border: "1px solid #27272a",
+                  }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
+                    <div style={{ color: "#52525b", fontSize: 13 }}>
+                      Recherche une photo par mot-clé
+                    </div>
+                    <div style={{ color: "#3f3f46", fontSize: 11, marginTop: 4 }}>
+                      Propulsé par Unsplash · nécessite UNSPLASH_ACCESS_KEY
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
