@@ -52,7 +52,7 @@ function makeConfig(r: ParisRestaurant): Config {
     photoId: r.photoId,
     theme: "violet_nuit",
     gradientStart: 20,
-    gradientIntensity: 90,
+    gradientIntensity: 70,
     titleFontSize: 68,
     textFontSize: 40,
     showBranding: true,
@@ -76,16 +76,16 @@ const DEFAULT_AUTO: AutoConfig = {
 function thumbUrl(id: string) {
   return `https://images.unsplash.com/photo-${id}?fit=crop&w=300&h=300&q=70`;
 }
-function fullUrl(id: string) {
-  return `https://images.unsplash.com/photo-${id}?fit=crop&w=1080&h=1080&q=85`;
+function proxyUrl(id: string) {
+  return `/api/photo-proxy?id=${id}&w=1080&h=1080`;
 }
 
 // ─── Canvas helpers ────────────────────────────────────────────────────────────
 
+// No crossOrigin — proxy is same-origin, avoids CORS cache taint issue
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
@@ -130,7 +130,7 @@ async function renderSlide(canvas: HTMLCanvasElement, cfg: Config, slide: Slide,
   ctx.fillRect(0, 0, W, H);
 
   try {
-    const img = await loadImg(fullUrl(cfg.photoId));
+    const img = await loadImg(proxyUrl(cfg.photoId));
     const sc = Math.max(W / img.width, H / img.height);
     const sw = img.width * sc, sh = img.height * sc;
     ctx.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh);

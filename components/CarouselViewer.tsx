@@ -101,7 +101,7 @@ export function CarouselViewer({
           <div style={{
             position: "absolute", inset: 0,
             background: sharedPhotoId
-              ? "linear-gradient(to top, rgba(0,0,0,0.82) 45%, rgba(0,0,0,0.25) 100%)"
+              ? "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.04) 70%, rgba(0,0,0,0) 100%)"
               : "linear-gradient(to top, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.1) 60%)",
           }} />
 
