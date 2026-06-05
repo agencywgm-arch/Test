@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/Sidebar";
 import { updateContenuStatut } from "@/lib/actions";
+import { CarouselViewer } from "@/components/CarouselViewer";
 
 export default async function Contenu() {
 
@@ -62,38 +62,14 @@ export default async function Contenu() {
           <ScoreBar value={c.scoreLuxe} label="Luxe" />
         </div>
 
-        {/* Slides preview */}
+        {/* Carousel interactif */}
         {slides.length > 0 && (
-          <div>
-            <div style={{ color: "#52525b", fontSize: 11, marginBottom: 8 }}>APERÇU CARROUSEL</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {slides.slice(0, 3).map((s, i) => (
-                <div key={i} style={{
-                  background: "linear-gradient(135deg, rgba(124,58,237,0.1), rgba(219,39,119,0.08))",
-                  border: "1px solid rgba(124,58,237,0.2)",
-                  borderRadius: 8, padding: "10px 12px"
-                }}>
-                  <div style={{ color: "#a78bfa", fontWeight: 600, fontSize: 13 }}>Slide {i + 1} — {s.titre}</div>
-                  <div style={{ color: "#71717a", fontSize: 12, marginTop: 2 }}>{s.phrase}</div>
-                </div>
-              ))}
-              {slides.length > 3 && (
-                <div style={{ color: "#52525b", fontSize: 12, textAlign: "center" }}>
-                  + {slides.length - 3} slide(s)
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Caption */}
-        {c.caption && (
-          <div style={{ background: "#09090b", borderRadius: 10, padding: "10px 12px" }}>
-            <div style={{ color: "#52525b", fontSize: 11, marginBottom: 4 }}>CAPTION INSTAGRAM</div>
-            <div style={{ color: "#a1a1aa", fontSize: 12, lineHeight: 1.5 }}>
-              {c.caption.substring(0, 150)}{c.caption.length > 150 ? "..." : ""}
-            </div>
-          </div>
+          <CarouselViewer
+            slides={slides}
+            restaurant={c.restaurant}
+            caption={c.caption}
+            hashtags={c.hashtags}
+          />
         )}
 
         {/* Actions */}
