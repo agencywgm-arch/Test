@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AP × Swatch — BioRoyal Oak</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --black:#050507;
+  --deep:#0a0a18;
+  --ap-blue:#001459;
+  --gold:#c9a96e;
+  --gold-dim:rgba(201,169,110,0.15);
+  --silver:#b8bcd0;
+  --bio:#e8e4dc;
+  --white:#f0f0f5;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+}
+html{scroll-behavior:smooth}
+body{
+  background:linear-gradient(160deg,#050507 0%,#070714 50%,#050507 100%);
+  color:var(--white);
+  font-family:'Georgia',serif;
+  overflow-x:hidden;
+  cursor:none;
+}
+
+/* ── CURSOR ── */
+#cur,#cur-ring{position:fixed;pointer-events:none;z-index:9999;border-radius:50%;transition:transform .15s var(--ease)}
+#cur{width:7px;height:7px;background:var(--gold);transform:translate(-50%,-50%)}
+#cur-ring{width:30px;height:30px;border:1px solid rgba(201,169,110,.5);transform:translate(-50%,-50%);transition:all .2s var(--ease)}
+body:hover #cur-ring{opacity:1}
+
+/* ── LOADER ── */
+#loader{
+  position:fixed;inset:0;background:var(--black);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:1000;gap:32px;
+}
+.ld-logos{display:flex;align-items:center;gap:28px;font-size:22px;letter-spacing:.35em}
+.ld-logos span{opacity:0;transform:translateY(16px);transition:all .7s var(--ease)}
+.ld-logos span.show{opacity:1;transform:translateY(0)}
+.ld-logos .x{color:var(--gold)}
+.ld-bar{width:180px;height:1px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}
+.ld-fill{position:absolute;left:-100%;top:0;height:100%;width:100%;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:ldSlide 2s .4s ease forwards}
+@keyframes ldSlide{to{left:100%}}
+.ld-pct{font-size:11px;letter-spacing:.4em;color:rgba(255,255,255,.3);font-style:italic}
+
+/* ── CANVAS ── */
+#cv{position:fixed;inset:0;z-index:0}
+.cv-vignette{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse 70% 70% at 50% 50%,transparent 20%,rgba(5,5,7,.7) 100%);
+}
+
+/* ── NAV ── */
+nav{
+  position:fixed;top:0;width:100%;padding:22px 56px;
+  display:flex;justify-content:space-between;align-items:center;
+  z-index:100;
+  border-bottom:1px solid rgba(255,255,255,.04);
+  backdrop-filter:blur(12px);
+  background:rgba(5,5,7,.4);
+}
+.nav-brand{font-size:11px;letter-spacing:.45em;text-transform:uppercase;color:var(--gold)}
+.nav-links{display:flex;gap:36px;list-style:none}
+.nav-links a{color:rgba(255,255,255,.45);text-decoration:none;font-size:10px;letter-spacing:.35em;text-transform:uppercase;transition:color .3s}
+.nav-links a:hover{color:var(--gold)}
+
+/* ── CONTENT ── */
+#site{position:relative;z-index:10}
+
+/* ── HERO ── */
+.hero{
+  height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;
+  position:relative;
+}
+.hero-tag{font-size:9px;letter-spacing:.65em;text-transform:uppercase;color:var(--gold);margin-bottom:20px;opacity:0;animation:riseIn .9s 2.8s var(--ease) forwards}
+.hero-title{font-size:clamp(52px,9vw,108px);font-weight:300;letter-spacing:.08em;line-height:1;opacity:0;animation:riseIn .9s 3s var(--ease) forwards}
+.hero-title b{color:var(--gold);font-weight:700;display:block}
+.hero-sub{margin-top:18px;font-size:15px;letter-spacing:.25em;color:rgba(255,255,255,.4);font-style:italic;opacity:0;animation:riseIn .9s 3.2s var(--ease) forwards}
+.hero-cta{
+  margin-top:44px;display:inline-block;padding:15px 50px;
+  border:1px solid rgba(201,169,110,.4);color:var(--gold);
+  font-size:10px;letter-spacing:.4em;text-transform:uppercase;text-decoration:none;
+  position:relative;overflow:hidden;opacity:0;animation:riseIn .9s 3.5s var(--ease) forwards;
+  transition:color .4s;
+}
+.hero-cta::before{
+  content:'';position:absolute;inset:0;background:var(--gold);
+  transform:translateX(-105%);transition:transform .4s var(--ease);z-index:-1;
+}
+.hero-cta:hover{color:var(--black)}
+.hero-cta:hover::before{transform:translateX(0)}
+
+.scroll-hint{
+  position:absolute;bottom:36px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  opacity:0;animation:riseIn 1s 4s var(--ease) forwards;
+}
+.scroll-hint span{font-size:8px;letter-spacing:.5em;color:rgba(255,255,255,.3);text-transform:uppercase}
+.scroll-line{width:1px;height:50px;background:linear-gradient(to bottom,var(--gold),transparent);animation:pulse 2s 4.2s infinite}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes riseIn{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── SECTIONS ── */
+.sec{min-height:100vh;padding:120px 56px;display:flex;align-items:center}
+.sec-inner{max-width:1160px;margin:0 auto;width:100%}
+.sec-label{font-size:9px;letter-spacing:.65em;text-transform:uppercase;color:var(--gold);margin-bottom:18px}
+.sec-title{font-size:clamp(34px,5vw,62px);font-weight:300;letter-spacing:.04em;line-height:1.1;margin-bottom:28px}
+.sec-body{font-size:15px;line-height:1.9;color:rgba(255,255,255,.55);max-width:480px}
+.sec-body+.sec-body{margin-top:16px}
+
+/* ── FEATURES GRID ── */
+.grid-6{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:56px}
+.card{
+  background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);
+  padding:36px;position:relative;overflow:hidden;
+  transition:background .4s,border-color .4s;
+}
+.card::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:var(--gold);transform:scaleX(0);transform-origin:left;
+  transition:transform .5s var(--ease);
+}
+.card:hover{background:rgba(201,169,110,.04);border-color:rgba(201,169,110,.12)}
+.card:hover::after{transform:scaleX(1)}
+.card-num{font-size:40px;font-weight:700;color:rgba(201,169,110,.15);line-height:1;margin-bottom:16px}
+.card-title{font-size:13px;letter-spacing:.25em;text-transform:uppercase;margin-bottom:10px}
+.card-desc{font-size:13px;line-height:1.75;color:rgba(255,255,255,.45)}
+
+/* ── QUOTE ── */
+.quote-sec{
+  background:rgba(201,169,110,.025);
+  border-top:1px solid rgba(201,169,110,.08);
+  border-bottom:1px solid rgba(201,169,110,.08);
+  justify-content:center;text-align:center;
+}
+.quote-text{font-size:clamp(22px,3.5vw,44px);font-weight:300;font-style:italic;line-height:1.45;max-width:780px;margin:0 auto}
+.quote-text em{color:var(--gold);font-style:normal}
+.quote-attr{margin-top:28px;font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:rgba(255,255,255,.35)}
+
+/* ── SPECS ── */
+.specs-layout{display:grid;grid-template-columns:1fr 1fr;gap:96px;align-items:center}
+.spec-list{list-style:none;margin-top:36px}
+.spec-row{display:flex;justify-content:space-between;align-items:center;padding:18px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.spec-name{font-size:10px;letter-spacing:.35em;text-transform:uppercase;color:rgba(255,255,255,.38)}
+.spec-val{font-size:13px;color:var(--gold);letter-spacing:.1em}
+
+/* ── CTA ── */
+.cta-sec{justify-content:center;text-align:center}
+.price-block{margin:40px 0}
+.price-label{font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:10px}
+.price-amount{font-size:clamp(48px,7vw,88px);font-weight:700;color:var(--white);letter-spacing:-.02em;line-height:1}
+.price-currency{font-size:22px;vertical-align:super;margin-right:4px;color:var(--gold)}
+.price-note{font-size:12px;color:rgba(255,255,255,.35);letter-spacing:.2em;margin-top:8px}
+.btn{
+  display:inline-block;padding:18px 64px;
+  border:1px solid var(--gold);color:var(--gold);
+  font-size:10px;letter-spacing:.45em;text-transform:uppercase;
+  text-decoration:none;position:relative;overflow:hidden;transition:color .4s;
+}
+.btn::before{content:'';position:absolute;inset:0;background:var(--gold);transform:translateX(-105%);transition:transform .4s var(--ease);z-index:-1}
+.btn:hover{color:var(--black)}
+.btn:hover::before{transform:translateX(0)}
+
+/* ── FOOTER ── */
+footer{padding:52px 56px;border-top:1px solid rgba(255,255,255,.04);display:flex;justify-content:space-between;align-items:center}
+.ft-left,.ft-right{font-size:10px;letter-spacing:.35em;color:rgba(255,255,255,.25)}
+.ft-center{font-size:14px;color:var(--gold);letter-spacing:.3em}
+
+/* ── SCROLL REVEAL ── */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .9s var(--ease),transform .9s var(--ease)}
+.reveal.in{opacity:1;transform:translateY(0)}
+
+/* ── MOBILE ── */
+@media(max-width:768px){
+  nav{padding:18px 24px}
+  .nav-links{display:none}
+  .sec{padding:80px 24px}
+  .grid-6{grid-template-columns:1fr 1fr}
+  .specs-layout{grid-template-columns:1fr;gap:40px}
+  footer{flex-direction:column;gap:16px;text-align:center}
+}
+@media(max-width:480px){.grid-6{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- Cursor -->
+<div id="cur"></div>
+<div id="cur-ring"></div>
+
+<!-- Loader -->
+<div id="loader">
+  <div class="ld-logos">
+    <span id="lAP">AP</span>
+    <span id="lX" class="x">×</span>
+    <span id="lSW">SWATCH</span>
+  </div>
+  <div class="ld-bar"><div class="ld-fill"></div></div>
+  <div class="ld-pct" id="ldpct">Chargement...</div>
+</div>
+
+<!-- Three.js canvas -->
+<canvas id="cv"></canvas>
+<div class="cv-vignette"></div>
+
+<!-- Site content -->
+<div id="site">
+
+  <nav>
+    <div class="nav-brand">AP × Swatch</div>
+    <ul class="nav-links">
+      <li><a href="#story">L'Histoire</a></li>
+      <li><a href="#design">Le Design</a></li>
+      <li><a href="#specs">Spécifications</a></li>
+      <li><a href="#prix">Collection</a></li>
+    </ul>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-tag">Édition Mondiale Limitée · 2025</div>
+    <h1 class="hero-title">
+      BioRoyal<b>Oak</b>
+    </h1>
+    <p class="hero-sub">Audemars Piguet × Swatch Group</p>
+    <a href="#story" class="hero-cta">Découvrir</a>
+    <div class="scroll-hint">
+      <div class="scroll-line"></div>
+      <span>Défiler</span>
+    </div>
+  </section>
+
+  <!-- STORY -->
+  <section class="sec" id="story">
+    <div class="sec-inner">
+      <div class="reveal"><div class="sec-label">01 — L'Histoire</div></div>
+      <h2 class="sec-title reveal">Quand Le Brassus<br>rencontre Biel</h2>
+      <p class="sec-body reveal">
+        1972. Gérald Genta dessine la Royal Oak — première montre de luxe en acier inoxydable,
+        avec son boîtier octogonal et ses huit vis hexagonales emblématiques. Un geste révolutionnaire
+        qui redéfinit le luxe horloger pour toujours.
+      </p>
+      <p class="sec-body reveal" style="margin-top:18px">
+        2025. Audemars Piguet s'associe au génie populaire de Swatch Group pour créer l'impossible :
+        la <em style="color:var(--gold);font-style:normal">BioRoyal Oak</em>, une réinterprétation
+        biocéramique accessible à tous, sans compromettre un seul détail de l'ADN original.
+      </p>
+    </div>
+  </section>
+
+  <!-- DESIGN FEATURES -->
+  <section class="sec" id="design" style="padding-bottom:80px">
+    <div class="sec-inner">
+      <div class="reveal"><div class="sec-label">02 — Le Design</div></div>
+      <h2 class="sec-title reveal">L'ADN Royal Oak,<br>sans compromis</h2>
+
+      <div class="grid-6">
+        <div class="card reveal">
+          <div class="card-num">01</div>
+          <div class="card-title">Biocéramique</div>
+          <div class="card-desc">Oxyde de zirconium mélangé à des biomatériaux. Léger comme l'aluminium, dur comme le saphir, doux au toucher.</div>
+        </div>
+        <div class="card reveal">
+          <div class="card-num">02</div>
+          <div class="card-title">Boîtier Octogonal</div>
+          <div class="card-desc">Les 8 pans et les 8 vis hexagonales de Gérald Genta, reproduits au dixième de millimètre.</div>
+        </div>
+        <div class="card reveal">
+          <div class="card-num">03</div>
+          <div class="card-title">Méga Tapisserie</div>
+          <div class="card-desc">Le motif Méga Tapisserie en relief signature d'AP, gravé dans la biocéramique du cadran bleu nuit.</div>
+        </div>
+        <div class="card reveal">
+          <div class="card-num">04</div>
+          <div class="card-title">Bracelet Intégré</div>
+          <div class="card-desc">L'innovation bracelet intégré d'AP de 1972, réinterprétée en biocéramique souple — une première mondiale.</div>
+        </div>
+        <div class="card reveal">
+          <div class="card-num">05</div>
+          <div class="card-title">Verre Saphir</div>
+          <div class="card-desc">Verre saphir bombé traité anti-reflets — même matériau que dans les garde-temps à CHF 30 000.</div>
+        </div>
+        <div class="card reveal">
+          <div class="card-num">06</div>
+          <div class="card-title">Édition Numérotée</div>
+          <div class="card-desc">Chaque pièce gravée au laser avec son numéro de série. Coffret exclusif AP × Swatch inclus.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUOTE -->
+  <section class="sec quote-sec">
+    <div>
+      <p class="quote-text reveal">
+        "La <em>démocratisation</em> du luxe n'est pas<br>
+        la destruction du luxe — c'est son <em>accomplissement</em>."
+      </p>
+      <p class="quote-attr reveal">Audemars Piguet × Swatch · Le Brassus, 2025</p>
+    </div>
+  </section>
+
+  <!-- SPECS -->
+  <section class="sec" id="specs">
+    <div class="sec-inner">
+      <div class="specs-layout">
+        <div>
+          <div class="reveal"><div class="sec-label">03 — Spécifications</div></div>
+          <h2 class="sec-title reveal">Chaque détail,<br>une décision</h2>
+          <p class="sec-body reveal">
+            L'excellence suisse au service de l'accessibilité. 53 ans de savoir-faire AP distillé
+            dans une pièce à CHF 390.
+          </p>
+        </div>
+        <ul class="spec-list">
+          <li class="spec-row reveal"><span class="spec-name">Référence</span><span class="spec-val">BRO-37-BIO</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Boîtier</span><span class="spec-val">37 mm Biocéramique</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Épaisseur</span><span class="spec-val">9,8 mm</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Verre</span><span class="spec-val">Saphir bombé AR</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Étanchéité</span><span class="spec-val">50 mètres</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Mouvement</span><span class="spec-val">Calibre Swiss SQ</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Réserve</span><span class="spec-val">42 heures</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Bracelet</span><span class="spec-val">Biocéramique intégré</span></li>
+          <li class="spec-row reveal"><span class="spec-name">Coloris</span><span class="spec-val">5 éditions</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="sec cta-sec" id="prix">
+    <div>
+      <div class="reveal"><div class="sec-label">04 — La Collection</div></div>
+      <h2 class="sec-title reveal" style="margin-bottom:0">Faites partie<br>de l'histoire</h2>
+      <div class="price-block reveal">
+        <div class="price-label">Prix conseillé</div>
+        <div class="price-amount"><span class="price-currency">CHF</span>390</div>
+        <div class="price-note">Disponible dans les boutiques Swatch sélectionnées</div>
+      </div>
+      <a href="#" class="btn reveal">Explorer la Collection</a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="ft-left">© 2025 AP × Swatch Group</div>
+    <div class="ft-center">BioRoyal Oak</div>
+    <div class="ft-right">Le Brassus · Biel/Bienne</div>
+  </footer>
+
+</div><!-- /site -->
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+// ══════════════════════════════════════════
+// LOADER
+// ══════════════════════════════════════════
+(function(){
+  const lAP=document.getElementById('lAP'),
+        lX=document.getElementById('lX'),
+        lSW=document.getElementById('lSW'),
+        lPct=document.getElementById('ldpct'),
+        loader=document.getElementById('loader');
+  setTimeout(()=>lAP.classList.add('show'),200);
+  setTimeout(()=>lX.classList.add('show'),550);
+  setTimeout(()=>lSW.classList.add('show'),900);
+
+  let p=0;
+  const iv=setInterval(()=>{
+    p+=Math.random()*18;
+    if(p>=100){p=100;clearInterval(iv)}
+    lPct.textContent=Math.floor(p)+'%';
+  },100);
+
+  setTimeout(()=>{
+    loader.style.transition='opacity 1s ease';
+    loader.style.opacity='0';
+    setTimeout(()=>loader.style.display='none',1000);
+  },2400);
+})();
+
+// ══════════════════════════════════════════
+// CURSOR
+// ══════════════════════════════════════════
+const cur=document.getElementById('cur'),
+      curR=document.getElementById('cur-ring');
+let mx=0,my=0,rx=0,ry=0;
+document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
+(function tickCursor(){
+  rx+=(mx-rx)*.18; ry+=(my-ry)*.18;
+  cur.style.left=mx+'px'; cur.style.top=my+'px';
+  curR.style.left=rx+'px'; curR.style.top=ry+'px';
+  requestAnimationFrame(tickCursor);
+})();
+
+// ══════════════════════════════════════════
+// THREE.JS
+// ══════════════════════════════════════════
+const canvas=document.getElementById('cv');
+const W=window.innerWidth,H=window.innerHeight;
+
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setSize(W,H);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.3;
+renderer.setClearColor(0x000000,0);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(55,W/H,.1,100);
+camera.position.set(0,.4,5.2);
+
+// ── LIGHTS ──
+scene.add(new THREE.AmbientLight(0xffffff,.08));
+
+const kLight=new THREE.DirectionalLight(0xfff5e0,2.5);
+kLight.position.set(6,8,6);
+scene.add(kLight);
+
+const rLight=new THREE.DirectionalLight(0x1a2a8a,1.2);
+rLight.position.set(-8,-3,-5);
+scene.add(rLight);
+
+const gPt=new THREE.PointLight(0xc9a96e,4,12);
+gPt.position.set(1.5,3,3);
+scene.add(gPt);
+
+const bPt=new THREE.PointLight(0x001459,3,14);
+bPt.position.set(-3,1,2);
+scene.add(bPt);
+
+const botLight=new THREE.PointLight(0xffffff,1,8);
+botLight.position.set(0,-4,0);
+scene.add(botLight);
+
+// ── MATERIALS ──
+const mBio=new THREE.MeshStandardMaterial({color:0xe5e1d8,metalness:.05,roughness:.55});
+const mBioSide=new THREE.MeshStandardMaterial({color:0xd8d4cc,metalness:.1,roughness:.45});
+const mGold=new THREE.MeshStandardMaterial({color:0xc9a96e,metalness:.96,roughness:.04});
+const mDial=new THREE.MeshStandardMaterial({color:0x05164a,metalness:.5,roughness:.22});
+const mTap=new THREE.MeshStandardMaterial({color:0x071e60,metalness:.4,roughness:.3});
+const mGlass=new THREE.MeshPhysicalMaterial({
+  color:0xffffff,transmission:.93,transparent:true,opacity:.12,
+  roughness:.02,metalness:0,ior:1.52,reflectivity:.9,
+});
+const mHand=new THREE.MeshStandardMaterial({color:0xe8d5a8,metalness:.92,roughness:.06});
+const mSec=new THREE.MeshStandardMaterial({color:0xff2200,metalness:.85,roughness:.1});
+const mLink=new THREE.MeshStandardMaterial({color:0xdedad2,metalness:.12,roughness:.5});
+const mLinkAlt=new THREE.MeshStandardMaterial({color:0xa8a49c,metalness:.55,roughness:.25});
+
+// ── WATCH GROUP ──
+const W3=new THREE.Group();
+scene.add(W3);
+W3.rotation.x=-.28;
+
+// Helper: octagonal 2D shape
+function octShape(r){
+  const s=new THREE.Shape();
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2+Math.PI/8;
+    const x=r*Math.cos(a),y=r*Math.sin(a);
+    i===0?s.moveTo(x,y):s.lineTo(x,y);
+  }
+  s.closePath();
+  return s;
+}
+
+// Helper: octagonal ring shape (with hole)
+function octRing(outer,inner){
+  const s=octShape(outer);
+  const hole=new THREE.Path();
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2+Math.PI/8;
+    const x=inner*Math.cos(a),y=inner*Math.sin(a);
+    i===0?hole.moveTo(x,y):hole.lineTo(x,y);
+  }
+  hole.closePath();
+  s.holes.push(hole);
+  return s;
+}
+
+const extOpts=(depth,bevel=.025)=>({depth,bevelEnabled:true,bevelThickness:bevel,bevelSize:bevel,bevelSegments:3});
+
+// ── BEZEL (bioceramic ring) ──
+const bezelGeo=new THREE.ExtrudeGeometry(octRing(1.32,1.10),{depth:.18,bevelEnabled:true,bevelThickness:.03,bevelSize:.03,bevelSegments:3});
+const bezel=new THREE.Mesh(bezelGeo,mBio);
+bezel.rotation.x=-Math.PI/2;
+bezel.position.y=.1;
+W3.add(bezel);
+
+// Gold bezel lip
+const bezLipGeo=new THREE.ExtrudeGeometry(octRing(1.33,1.09),{depth:.03,bevelEnabled:false});
+const bezLip=new THREE.Mesh(bezLipGeo,mGold);
+bezLip.rotation.x=-Math.PI/2;
+bezLip.position.y=.28;
+W3.add(bezLip);
+
+// ── BEZEL SCREWS (8) ──
+for(let i=0;i<8;i++){
+  const a=(i/8)*Math.PI*2+Math.PI/8;
+  const r=1.205;
+  const sg=new THREE.CylinderGeometry(.038,.038,.05,6);
+  const screw=new THREE.Mesh(sg,mGold);
+  screw.position.set(r*Math.cos(a),.27,r*Math.sin(a));
+  W3.add(screw);
+  // Slot line
+  const slotG=new THREE.BoxGeometry(.006,.055,.05);
+  const slot=new THREE.Mesh(slotG,new THREE.MeshStandardMaterial({color:0x8a7a50,metalness:.9,roughness:.1}));
+  slot.position.set(r*Math.cos(a),.27,r*Math.sin(a));
+  slot.rotation.y=a;
+  W3.add(slot);
+}
+
+// ── CASE (middle) ──
+const caseGeo=new THREE.ExtrudeGeometry(octShape(1.28),{depth:.38,bevelEnabled:true,bevelThickness:.025,bevelSize:.025,bevelSegments:2});
+const watchCase=new THREE.Mesh(caseGeo,mBioSide);
+watchCase.rotation.x=-Math.PI/2;
+watchCase.position.y=-.28;
+W3.add(watchCase);
+
+// ── CASEBACK ──
+const cbGeo=new THREE.ExtrudeGeometry(octShape(1.25),{depth:.04,bevelEnabled:true,bevelThickness:.02,bevelSize:.02,bevelSegments:2});
+const caseback=new THREE.Mesh(cbGeo,mBio);
+caseback.rotation.x=-Math.PI/2;
+caseback.position.y=-.66;
+W3.add(caseback);
+
+// ── DIAL ──
+const dialGeo=new THREE.CylinderGeometry(1.07,1.07,.055,72);
+const dial=new THREE.Mesh(dialGeo,mDial);
+dial.position.y=.085;
+W3.add(dial);
+
+// ── MÉGA TAPISSERIE (instanced squares) ──
+(function(){
+  const positions=[];
+  for(let x=-9;x<=9;x++){
+    for(let z=-9;z<=9;z++){
+      if(Math.sqrt(x*x+z*z)<=8.8)positions.push([x*.108,z*.108]);
+    }
+  }
+  const geo=new THREE.BoxGeometry(.078,.013,.078);
+  const mesh=new THREE.InstancedMesh(geo,mTap,positions.length);
+  const dummy=new THREE.Object3D();
+  positions.forEach(([x,z],i)=>{
+    dummy.position.set(x,.122,z);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i,dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate=true;
+  W3.add(mesh);
+})();
+
+// ── DIAL RING (gold inner bezel) ──
+const drGeo=new THREE.TorusGeometry(1.07,.018,6,72);
+const drMesh=new THREE.Mesh(drGeo,mGold);
+drMesh.rotation.x=Math.PI/2;
+drMesh.position.y=.115;
+W3.add(drMesh);
+
+// ── HOUR MARKERS ──
+for(let i=0;i<12;i++){
+  const a=(i/12)*Math.PI*2;
+  const r=.91;
+  const big=i%3===0;
+  const mg=new THREE.BoxGeometry(big?.088:.052,.016,big?.026:.016);
+  const mm=new THREE.Mesh(mg,mGold);
+  mm.position.set(r*Math.sin(a),.128,r*Math.cos(a));
+  mm.rotation.y=-a;
+  W3.add(mm);
+}
+
+// ── AP LOGO (disc + AP lettering approximation) ──
+const apGeo=new THREE.CylinderGeometry(.115,.115,.008,32);
+const apMesh=new THREE.Mesh(apGeo,mGold);
+apMesh.position.set(0,.128,.25);
+W3.add(apMesh);
+
+// ── HANDS (pivot groups at dial centre) ──
+function makeHand(w,len,h,mat,tailFrac=.22){
+  const geo=new THREE.BoxGeometry(w,h,len);
+  geo.translate(0,0,-(len/2-len*tailFrac));
+  return new THREE.Mesh(geo,mat);
+}
+
+const hourPivot=new THREE.Group();
+hourPivot.position.y=.162;
+const hourMesh=makeHand(.068,.52,.014,mHand,.22);
+hourPivot.add(hourMesh);
+W3.add(hourPivot);
+
+const minPivot=new THREE.Group();
+minPivot.position.y=.168;
+const minMesh=makeHand(.044,.78,.012,mHand,.2);
+minPivot.add(minMesh);
+W3.add(minPivot);
+
+const secPivot=new THREE.Group();
+secPivot.position.y=.175;
+const secMesh=makeHand(.018,.88,.01,mSec,.28);
+secPivot.add(secMesh);
+W3.add(secPivot);
+
+// Center cap
+const capG=new THREE.CylinderGeometry(.06,.06,.038,32);
+const capM=new THREE.Mesh(capG,mGold);
+capM.position.y=.168;
+W3.add(capM);
+
+// ── GLASS CRYSTAL ──
+const glassGeo=new THREE.CylinderGeometry(1.1,1.08,.07,72);
+const glassMesh=new THREE.Mesh(glassGeo,mGlass);
+glassMesh.position.y=.21;
+W3.add(glassMesh);
+
+// ── CROWN ──
+const crownG=new THREE.CylinderGeometry(.072,.056,.22,16);
+const crownM=new THREE.Mesh(crownG,mBio);
+crownM.rotation.z=Math.PI/2;
+crownM.position.set(1.34,-.04,0);
+W3.add(crownM);
+
+for(let i=0;i<7;i++){
+  const rg=new THREE.TorusGeometry(.074,.009,4,16);
+  const rm=new THREE.Mesh(rg,mGold);
+  rm.rotation.y=Math.PI/2;
+  rm.position.set(1.26+i*.025,-.04,0);
+  W3.add(rm);
+}
+
+// ── PUSHER buttons ──
+[-1,1].forEach(side=>{
+  const pg=new THREE.CylinderGeometry(.032,.032,.14,12);
+  const pm=new THREE.Mesh(pg,mBio);
+  pm.rotation.z=Math.PI/2;
+  pm.position.set(1.34,-.04,side*.25);
+  W3.add(pm);
+});
+
+// ── INTEGRATED BRACELET ──
+// Each link: wide + narrow alternating, top (−Z) and bottom (+Z)
+(function(){
+  const linkWidths=[.38,.24,.38,.24,.38];
+  const heights=.1;
+  const linkDepth=.22;
+  const colors=[mLink,mLinkAlt,mLink,mLinkAlt,mLink];
+
+  [-1,1].forEach(dir=>{
+    let z=1.3;
+    linkWidths.forEach((lw,i)=>{
+      const lg=new THREE.BoxGeometry(lw,heights,linkDepth);
+      const lm=new THREE.Mesh(lg,colors[i]);
+      lm.position.set(0,-.05,dir*(z+linkDepth/2));
+      W3.add(lm);
+      // Center accent strip
+      const ag=new THREE.BoxGeometry(lw*.3,heights+.002,linkDepth);
+      const am=new THREE.Mesh(ag,mLinkAlt);
+      am.position.set(0,-.048,dir*(z+linkDepth/2));
+      W3.add(am);
+      z+=linkDepth;
+    });
+    // Clasp hint
+    const cg=new THREE.BoxGeometry(.42,.12,.06);
+    const cm=new THREE.Mesh(cg,mBio);
+    cm.position.set(0,-.05,dir*(z+.06));
+    W3.add(cm);
+  });
+})();
+
+// ══════════════════════════════════════════
+// AMBIENT PARTICLES
+// ══════════════════════════════════════════
+(function(){
+  const N=900;
+  const geo=new THREE.BufferGeometry();
+  const pos=new Float32Array(N*3),col=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const phi=Math.acos(2*Math.random()-1);
+    const theta=Math.random()*Math.PI*2;
+    const r=3.5+Math.random()*6;
+    pos[i*3]=r*Math.sin(phi)*Math.cos(theta);
+    pos[i*3+1]=r*Math.sin(phi)*Math.sin(theta);
+    pos[i*3+2]=r*Math.cos(phi);
+    const t=Math.random();
+    col[i*3]=.78+t*.22; col[i*3+1]=.66+t*.18; col[i*3+2]=.3+t*.2;
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  const mat=new THREE.PointsMaterial({size:.028,vertexColors:true,transparent:true,opacity:.55,sizeAttenuation:true});
+  scene.add(new THREE.Points(geo,mat));
+})();
+
+// ── ORBIT RINGS ──
+[[2.8,.005,0xc9a96e,.35,Math.PI/2,0],[3.4,.003,0x1a2a8a,.2,Math.PI/4,.5],[4,.004,0xffffff,.12,Math.PI/3,1]].forEach(([r,t,c,o,rx,phase])=>{
+  const rg=new THREE.TorusGeometry(r,t,3,200);
+  const rm=new THREE.Mesh(rg,new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o}));
+  rm.rotation.x=rx;
+  rm.userData.phase=phase;
+  scene.add(rm);
+  scene.userData=scene.userData||{};
+  if(!scene.userData.rings)scene.userData.rings=[];
+  scene.userData.rings.push(rm);
+});
+
+// ══════════════════════════════════════════
+// ANIMATION
+// ══════════════════════════════════════════
+let mxN=0,myN=0;
+document.addEventListener('mousemove',e=>{
+  mxN=(e.clientX/innerWidth-.5)*2;
+  myN=(e.clientY/innerHeight-.5)*2;
+});
+
+let crx=0,cry=0,introT=0;
+const clock=new THREE.Clock();
+let scrollPct=0;
+window.addEventListener('scroll',()=>{
+  scrollPct=scrollY/(document.body.scrollHeight-innerHeight);
+});
+
+function updateClock(){
+  const now=new Date();
+  const s=now.getSeconds()+now.getMilliseconds()/1000;
+  const m=now.getMinutes()+s/60;
+  const h=(now.getHours()%12)+m/60;
+  // Three.js Y-rotation: 0 = 12 o'clock (hand points -Z in local space... adjust below)
+  secPivot.rotation.y=-(s/60)*Math.PI*2;
+  minPivot.rotation.y=-(m/60)*Math.PI*2;
+  hourPivot.rotation.y=-(h/12)*Math.PI*2;
+}
+
+function render(){
+  requestAnimationFrame(render);
+  const t=clock.getElapsedTime();
+
+  // Intro float-in
+  if(introT<1){
+    introT=Math.min(introT+.008,1);
+    const e=1-(1-introT)*(1-introT)*(1-introT);
+    W3.position.y=-3*(1-e);
+    W3.rotation.z=Math.PI*(1-e);
+  }
+
+  // Mouse parallax
+  const tx=myN*.22, ty=mxN*.35+t*.12;
+  crx+=(tx-crx)*.04; cry+=(ty-cry)*.04;
+
+  if(introT>=1){
+    W3.rotation.x=-.28+crx+scrollPct*.45;
+    W3.rotation.y=cry;
+    W3.position.y=Math.sin(t*.45)*.12-scrollPct*2.2;
+    W3.scale.setScalar(1-scrollPct*.25);
+  }
+
+  // Rings
+  if(scene.userData.rings){
+    scene.userData.rings.forEach((r,i)=>{
+      r.rotation.z=t*.06*(i+1)+r.userData.phase;
+    });
+  }
+
+  // Light pulse
+  gPt.intensity=4+Math.sin(t*1.8)*.6;
+  bPt.intensity=3+Math.cos(t*1.3)*.4;
+
+  updateClock();
+  renderer.render(scene,camera);
+}
+render();
+
+// ══════════════════════════════════════════
+// RESIZE
+// ══════════════════════════════════════════
+window.addEventListener('resize',()=>{
+  const w=innerWidth,h=innerHeight;
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+});
+
+// ══════════════════════════════════════════
+// SCROLL REVEAL
+// ══════════════════════════════════════════
+const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')});
+},{threshold:.12,rootMargin:'0px 0px -60px 0px'});
+document.querySelectorAll('.reveal').forEach((el,i)=>{
+  el.style.transitionDelay=(i%4)*.08+'s';
+  io.observe(el);
+});
+</script>
+</body>
+</html>
