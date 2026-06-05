@@ -385,6 +385,17 @@ function useStore(restaurantId) {
       setIngredients(DEMO_INGREDIENTS);
       setPromotions(DEMO_PROMOS);
       setCustomers(DEMO_CUSTOMERS);
+      // Demo: seed notification history
+      const now = new Date();
+      const mk = (msg, type, minAgo) => ({ id: minAgo, msg, type, ts: new Date(now - minAgo * 60000) });
+      setNotifHistory([
+        mk("🆕 Commande #A3F2 — Table 5 · Sophie M.", "new", 2),
+        mk("🆕 Commande #B81C — Table 2 · Lucas D.", "new", 8),
+        mk("✅ Commande #9E4A livrée — Table 3", "success", 15),
+        mk("⚠️ Stock bas : Tomates cerises (2 kg restants)", "warning", 22),
+        mk("🆕 Commande #C70F — Table 7", "new", 35),
+        mk("ℹ️ Bienvenue sur Wegemo — dashboard actif", "info", 60),
+      ]);
       return;
     }
 
@@ -402,7 +413,19 @@ function useStore(restaurantId) {
     supabase.from("orders").select(ORDER_QUERY)
       .eq("restaurant_id", restaurantId).neq("status", "DONE")
       .order("created_at", { ascending: true })
-      .then(({ data }) => setOrders((data ?? []).map(fmtOrder)));
+      .then(({ data }) => {
+        const fmtd = (data ?? []).map(fmtOrder);
+        setOrders(fmtd);
+        // Seed notification history from existing active orders
+        if (fmtd.length > 0) {
+          setNotifHistory(fmtd.map(o => ({
+            id: o.id,
+            msg: `🆕 Commande #${o.shortId} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`,
+            type: "new",
+            ts: new Date(o.createdAt),
+          })));
+        }
+      });
 
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     supabase.from("orders").select(ORDER_QUERY)
@@ -454,7 +477,8 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
-  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, silentNotif, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  const clearNotifHistory = useCallback(() => setNotifHistory([]), []);
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, silentNotif, clearNotifHistory, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1981,30 +2005,46 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
         {notifOpen && (
           <>
             <div onClick={() => setNotifOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 198 }} />
-            <div style={{ position: "fixed", top: isMobile ? 52 : 56, right: isMobile ? 8 : 16, left: isMobile ? 8 : "auto", width: isMobile ? "auto" : 340, maxHeight: 480, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 12px 40px rgba(0,0,0,0.18)", zIndex: 199, display: "flex", flexDirection: "column", ...FF }}>
-              <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ position: "fixed", top: isMobile ? 52 : 56, right: isMobile ? 8 : 16, left: isMobile ? 8 : "auto", width: isMobile ? "auto" : 360, maxHeight: 520, background: C.white, border: `1px solid ${C.border}`, borderRadius: 18, boxShadow: "0 16px 48px rgba(0,0,0,0.18)", zIndex: 199, display: "flex", flexDirection: "column", overflow: "hidden", ...FF }}>
+              {/* Header */}
+              <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: C.white }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>🔔 Notifications</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: C.dark }}>🔔 Boîte de réception</span>
                   {store.notifHistory.length > 0 && (
-                    <span style={{ background: C.bg, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, color: C.textSecondary }}>{store.notifHistory.length} aujourd'hui</span>
+                    <span style={{ background: C.accent + "18", borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700, color: C.accent }}>{store.notifHistory.length}</span>
                   )}
                 </div>
-                <button onClick={() => setNotifOpen(false)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: C.textSecondary, lineHeight: 1 }}>×</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {store.notifHistory.length > 0 && (
+                    <button onClick={() => { store.clearNotifHistory?.(); }} style={{ border: "none", background: C.bg, borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 600, color: C.textSecondary, cursor: "pointer" }}>Tout effacer</button>
+                  )}
+                  <button onClick={() => setNotifOpen(false)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: C.textSecondary, lineHeight: 1, padding: "0 2px" }}>×</button>
+                </div>
               </div>
+              {/* List */}
               <div style={{ overflowY: "auto", flex: 1 }}>
                 {store.notifHistory.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: "center", color: C.textSecondary, fontSize: 13 }}>Aucune notification pour l'instant</div>
+                  <div style={{ padding: "40px 24px", textAlign: "center" }}>
+                    <div style={{ fontSize: 36, marginBottom: 12 }}>🔕</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 6 }}>Aucune notification</div>
+                    <div style={{ fontSize: 12, color: C.textTertiary }}>Les nouvelles commandes et alertes apparaîtront ici</div>
+                  </div>
                 ) : store.notifHistory.map(n => {
                   const colors = { info: C.accentBlue, success: C.accentGreen, warning: C.accentOrange, new: C.accent };
                   const icons = { info: "ℹ️", success: "✅", warning: "⚠️", new: "🆕" };
+                  const now = new Date();
+                  const diff = Math.floor((now - new Date(n.ts)) / 60000);
+                  const timeLabel = diff < 1 ? "à l'instant" : diff < 60 ? `il y a ${diff} min` : diff < 1440 ? `il y a ${Math.floor(diff/60)}h` : new Date(n.ts).toLocaleDateString("fr-FR");
                   return (
-                    <div key={n.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{icons[n.type] || "🔔"}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, color: C.dark, lineHeight: 1.4 }}>{n.msg}</div>
-                        <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 3 }}>{n.ts?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    <div key={n.id} style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 10, alignItems: "flex-start", transition: "background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = C.bg}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: (colors[n.type] || C.accentBlue) + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{icons[n.type] || "🔔"}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: C.dark, lineHeight: 1.4, fontWeight: 500 }}>{n.msg}</div>
+                        <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 3 }}>{timeLabel}</div>
                       </div>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: colors[n.type] || C.accentBlue, marginTop: 5, flexShrink: 0 }} />
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: colors[n.type] || C.accentBlue, marginTop: 8, flexShrink: 0 }} />
                     </div>
                   );
                 })}
@@ -7193,10 +7233,30 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                           <div style={{ fontSize: 11, color: C.textTertiary }}>Commandes</div>
                         </div>
                       </div>
+                      {/* Audit panel */}
+                      {alertExplain?.restaurant?.id === r.id && (
+                        <div style={{ background: C.bg, borderRadius: 10, padding: "12px 14px", marginBottom: 10, borderLeft: `3px solid ${s.growth < -10 ? C.accent : C.accentBlue}` }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                            <span>🤖</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: C.dark }}>Audit IA — {r.name}</span>
+                          </div>
+                          {generateAlertExplanation(r, s).split("\n").map((line, i) => {
+                            if (!line.trim()) return <div key={i} style={{ height: 5 }} />;
+                            const bold = line.replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${t}</strong>`);
+                            return <p key={i} dangerouslySetInnerHTML={{ __html: bold }} style={{ fontSize: 12, color: C.text, lineHeight: 1.5, margin: "2px 0" }} />;
+                          })}
+                          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                            <Btn variant="primary" size="sm" onClick={() => { setAlertExplain(null); setTab("campaigns"); }}>📧 Campagne</Btn>
+                            {onRestaurant && <Btn variant="ghost" size="sm" onClick={() => { setAlertExplain(null); onRestaurant(r, s); }}>📊 Dashboard</Btn>}
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: "flex", gap: 8 }}>
                         {onRestaurant && (
                           <Btn variant="primary" size="sm" full onClick={() => onRestaurant(r, s)}>Gérer</Btn>
                         )}
+                        <Btn variant="ghost" size="sm" title="Audit IA" onClick={() => setAlertExplain(alertExplain?.restaurant?.id === r.id ? null : { restaurant: r, stat: s })}
+                          style={{ background: alertExplain?.restaurant?.id === r.id ? C.dark : undefined, color: alertExplain?.restaurant?.id === r.id ? C.white : undefined }}>🔍</Btn>
                         <Btn variant="ghost" size="sm" onClick={() => openStaffModal(r)}>👤</Btn>
                         <Btn variant="ghost" size="sm" onClick={() => { setEditResto(r); setEditForm({ name: r.name || "", logo_emoji: r.logo_emoji || "🍽️", region: r.region || "", manager_email: r.manager_email || "" }); }}>✏️</Btn>
                         <Btn variant="ghost" size="sm" onClick={() => { setDeleteResto(r); setDeleteRestoInput(""); }}
