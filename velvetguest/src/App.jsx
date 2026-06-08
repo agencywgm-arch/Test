@@ -1166,7 +1166,7 @@ function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise, onHome, onFranchiseCreated, onFranchiseFound }) {
   const { lang, setLang } = useContext(LangCtx);
-  const first = (user.name || user.email).split(" ")[0];
+  const first = user.name || user.email.split("@")[0];
   const h = new Date().getHours();
   const greet = h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : "Bonsoir";
   const isMobile = useIsMobile();
@@ -1858,7 +1858,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
   const isMobile = useIsMobile();
-  const first = (user.name || user.email).split(" ")[0];
+  const first = user.name || user.email.split("@")[0];
   const active = store.orders.filter(o => o.status !== "served");
   const ready = store.orders.filter(o => o.status === "ready");
   const [moreOpen, setMoreOpen] = useState(false);
