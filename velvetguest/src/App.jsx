@@ -6506,12 +6506,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
       setLoading(false);
       return;
     }
-    // Always refresh group name/emoji from Supabase (cache may be stale)
+    // Refresh group from Supabase silently — only update parent state, NOT the form (would overwrite user's edits)
     supabase.from("franchise_groups").select("*").eq("id", group.id).maybeSingle().then(({ data }) => {
-      if (data) {
-        setGroupForm({ name: data.name, logo_emoji: data.logo_emoji || "🏢" });
-        if (onGroupUpdate) onGroupUpdate(data);
-      }
+      if (data && onGroupUpdate) onGroupUpdate(data);
     });
     Promise.all([
       supabase.from("restaurants").select("*").eq("owner_id", user.id).order("name"),
