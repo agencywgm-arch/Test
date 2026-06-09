@@ -6640,6 +6640,7 @@ function ChartModal({ title, subtitle, kpis, children, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroupUpdate }) {
   const isMobile = useIsMobile();
+  const store = useContext(StoreCtx);
   const isDemo = user.id === "demo";
   const [tab, setTab] = useState("overview");
   const [restaurants, setRestaurants] = useState([]);
@@ -6832,11 +6833,23 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
 
   async function saveGroupSettings() {
     setSavingGroup(true);
-    const updated = { ...group, name: groupForm.name, logo_emoji: groupForm.logo_emoji, logo_url: groupForm.logo_url };
-    if (!isDemo) {
-      await supabase.from("franchise_groups").update({ name: groupForm.name, logo_emoji: groupForm.logo_emoji, logo_url: groupForm.logo_url }).eq("id", group.id);
+    const payload = { name: groupForm.name, logo_emoji: groupForm.logo_emoji, logo_url: groupForm.logo_url };
+    if (isDemo) {
+      const updated = { ...group, ...payload };
+      if (onGroupUpdate) onGroupUpdate(updated);
+      setSavingGroup(false);
+      return;
     }
+    const { data: saved, error } = await supabase.from("franchise_groups")
+      .update(payload).eq("id", group.id).select().single();
+    if (error) {
+      store.pushNotif("Erreur : " + error.message, "warning");
+      setSavingGroup(false);
+      return;
+    }
+    const updated = saved || { ...group, ...payload };
     if (onGroupUpdate) onGroupUpdate(updated);
+    store.pushNotif("✅ Groupe mis à jour", "success");
     setSavingGroup(false);
   }
 
