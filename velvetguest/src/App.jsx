@@ -4209,27 +4209,184 @@ function PromosTab({ restaurant, store }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CAISSE TAB
 // ─────────────────────────────────────────────────────────────────────────────
+function pmLabel(pm) {
+  if (pm === "card") return "Carte bancaire";
+  if (pm === "apple_pay") return "Apple Pay";
+  if (pm === "google_pay") return "Google Pay";
+  return "Espèces";
+}
+
 function exportCSV(orders, restaurant) {
-  const rows = [["Date", "Heure", "Table", "ID", "Total (€)", "Paiement"]];
+  const dateStr = new Date().toLocaleDateString("fr-FR");
+  const headers = [
+    "Date", "Heure", "N° Commande", "Table", "Client",
+    "Article", "Quantité", "Prix unitaire HT (€)", "TVA 10% (€)", "Prix unitaire TTC (€)", "Total ligne TTC (€)",
+    "Composition/Détail", "Note commande",
+    "Mode paiement", "Total commande TTC (€)"
+  ];
+  const rows = [headers];
   orders.forEach(o => {
     const d = new Date(o.createdAt);
-    rows.push([
-      d.toLocaleDateString("fr-FR"),
-      d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      `Table ${o.table}`,
-      o.id.slice(0, 6).toUpperCase(),
-      o.total.toFixed(2),
-      o.payment_method === "card" ? "Carte" : o.payment_method === "apple_pay" ? "Apple Pay" : "Espèces",
-    ]);
+    const date = d.toLocaleDateString("fr-FR");
+    const heure = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const num = o.id.slice(0, 8).toUpperCase();
+    const table = `Table ${o.table}`;
+    const client = o.customerName || "";
+    const note = (o.note || "").replace(/;/g, ",");
+    const pm = pmLabel(o.payment_method);
+    if (o.items && o.items.length > 0) {
+      o.items.forEach((it, idx) => {
+        const pttc = Number(it.price || 0);
+        const pht = (pttc / 1.10);
+        const tva = pttc - pht;
+        const ligneTotal = pttc * it.qty;
+        rows.push([
+          date, heure, num, table, client,
+          it.name, it.qty,
+          pht.toFixed(2), tva.toFixed(2), pttc.toFixed(2), ligneTotal.toFixed(2),
+          (it.detail || "").replace(/;/g, ","),
+          idx === 0 ? note : "",
+          idx === 0 ? pm : "",
+          idx === 0 ? o.total.toFixed(2) : "",
+        ]);
+      });
+    } else {
+      rows.push([date, heure, num, table, client, "", "", "", "", "", "", "", note, pm, o.total.toFixed(2)]);
+    }
+    // blank separator row
+    rows.push(Array(headers.length).fill(""));
   });
-  const csv = "﻿" + rows.map(r => r.join(";")).join("\n");
+  // Summary footer
+  const revenue = orders.reduce((s, o) => s + o.total, 0);
+  const totalHT = revenue / 1.10;
+  const totalTVA = revenue - totalHT;
+  const byMethod = orders.reduce((acc, o) => { const m = pmLabel(o.payment_method); acc[m] = (acc[m] || 0) + o.total; return acc; }, {});
+  rows.push(Array(headers.length).fill(""));
+  rows.push(["=== RÉCAPITULATIF JOURNALIER ===", ...Array(headers.length - 1).fill("")]);
+  rows.push([`Restaurant : ${restaurant.name}`, `Date : ${dateStr}`, `Nb commandes : ${orders.length}`, ...Array(headers.length - 3).fill("")]);
+  rows.push([`CA TTC : ${revenue.toFixed(2)} €`, `CA HT : ${totalHT.toFixed(2)} €`, `TVA 10% : ${totalTVA.toFixed(2)} €`, ...Array(headers.length - 3).fill("")]);
+  Object.entries(byMethod).forEach(([m, v]) => rows.push([`${m} : ${v.toFixed(2)} €`, ...Array(headers.length - 1).fill("")]));
+
+  const csv = "﻿" + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `caisse-${restaurant.name.replace(/\s+/g, "-")}-${new Date().toLocaleDateString("fr-FR").replace(/\//g, "-")}.csv`;
+  a.download = `caisse-${restaurant.name.replace(/\s+/g, "-")}-${dateStr.replace(/\//g, "-")}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportRapportZ(orders, restaurant) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const heureStr = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const revenue = orders.reduce((s, o) => s + o.total, 0);
+  const totalHT = revenue / 1.10;
+  const totalTVA = revenue - totalHT;
+  const avgTicket = orders.length > 0 ? revenue / orders.length : 0;
+  const byMethod = orders.reduce((acc, o) => { const m = pmLabel(o.payment_method); acc[m] = (acc[m] || 0) + o.total; return acc; }, {});
+
+  const line = (label, val, bold = false) =>
+    `<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;font-size:13px;color:#444;${bold?"font-weight:700":""}}">${label}</td><td style="padding:6px 12px;text-align:right;font-size:13px;${bold?"font-weight:700;color:#000":"color:#222"}">${val}</td></tr>`;
+
+  const orderRows = orders.map(o => {
+    const d = new Date(o.createdAt);
+    const heure = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const client = o.customerName ? `<span style="color:#0071E3;font-weight:600">${o.customerName}</span>` : `<span style="color:#aaa">—</span>`;
+    const articles = (o.items || []).map(it => {
+      const detail = it.detail ? `<span style="color:#FF9F0A;font-size:11px"> · ${it.detail}</span>` : "";
+      return `<span style="display:block;font-size:12px;color:#555">× ${it.qty} ${it.name}${detail}</span>`;
+    }).join("");
+    const pmBadge = `<span style="background:${o.payment_method === "card" ? "#0071E310" : o.payment_method?.includes("pay") ? "#BF5AF210" : "#34C75910"};color:${o.payment_method === "card" ? "#0071E3" : o.payment_method?.includes("pay") ? "#BF5AF2" : "#34C759"};font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600">${pmLabel(o.payment_method)}</span>`;
+    const note = o.note ? `<div style="font-size:11px;color:#888;margin-top:3px;font-style:italic">📝 ${o.note}</div>` : "";
+    return `<tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:10px 12px;font-size:13px;color:#666;white-space:nowrap">${heure}</td>
+      <td style="padding:10px 12px;font-size:13px;font-weight:600">T${o.table}</td>
+      <td style="padding:10px 12px">${client}${note}</td>
+      <td style="padding:10px 12px">${articles}</td>
+      <td style="padding:10px 12px;text-align:center">${pmBadge}</td>
+      <td style="padding:10px 12px;text-align:right;font-weight:800;font-size:15px">${o.total.toFixed(2)} €</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Rapport Z — ${restaurant.name} — ${dateStr}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 32px; color: #1d1d1f; background: #fff; }
+    @media print { body { padding: 16px; } .no-print { display: none; } }
+    h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px; }
+    .sub { font-size: 14px; color: #666; margin-bottom: 32px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    .card { background: #f5f5f7; border-radius: 14px; padding: 18px 20px; }
+    .card-label { font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .card-value { font-size: 28px; font-weight: 900; letter-spacing: -0.04em; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f5f5f7; padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+    th:last-child, td:last-child { text-align: right; }
+    .section-title { font-size: 16px; font-weight: 700; margin: 28px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #1d1d1f; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #aaa; text-align: center; }
+    .total-row { background: #1d1d1f; color: #fff; }
+    .total-row td { padding: 12px; font-weight: 800; font-size: 16px; }
+    button { background: #1d1d1f; color: #fff; border: none; border-radius: 10px; padding: 12px 24px; font-size: 15px; font-weight: 600; cursor: pointer; margin-right: 10px; }
+  </style>
+  </head><body>
+  <div class="no-print" style="margin-bottom:24px">
+    <button onclick="window.print()">🖨️ Imprimer</button>
+    <button onclick="window.close()" style="background:#f5f5f7;color:#1d1d1f">✕ Fermer</button>
+  </div>
+  <h1>📊 Rapport Z — ${restaurant.name}</h1>
+  <p class="sub">Clôture du ${dateStr} · Édité à ${heureStr}</p>
+
+  <div class="grid">
+    <div class="card"><div class="card-label">CA Total TTC</div><div class="card-value">${revenue.toFixed(2)} €</div></div>
+    <div class="card"><div class="card-label">Nb commandes</div><div class="card-value">${orders.length}</div></div>
+    <div class="card"><div class="card-label">Ticket moyen TTC</div><div class="card-value">${avgTicket.toFixed(2)} €</div></div>
+    <div class="card"><div class="card-label">Espèces encaissées</div><div class="card-value">${(byMethod["Espèces"] || 0).toFixed(2)} €</div></div>
+  </div>
+
+  <div class="section-title">Répartition TVA</div>
+  <table style="margin-bottom:24px">
+    <thead><tr><th>Taux</th><th>Base HT</th><th>TVA</th><th>TTC</th></tr></thead>
+    <tbody>
+      ${line("TVA 10% (restauration)", `${totalHT.toFixed(2)} €`)}
+      ${line("Montant TVA", `${totalTVA.toFixed(2)} €`)}
+      ${line("Total TTC", `${revenue.toFixed(2)} €`, true)}
+    </tbody>
+  </table>
+
+  <div class="section-title">Répartition par mode de paiement</div>
+  <table style="margin-bottom:24px">
+    <thead><tr><th>Mode</th><th>Nb transactions</th><th>Montant</th><th>%</th></tr></thead>
+    <tbody>
+      ${Object.entries(byMethod).map(([m, v]) => {
+        const nb = orders.filter(o => pmLabel(o.payment_method) === m).length;
+        return `<tr style="border-bottom:1px solid #eee">
+          <td style="padding:8px 12px;font-size:13px">${m}</td>
+          <td style="padding:8px 12px;font-size:13px;text-align:left">${nb}</td>
+          <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:700">${v.toFixed(2)} €</td>
+          <td style="padding:8px 12px;font-size:13px;text-align:right;color:#888">${revenue > 0 ? Math.round(v / revenue * 100) : 0}%</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>
+
+  <div class="section-title">Journal détaillé des commandes</div>
+  <table>
+    <thead><tr><th>Heure</th><th>Table</th><th>Client</th><th>Articles</th><th style="text-align:center">Paiement</th><th>Total</th></tr></thead>
+    <tbody>${orderRows}</tbody>
+    <tfoot><tr class="total-row"><td colspan="5">TOTAL DU JOUR — ${orders.length} commande${orders.length !== 1 ? "s" : ""}</td><td>${revenue.toFixed(2)} €</td></tr></tfoot>
+  </table>
+
+  <div class="footer">
+    Rapport généré par Wegemo · ${restaurant.name} · ${dateStr} à ${heureStr}<br>
+    Document comptable — à conserver 10 ans (art. L123-22 Code de commerce)
+  </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  w.document.write(html);
+  w.document.close();
 }
 
 function CaisseTab({ store, restaurant }) {
@@ -4270,15 +4427,16 @@ function CaisseTab({ store, restaurant }) {
         </Surface>
 
         <Surface style={{ padding: "22px 24px" }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 18 }}>Actions caisse</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Exports comptables</p>
+          <p style={{ fontSize: 12, color: C.textTertiary, marginBottom: 16 }}>Détail par article, client, TVA, mode de paiement</p>
           <Btn variant="primary" full onClick={() => exportCSV(today, restaurant)} style={{ marginBottom: 10 }}>
-            📊 Exporter CSV du jour
+            📊 Exporter CSV (Excel / comptable)
           </Btn>
-          <Btn variant="ghost" full onClick={() => window.print()}>
-            🖨️ Imprimer le rapport Z
+          <Btn variant="ghost" full onClick={() => exportRapportZ(today, restaurant)} style={{ marginBottom: 10 }}>
+            🖨️ Rapport Z — impression / PDF
           </Btn>
           {today.length === 0 && (
-            <p style={{ color: C.textTertiary, fontSize: 13, textAlign: "center", marginTop: 20, lineHeight: 1.6 }}>
+            <p style={{ color: C.textTertiary, fontSize: 13, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
               Les commandes clôturées<br />apparaîtront ici.
             </p>
           )}
@@ -4296,22 +4454,32 @@ function CaisseTab({ store, restaurant }) {
             <span style={{ fontSize: 12 }}>Passez les commandes en "Servie" depuis la vue cuisine.</span>
           </div>
         ) : today.map((o, i) => {
-          const pmIcon = o.payment_method === "card" ? "💳" : o.payment_method === "apple_pay" ? "📱" : "💵";
-          const pmLabel = o.payment_method === "card" ? "Carte" : o.payment_method === "apple_pay" ? "Apple Pay" : "Espèces";
+          const pm = pmLabel(o.payment_method);
+          const pmColor = o.payment_method === "card" ? C.accentBlue : o.payment_method?.includes("pay") ? C.accentPurple : C.accentGreen;
           return (
-            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: i < today.length - 1 ? `1px solid ${C.border}` : "none" }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>#{o.id.slice(0, 6).toUpperCase()}</p>
-                <p style={{ fontSize: 12, color: C.textSecondary }}>
-                  {new Date(o.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-                  {o.items.length > 0 && ` · ${o.items.slice(0, 2).map(it => it.name).join(", ")}${o.items.length > 2 ? " …" : ""}`}
-                </p>
+            <div key={o.id} style={{ padding: "14px 22px", borderBottom: i < today.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>#{o.id.slice(0, 6).toUpperCase()}</p>
+                    {o.customerName && <span style={{ fontSize: 12, fontWeight: 600, color: "#0071E3", background: "#0071E310", borderRadius: 8, padding: "1px 8px" }}>👤 {o.customerName}</span>}
+                    <span style={{ fontSize: 11, color: C.textTertiary }}>{new Date(o.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
+                    {(o.items || []).map((it, ii) => (
+                      <span key={ii} style={{ fontSize: 12, color: C.textSecondary }}>
+                        {it.emoji} {it.name} ×{it.qty}{it.detail ? <span style={{ color: C.accentOrange }}> ({it.detail})</span> : ""}
+                      </span>
+                    ))}
+                  </div>
+                  {o.note && <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 3, fontStyle: "italic" }}>📝 {o.note}</p>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                  <p style={{ fontWeight: 800, fontSize: 16, color: C.dark }}>{o.total.toFixed(2)} €</p>
+                  <Tag color={pmColor}>{pm}</Tag>
+                </div>
               </div>
-              <Tag color={o.payment_method === "card" ? C.accentBlue : o.payment_method === "apple_pay" ? C.accentPurple : C.textSecondary}>
-                {pmIcon} {pmLabel}
-              </Tag>
-              <p style={{ fontWeight: 800, fontSize: 16, color: C.dark, minWidth: 70, textAlign: "right" }}>{o.total.toFixed(2)} €</p>
             </div>
           );
         })}
