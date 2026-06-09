@@ -3405,7 +3405,7 @@ function InventoryTab({ restaurant }) {
   );
 }
 
-const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "", supplements: [], extras: [] };
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Menus", emoji: "🍽️", photo_url: "", is_popular: false, is_menu: false, available: true, stock: "", supplements: [], extras: [] };
 // supplements format: [{ groupName, required, maxChoices, options: [{name, price}] }]
 // extras format: [{name, price}] — optional add-ons shown at end of composition tunnel
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
@@ -3434,7 +3434,7 @@ function MenuTabDash({ restaurant }) {
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
-  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [], extras: item.extras || [] }); setError(""); setModal({ mode: "edit", item }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, is_menu: !!item.is_menu, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [], extras: item.extras || [] }); setError(""); setModal({ mode: "edit", item }); }
 
   async function updateStock(item, delta) {
     const cur = item.stock == null ? null : item.stock;
@@ -3603,6 +3603,7 @@ function MenuTabDash({ restaurant }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{item.name}</p>
+                      {item.is_menu && <Tag color="#0071E3">🍽️+🥤 Menu</Tag>}
                       {item.is_popular && <Tag color={C.accent}>⭐ Populaire</Tag>}
                       {!item.available && <Tag color={C.textTertiary}>Indisponible</Tag>}
                       {item.stock != null && (
@@ -3684,10 +3685,15 @@ function MenuTabDash({ restaurant }) {
               <input type="number" min={0} placeholder="Ex: 12 — vide = illimité" value={form.stock} onChange={fv("stock")}
                 style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF }} />
             </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <input type="checkbox" checked={form.is_popular} onChange={e => setForm(p => ({ ...p, is_popular: e.target.checked }))} style={{ width: 16, height: 16 }} />
                 <span style={{ fontSize: 14, color: C.dark }}>⭐ Populaire</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                onClick={e => { e.preventDefault(); setForm(p => { const next = !p.is_menu; const hasPlatGroup = (p.supplements || []).some(g => g.groupName === "Plat"); const hasBoissGroup = (p.supplements || []).some(g => g.groupName === "Boisson"); const extra = next ? [ ...(!hasPlatGroup ? [{ groupName: "Plat", required: true, maxChoices: 1, options: [{ name: "", price: "" }] }] : []), ...(!hasBoissGroup ? [{ groupName: "Boisson", required: true, maxChoices: 1, options: [{ name: "", price: "" }] }] : []) ] : []; return { ...p, is_menu: next, supplements: next ? [...(p.supplements || []), ...extra] : p.supplements }; }); }}>
+                <input type="checkbox" checked={form.is_menu} readOnly style={{ width: 16, height: 16, pointerEvents: "none" }} />
+                <span style={{ fontSize: 14, color: C.dark }}>🍽️+🥤 Formule Menu</span>
               </label>
               {form.stock === "" && (
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -3696,6 +3702,11 @@ function MenuTabDash({ restaurant }) {
                 </label>
               )}
             </div>
+            {form.is_menu && (
+              <div style={{ background: "#0071E310", border: "1px solid #0071E330", borderRadius: 10, padding: "8px 12px", marginBottom: 16, fontSize: 12, color: "#0071E3" }}>
+                💡 Configurez les groupes <strong>Plat</strong> et <strong>Boisson</strong> ci-dessous pour définir les choix du menu.
+              </div>
+            )}
             {/* Garnitures section */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -4926,7 +4937,10 @@ function ClientView({ restaurant, onBack }) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
                       <p style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>{item.name}</p>
-                      {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, display: "inline-block", marginTop: 2 }}>⭐ Populaire</span>}
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
+                        {item.is_menu && <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, display: "inline-block" }}>🍽️+🥤 Menu</span>}
+                        {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, display: "inline-block" }}>⭐ Populaire</span>}
+                      </div>
                     </div>
                     <p style={{ fontWeight: 800, fontSize: 15, color: C.dark, flexShrink: 0 }}>{Number(item.price).toFixed(2)}€</p>
                   </div>
@@ -6461,7 +6475,10 @@ function CustomerPage({ slug, tableNum }) {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div>
                         <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{item.name}</p>
-                        {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block", marginTop: 3 }}>⭐ Populaire</span>}
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 3 }}>
+                          {item.is_menu && <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>🍽️+🥤 Menu</span>}
+                          {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>⭐ Populaire</span>}
+                        </div>
                       </div>
                       <div style={{ flexShrink: 0, marginLeft: 8, textAlign: "right" }}>
                         {item._originalPrice && <p style={{ fontSize: 12, color: C.textTertiary, textDecoration: "line-through" }}>{Number(item._originalPrice).toFixed(2)}€</p>}
