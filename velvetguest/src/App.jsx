@@ -3406,6 +3406,7 @@ function InventoryTab({ restaurant }) {
 }
 
 const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "", supplements: [] };
+// supplements format: [{ groupName, required, maxChoices, options: [{name, price}] }]
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
@@ -3455,7 +3456,10 @@ function MenuTabDash({ restaurant }) {
     setSaving(true); setError("");
     const stock = form.stock === "" ? null : parseInt(form.stock, 10);
     const available = stock == null ? form.available : stock > 0;
-    const supplements = (form.supplements || []).filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), price: parseFloat(s.price) || 0 }));
+    const supplements = (form.supplements || [])
+      .filter(g => g.groupName?.trim())
+      .map(g => ({ groupName: g.groupName.trim(), required: !!g.required, maxChoices: g.maxChoices || 1, options: (g.options || []).filter(o => o.name?.trim()).map(o => ({ name: o.name.trim(), price: parseFloat(o.price) || 0 })) }))
+      .filter(g => g.options.length > 0);
     const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id, supplements };
     if (restaurant.id === "demo") {
       if (modal.mode === "add") {
@@ -3684,38 +3688,68 @@ function MenuTabDash({ restaurant }) {
                 </label>
               )}
             </div>
-            {/* Supplements section */}
+            {/* Garnitures section */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500 }}>Suppléments <span style={{ color: C.textTertiary, fontWeight: 400 }}>(optionnels)</span></label>
-                <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), { name: "", price: "" }] }))}
-                  style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
-                  + Ajouter
+                <div>
+                  <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 600 }}>🧩 Garnitures & Composition</label>
+                  <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>Créez des groupes de choix (ex: Viande, Sauce, Légumes)</p>
+                </div>
+                <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), { groupName: "", required: true, maxChoices: 1, options: [{ name: "", price: "" }] }] }))}
+                  style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, ...FF }}>
+                  + Groupe
                 </button>
               </div>
-              {(form.supplements || []).map((sup, idx) => (
-                <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                  <input
-                    placeholder="Ex: Fromage supplémentaire"
-                    value={sup.name}
-                    onChange={e => setForm(p => { const s = [...p.supplements]; s[idx] = { ...s[idx], name: e.target.value }; return { ...p, supplements: s }; })}
-                    style={{ flex: 1, background: C.bg, border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, outline: "none", ...FF }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={sup.price}
-                    onChange={e => setForm(p => { const s = [...p.supplements]; s[idx] = { ...s[idx], price: e.target.value }; return { ...p, supplements: s }; })}
-                    style={{ width: 80, background: C.bg, border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, outline: "none", ...FF }}
-                  />
-                  <span style={{ fontSize: 13, color: C.textSecondary }}>€</span>
-                  <button type="button" onClick={() => setForm(p => ({ ...p, supplements: p.supplements.filter((_, i) => i !== idx) }))}
-                    style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 9px", cursor: "pointer", color: C.accent, fontSize: 13 }}>✕</button>
+              {(form.supplements || []).map((grp, gi) => (
+                <div key={gi} style={{ border: `1.5px solid ${C.border}`, borderRadius: 14, padding: 14, marginBottom: 12 }}>
+                  {/* Group header */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                    <input
+                      placeholder="Nom du groupe (ex: Viande)"
+                      value={grp.groupName}
+                      onChange={e => setForm(p => { const s = [...p.supplements]; s[gi] = { ...s[gi], groupName: e.target.value }; return { ...p, supplements: s }; })}
+                      style={{ flex: 1, background: C.bg, border: "none", borderRadius: 10, padding: "9px 12px", fontSize: 14, fontWeight: 600, color: C.dark, outline: "none", ...FF }}
+                    />
+                    <select value={grp.maxChoices} onChange={e => setForm(p => { const s = [...p.supplements]; s[gi] = { ...s[gi], maxChoices: Number(e.target.value) }; return { ...p, supplements: s }; })}
+                      style={{ background: C.bg, border: "none", borderRadius: 10, padding: "9px 10px", fontSize: 13, color: C.dark, outline: "none", ...FF }}>
+                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n} choix max</option>)}
+                    </select>
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.textSecondary, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      <input type="checkbox" checked={grp.required} onChange={e => setForm(p => { const s = [...p.supplements]; s[gi] = { ...s[gi], required: e.target.checked }; return { ...p, supplements: s }; })} />
+                      Obligatoire
+                    </label>
+                    <button type="button" onClick={() => setForm(p => ({ ...p, supplements: p.supplements.filter((_, i) => i !== gi) }))}
+                      style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 9px", cursor: "pointer", color: C.accent, fontSize: 13 }}>✕</button>
+                  </div>
+                  {/* Options */}
+                  {(grp.options || []).map((opt, oi) => (
+                    <div key={oi} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 12, color: C.textTertiary, width: 14, flexShrink: 0 }}>•</span>
+                      <input
+                        placeholder="Ex: Poulet, Bœuf, Falafel..."
+                        value={opt.name}
+                        onChange={e => setForm(p => { const s = [...p.supplements]; const opts = [...s[gi].options]; opts[oi] = { ...opts[oi], name: e.target.value }; s[gi] = { ...s[gi], options: opts }; return { ...p, supplements: s }; })}
+                        style={{ flex: 1, background: C.bg, border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+                      />
+                      <input
+                        type="number" placeholder="0" min="0" step="0.5"
+                        value={opt.price}
+                        onChange={e => setForm(p => { const s = [...p.supplements]; const opts = [...s[gi].options]; opts[oi] = { ...opts[oi], price: e.target.value }; s[gi] = { ...s[gi], options: opts }; return { ...p, supplements: s }; })}
+                        style={{ width: 64, background: C.bg, border: "none", borderRadius: 8, padding: "8px 8px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+                      />
+                      <span style={{ fontSize: 12, color: C.textSecondary }}>€</span>
+                      {grp.options.length > 1 && (
+                        <button type="button" onClick={() => setForm(p => { const s = [...p.supplements]; s[gi] = { ...s[gi], options: s[gi].options.filter((_, i) => i !== oi) }; return { ...p, supplements: s }; })}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px" }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setForm(p => { const s = [...p.supplements]; s[gi] = { ...s[gi], options: [...s[gi].options, { name: "", price: "" }] }; return { ...p, supplements: s }; })}
+                    style={{ background: "none", border: `1px dashed ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textSecondary, cursor: "pointer", marginTop: 4, width: "100%", ...FF }}>
+                    + Option
+                  </button>
                 </div>
               ))}
-              {(form.supplements || []).length > 0 && (
-                <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>Le client pourra choisir parmi ces options lors de la commande.</p>
-              )}
             </div>
             {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
             <div style={{ display: "flex", gap: 10 }}>
@@ -4682,15 +4716,14 @@ function ClientView({ restaurant, onBack }) {
 
   const [catOrderClient, setCatOrderClient] = useState([]);
   const [stripeEnabledCV, setStripeEnabledCV] = useState(false);
-  const [cvSupModal, setCvSupModal] = useState(null);
-  const [cvSelectedSups, setCvSelectedSups] = useState([]);
+  const [cvComposeModal, setCvComposeModal] = useState(null);
 
   function cvAddToCart(item) {
-    if (item.supplements && item.supplements.length > 0) {
-      setCvSelectedSups([]);
-      setCvSupModal({ item });
+    const groups = (item.supplements || []).filter(g => g.options?.length > 0);
+    if (groups.length > 0) {
+      setCvComposeModal({ item, step: 0, choices: {} });
     } else {
-      setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
+      setCart(p => { const e = p.find(i => i.id === item.id && !i._composed); return e ? p.map(i => i.id === item.id && !i._composed ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, _choices: {} }]; });
     }
   }
 
@@ -4839,33 +4872,78 @@ function ClientView({ restaurant, onBack }) {
         </div>
       )}
       <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
-      {cvSupModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setCvSupModal(null)}>
-          <div style={{ background: C.white, borderRadius: "20px 20px 0 0", padding: "24px 20px 32px", width: "100%", maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{cvSupModal.item.name}</p>
-            <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16 }}>Personnalisez votre commande</p>
-            {cvSupModal.item.supplements.map((sup, idx) => (
-              <label key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <input type="checkbox" checked={cvSelectedSups.some(s => s.name === sup.name)}
-                    onChange={e => setCvSelectedSups(p => e.target.checked ? [...p, sup] : p.filter(s => s.name !== sup.name))}
-                    style={{ width: 18, height: 18, cursor: "pointer" }} />
-                  <span style={{ fontSize: 15, color: C.dark }}>{sup.name}</span>
+      {cvComposeModal && (() => {
+        const { item, step, choices } = cvComposeModal;
+        const groups = (item.supplements || []).filter(g => g.options?.length > 0);
+        const grp = groups[step];
+        if (!grp) return null;
+        const selected = choices[grp.groupName] || [];
+        const canNext = !grp.required || selected.length > 0;
+        const isLast = step === groups.length - 1;
+        function toggleOpt(opt) {
+          const already = selected.some(s => s.name === opt.name);
+          let next;
+          if (already) { next = selected.filter(s => s.name !== opt.name); }
+          else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+          else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+          else { next = selected; }
+          setCvComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+        }
+        function nextStep() {
+          if (!canNext) return;
+          if (isLast) {
+            const allChoices = { ...choices, [grp.groupName]: selected };
+            const extraPrice = Object.values(allChoices).flat().reduce((s, o) => s + (o.price || 0), 0);
+            const cartItem = { ...item, _composed: true, _choices: allChoices, price: item.price + extraPrice, qty: 1 };
+            setCart(p => [...p, cartItem]);
+            setCvComposeModal(null);
+          } else {
+            setCvComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+          }
+        }
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ background: C.white, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 520, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: "20px 20px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>ÉTAPE {step + 1}/{groups.length} · {item.emoji} {item.name}</p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{grp.groupName}</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>{grp.required ? "Obligatoire" : "Optionnel"} · {grp.maxChoices === 1 ? "1 choix" : `Max ${grp.maxChoices}`}</p>
+                  </div>
+                  <button onClick={() => setCvComposeModal(null)} style={{ background: C.bg, border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>+{Number(sup.price).toFixed(2)}€</span>
-              </label>
-            ))}
-            <button onClick={() => {
-              const supsPriceSum = cvSelectedSups.reduce((s, x) => s + x.price, 0);
-              const itemWithSups = { ...cvSupModal.item, price: cvSupModal.item.price + supsPriceSum, supplements: cvSelectedSups };
-              setCart(p => [...p, { ...itemWithSups, qty: 1 }]);
-              setCvSupModal(null);
-            }} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 20, ...FF }}>
-              Ajouter au panier
-            </button>
+                <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                  {groups.map((_, i) => <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= step ? C.dark : C.border }} />)}
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
+                {grp.options.map((opt, oi) => {
+                  const isSelected = selected.some(s => s.name === opt.name);
+                  return (
+                    <div key={oi} onClick={() => toggleOpt(opt)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 14, marginBottom: 8, background: isSelected ? C.dark : C.bg, border: `1.5px solid ${isSelected ? C.dark : C.border}`, cursor: "pointer", transition: "all 0.15s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: grp.maxChoices === 1 ? "50%" : 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: grp.maxChoices === 1 ? "50%" : 3, background: C.dark }} />}
+                        </div>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: isSelected ? C.white : C.dark }}>{opt.name}</span>
+                      </div>
+                      {parseFloat(opt.price) > 0 && <span style={{ fontSize: 14, fontWeight: 700, color: isSelected ? C.white : C.textSecondary }}>+{Number(opt.price).toFixed(2)}€</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ padding: "16px 20px 32px" }}>
+                {step > 0 && <button onClick={() => setCvComposeModal(p => ({ ...p, step: p.step - 1 }))} style={{ background: "none", border: "none", color: C.textSecondary, fontSize: 14, cursor: "pointer", marginBottom: 8, padding: 0, ...FF }}>← Étape précédente</button>}
+                <button onClick={nextStep} disabled={!canNext} style={{ width: "100%", padding: 16, background: canNext ? C.dark : C.border, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: canNext ? "pointer" : "not-allowed", transition: "background 0.2s", ...FF }}>
+                  {isLast ? "🛒 Ajouter au panier" : "Suivant →"}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </Frame>
   );
 
@@ -4919,7 +4997,19 @@ function ClientView({ restaurant, onBack }) {
         {orderError && <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.accent }}>{orderError}</div>}
         {!ordering && !payMode && (
           <div style={{ background: C.bg, borderRadius: 14, padding: 16, marginBottom: 20 }}>
-            {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
+            {cart.map((i, ci) => (
+              <div key={ci} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.dark }}>
+                  <span style={{ fontWeight: 600 }}>{i.emoji} {i.name} ×{i.qty}</span>
+                  <span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span>
+                </div>
+                {i._choices && Object.entries(i._choices).map(([grp, opts]) => opts.length > 0 && (
+                  <p key={grp} style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>
+                    <span style={{ fontWeight: 600 }}>{grp} :</span> {opts.map(o => o.name).join(", ")}
+                  </p>
+                ))}
+              </div>
+            ))}
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 10, marginTop: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 16 }}>Total</span><span style={{ fontWeight: 900, fontSize: 20 }}>{total.toFixed(2)}€</span>
             </div>
@@ -5985,15 +6075,14 @@ function CustomerPage({ slug, tableNum }) {
   const [stripeEnabled, setStripeEnabled] = useState(false);
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
-  const [supModal, setSupModal] = useState(null); // null | { item }
-  const [selectedSups, setSelectedSups] = useState([]);
+  const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
 
   function addToCart(item) {
-    if (item.supplements && item.supplements.length > 0) {
-      setSelectedSups([]);
-      setSupModal({ item });
+    const groups = (item.supplements || []).filter(g => g.options?.length > 0);
+    if (groups.length > 0) {
+      setComposeModal({ item, step: 0, choices: {} });
     } else {
-      setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
+      setCart(p => { const e = p.find(i => i.id === item.id && !i._composed); return e ? p.map(i => i.id === item.id && !i._composed ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, _choices: {} }]; });
     }
   }
 
@@ -6301,22 +6390,34 @@ function CustomerPage({ slug, tableNum }) {
         <div style={{ padding: "40px 20px 24px" }}>
           <button onClick={() => setStep("menu")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Continuer mes achats</button>
           <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 24 }}>Mon panier</p>
-          {cart.map(item => (
-            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 26 }}>{item.emoji}</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontWeight: 600, fontSize: 15, color: C.dark }}>{item.name}</p>
-                {item.supplements && item.supplements.length > 0 && (
-                  <p style={{ color: C.textTertiary, fontSize: 11, marginTop: 2 }}>{item.supplements.map(s => s.name).join(", ")}</p>
-                )}
-                <p style={{ color: C.textSecondary, fontSize: 13 }}>{Number(item.price).toFixed(2)}€/u</p>
+          {cart.map((item, ci) => (
+            <div key={ci} style={{ padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <div style={{ fontSize: 26, marginTop: 2 }}>{item.emoji}</div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: 600, fontSize: 15, color: C.dark }}>{item.name}</p>
+                  {item._choices && Object.keys(item._choices).length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      {Object.entries(item._choices).map(([grpName, opts]) => opts.length > 0 && (
+                        <div key={grpName} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: C.textTertiary }}>{grpName} :</span>
+                          {opts.map(o => (
+                            <span key={o.name} style={{ fontSize: 11, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, padding: "1px 8px", color: C.dark, fontWeight: 500 }}>{o.name}</span>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p style={{ color: C.textSecondary, fontSize: 13, marginTop: 4 }}>{Number(item.price).toFixed(2)}€/u</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button onClick={() => rem(item.id)} style={{ width: 30, height: 30, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
+                  <span style={{ fontWeight: 800, fontSize: 16, minWidth: 20, textAlign: "center" }}>{item.qty}</span>
+                  {!item._composed && <button onClick={() => add(item)} style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>}
+                  {item._composed && <div style={{ width: 30 }} />}
+                </div>
+                <p style={{ fontWeight: 800, color: C.dark, minWidth: 52, textAlign: "right" }}>{(Number(item.price) * item.qty).toFixed(2)}€</p>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button onClick={() => rem(item.id)} style={{ width: 30, height: 30, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
-                <span style={{ fontWeight: 800, fontSize: 16, minWidth: 20, textAlign: "center" }}>{item.qty}</span>
-                <button onClick={() => add(item)} style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
-              </div>
-              <p style={{ fontWeight: 800, color: C.dark, minWidth: 52, textAlign: "right" }}>{(Number(item.price) * item.qty).toFixed(2)}€</p>
             </div>
           ))}
           <div style={{ marginTop: 16 }}>
@@ -6506,16 +6607,22 @@ function CustomerPage({ slug, tableNum }) {
                 {/* Items */}
                 <div style={{ marginBottom: 16 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 10 }}>DÉTAIL</p>
-                  {cart.map(i => (
-                    <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <span style={{ fontSize: 18 }}>{i.emoji}</span>
-                        <div>
-                          <p style={{ fontSize: 14, fontWeight: 600, color: C.dark, lineHeight: 1.2 }}>{i.name}</p>
-                          <p style={{ fontSize: 12, color: C.textTertiary }}>{Number(i.price).toFixed(2)}€ × {i.qty}</p>
+                  {cart.map((i, ci) => (
+                    <div key={ci} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px dashed ${C.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flex: 1 }}>
+                          <span style={{ fontSize: 18 }}>{i.emoji}</span>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 14, fontWeight: 600, color: C.dark, lineHeight: 1.2 }}>{i.name} <span style={{ fontWeight: 400, color: C.textTertiary }}>×{i.qty}</span></p>
+                            {i._choices && Object.entries(i._choices).map(([grpName, opts]) => opts.length > 0 && (
+                              <p key={grpName} style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>
+                                <span style={{ fontWeight: 600 }}>{grpName} :</span> {opts.map(o => o.name).join(", ")}
+                              </p>
+                            ))}
+                          </div>
                         </div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, flexShrink: 0, marginLeft: 8 }}>{(Number(i.price) * i.qty).toFixed(2)}€</p>
                       </div>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{(Number(i.price) * i.qty).toFixed(2)}€</p>
                     </div>
                   ))}
                 </div>
@@ -6587,34 +6694,98 @@ function CustomerPage({ slug, tableNum }) {
         />
       )}
 
-      {/* Supplement selection modal */}
-      {supModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setSupModal(null)}>
-          <div style={{ background: C.white, borderRadius: "20px 20px 0 0", padding: "24px 20px 32px", width: "100%", maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{supModal.item.name}</p>
-            <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16 }}>Personnalisez votre commande</p>
-            {supModal.item.supplements.map((sup, idx) => (
-              <label key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <input type="checkbox" checked={selectedSups.some(s => s.name === sup.name)}
-                    onChange={e => setSelectedSups(p => e.target.checked ? [...p, sup] : p.filter(s => s.name !== sup.name))}
-                    style={{ width: 18, height: 18, cursor: "pointer" }} />
-                  <span style={{ fontSize: 15, color: C.dark }}>{sup.name}</span>
+      {/* Garnitures composition tunnel */}
+      {composeModal && (() => {
+        const { item, step, choices } = composeModal;
+        const groups = (item.supplements || []).filter(g => g.options?.length > 0);
+        const grp = groups[step];
+        if (!grp) return null;
+        const selected = choices[grp.groupName] || [];
+        const canNext = !grp.required || selected.length > 0;
+        const isLast = step === groups.length - 1;
+        function toggleOpt(opt) {
+          const already = selected.some(s => s.name === opt.name);
+          let next;
+          if (already) { next = selected.filter(s => s.name !== opt.name); }
+          else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+          else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+          else { next = selected; }
+          setComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+        }
+        function nextStep() {
+          if (!canNext) return;
+          if (isLast) {
+            // Build cart item with all choices
+            const allChoices = { ...choices, [grp.groupName]: selected };
+            const extraPrice = Object.values(allChoices).flat().reduce((s, o) => s + (o.price || 0), 0);
+            const cartItem = { ...item, _composed: true, _choices: allChoices, price: item.price + extraPrice, qty: 1 };
+            setCart(p => [...p, cartItem]);
+            setComposeModal(null);
+          } else {
+            setComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+          }
+        }
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ background: C.white, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 520, maxHeight: "85vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ padding: "20px 20px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>
+                      ÉTAPE {step + 1} / {groups.length} · {item.emoji} {item.name}
+                    </p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{grp.groupName}</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>
+                      {grp.required ? "Obligatoire" : "Optionnel"} · {grp.maxChoices === 1 ? "1 choix" : `Jusqu'à ${grp.maxChoices} choix`}
+                    </p>
+                  </div>
+                  <button onClick={() => setComposeModal(null)} style={{ background: C.bg, border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>+{Number(sup.price).toFixed(2)}€</span>
-              </label>
-            ))}
-            <button onClick={() => {
-              const supsPriceSum = selectedSups.reduce((s, x) => s + x.price, 0);
-              const itemWithSups = { ...supModal.item, price: supModal.item.price + supsPriceSum, supplements: selectedSups };
-              setCart(p => [...p, { ...itemWithSups, qty: 1 }]);
-              setSupModal(null);
-            }} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 20, ...FF }}>
-              Ajouter au panier
-            </button>
+                {/* Progress dots */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                  {groups.map((_, i) => (
+                    <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= step ? C.dark : C.border, transition: "background 0.2s" }} />
+                  ))}
+                </div>
+              </div>
+              {/* Options */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
+                {grp.options.map((opt, oi) => {
+                  const isSelected = selected.some(s => s.name === opt.name);
+                  return (
+                    <div key={oi} onClick={() => toggleOpt(opt)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 14, marginBottom: 8, background: isSelected ? C.dark : C.bg, border: `1.5px solid ${isSelected ? C.dark : C.border}`, cursor: "pointer", transition: "all 0.15s" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: grp.maxChoices === 1 ? "50%" : 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: grp.maxChoices === 1 ? "50%" : 3, background: C.dark }} />}
+                        </div>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: isSelected ? C.white : C.dark }}>{opt.name}</span>
+                      </div>
+                      {parseFloat(opt.price) > 0 && (
+                        <span style={{ fontSize: 14, fontWeight: 700, color: isSelected ? C.white : C.textSecondary }}>+{Number(opt.price).toFixed(2)}€</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Footer */}
+              <div style={{ padding: "16px 20px 32px" }}>
+                {step > 0 && (
+                  <button onClick={() => setComposeModal(p => ({ ...p, step: p.step - 1 }))}
+                    style={{ background: "none", border: "none", color: C.textSecondary, fontSize: 14, cursor: "pointer", marginBottom: 8, padding: 0, ...FF }}>
+                    ← Étape précédente
+                  </button>
+                )}
+                <button onClick={nextStep} disabled={!canNext}
+                  style={{ width: "100%", padding: 16, background: canNext ? C.dark : C.border, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: canNext ? "pointer" : "not-allowed", transition: "background 0.2s", ...FF }}>
+                  {isLast ? "🛒 Ajouter au panier" : `Suivant →`}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
