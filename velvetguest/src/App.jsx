@@ -1164,7 +1164,7 @@ function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RESTAURANTS PAGE — wired to Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise, onHome, onFranchiseCreated, onFranchiseFound }) {
+function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onFranchise, onHome, onFranchiseCreated, onFranchiseFound, noAutoRedirect }) {
   const { lang, setLang } = useContext(LangCtx);
   const first = user.name || user.email.split("@")[0];
   const h = new Date().getHours();
@@ -1211,14 +1211,27 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
         setLoadingList(false);
       });
 
-    // If no franchise group in state, silently check Supabase and cache it
+    if (noAutoRedirect) return; // user came back from franchise voluntarily — don't redirect
+
+    // Check localStorage first (instant)
+    try {
+      const cached = localStorage.getItem(`vg_fg_${user.id}`);
+      if (cached) {
+        const grp = JSON.parse(cached);
+        if (grp?.id && !franchiseGroup) {
+          if (onFranchiseCreated) onFranchiseCreated(grp);
+          return;
+        }
+      }
+    } catch {}
+
+    // Query Supabase and redirect if franchise group found
     if (!franchiseGroup) {
       supabase.from("franchise_groups").select("*").eq("owner_id", user.id).maybeSingle()
         .then(({ data }) => {
           if (data) {
             localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(data));
-            // Notify parent to store the group state without navigating away
-            if (onFranchiseFound) onFranchiseFound(data);
+            if (onFranchiseCreated) onFranchiseCreated(data);
           }
         });
     }
@@ -8029,7 +8042,7 @@ function Dashboard() {
       {page === "signup" && <SignupPage initialMode={authInitialMode} onDone={async (u, grp) => { setUser(u); if (grp) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); } else { const { data } = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).maybeSingle(); if (data) { localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(data)); setFranchiseGroup(data); setPage("franchise"); } else setPage("restaurants"); } }} onDemo={() => startDemo("restaurant")} onDemoPicker={() => setPage("landing")} />}
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
-      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} onFranchiseFound={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); }} />}
+      {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} noAutoRedirect={fromFranchise} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} onFranchiseFound={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); }} />}
       {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
