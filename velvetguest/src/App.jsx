@@ -1211,27 +1211,13 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
         setLoadingList(false);
       });
 
-    if (noAutoRedirect) return; // user came back from franchise voluntarily — don't redirect
-
-    // Check localStorage first (instant)
-    try {
-      const cached = localStorage.getItem(`vg_fg_${user.id}`);
-      if (cached) {
-        const grp = JSON.parse(cached);
-        if (grp?.id && !franchiseGroup) {
-          if (onFranchiseCreated) onFranchiseCreated(grp);
-          return;
-        }
-      }
-    } catch {}
-
-    // Query Supabase and redirect if franchise group found
+    // Silently refresh franchise group in cache (no redirect — user stays here)
     if (!franchiseGroup) {
       supabase.from("franchise_groups").select("*").eq("owner_id", user.id).maybeSingle()
         .then(({ data }) => {
           if (data) {
             localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(data));
-            if (onFranchiseCreated) onFranchiseCreated(data);
+            if (onFranchiseFound) onFranchiseFound(data);
           }
         });
     }
@@ -7958,34 +7944,24 @@ function Dashboard() {
           const userData = { id: u.id, name: u.user_metadata?.name || u.email.split("@")[0], email: u.email };
           setUser(userData);
 
-          // 1. Check localStorage cache first (instant, survives RLS issues)
+          // 1. Preload franchise group silently into state (no redirect)
           try {
             const cached = localStorage.getItem(`vg_fg_${u.id}`);
             if (cached) {
               const grp = JSON.parse(cached);
-              if (grp && grp.id) {
-                setFranchiseGroup(grp);
-                setPage("franchise");
-                // Refresh in background
-                supabase.from("franchise_groups").select("*").eq("owner_id", u.id).single()
-                  .then(res => { if (res?.data) localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(res.data)); });
-                return;
+              if (grp?.id) setFranchiseGroup(grp);
+            }
+          } catch {}
+          // Refresh from Supabase in background
+          supabase.from("franchise_groups").select("*").eq("owner_id", u.id).maybeSingle()
+            .then(res => {
+              if (res?.data) {
+                localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(res.data));
+                setFranchiseGroup(res.data);
               }
-            }
-          } catch {}
+            }).catch(() => {});
 
-          // 2. Query Supabase for franchise group (maybeSingle = no error if 0 rows)
-          try {
-            const grpRes = await supabase.from("franchise_groups").select("*").eq("owner_id", u.id).maybeSingle();
-            if (grpRes?.data) {
-              localStorage.setItem(`vg_fg_${u.id}`, JSON.stringify(grpRes.data));
-              setFranchiseGroup(grpRes.data);
-              setPage("franchise");
-              return;
-            }
-          } catch {}
-
-          // 3. Check if user is a restaurant staff member
+          // 2. Check if user is a restaurant staff member → direct to their dashboard
           try {
             const staffRes = await supabase.from("restaurant_staff").select("*, restaurants(*)").eq("email", u.email).single();
             if (staffRes?.data?.restaurants) {
