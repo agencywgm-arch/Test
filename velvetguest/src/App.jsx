@@ -1761,12 +1761,44 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function SettingsTab({ restaurant }) {
+function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const store = useContext(StoreCtx);
   const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false };
   const [settings, setSettings] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
+  const [logoUrl, setLogoUrl] = useState(restaurant.logo_url || "");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  async function uploadLogo(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploadingLogo(true);
+    if (restaurant.id === "demo") {
+      const url = URL.createObjectURL(file);
+      setLogoUrl(url);
+      if (onRestaurantUpdate) onRestaurantUpdate({ logo_url: url });
+      setUploadingLogo(false);
+      return;
+    }
+    const ext = file.name.split(".").pop();
+    const path = `restaurant-logos/${restaurant.id}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
+    if (upErr) { store.pushNotif("Erreur upload : " + upErr.message, "warning"); setUploadingLogo(false); return; }
+    const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
+    await supabase.from("restaurants").update({ logo_url: publicUrl }).eq("id", restaurant.id);
+    setLogoUrl(publicUrl);
+    if (onRestaurantUpdate) onRestaurantUpdate({ logo_url: publicUrl });
+    store.pushNotif("✅ Logo mis à jour", "success");
+    setUploadingLogo(false);
+  }
+
+  async function removeLogo() {
+    if (restaurant.id === "demo") { setLogoUrl(""); if (onRestaurantUpdate) onRestaurantUpdate({ logo_url: null }); return; }
+    await supabase.from("restaurants").update({ logo_url: null }).eq("id", restaurant.id);
+    setLogoUrl("");
+    if (onRestaurantUpdate) onRestaurantUpdate({ logo_url: null });
+    store.pushNotif("Logo supprimé", "success");
+  }
 
   useEffect(() => {
     if (restaurant.id === "demo") return;
@@ -1847,6 +1879,28 @@ function SettingsTab({ restaurant }) {
 
   return (
     <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Logo */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🖼️ Logo du restaurant</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Visible sur la page menu client, les cartes du tableau de bord et la franchise.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ width: 80, height: 80, borderRadius: 18, background: C.bg, border: `2px dashed ${C.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, flexShrink: 0 }}>
+            {logoUrl ? <img src={logoUrl} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (restaurant.logo_emoji || "🍽️")}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.dark, color: C.white, borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              {uploadingLogo ? "Envoi…" : "📷 Choisir une photo"}
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadLogo} disabled={uploadingLogo} />
+            </label>
+            {logoUrl && (
+              <button onClick={removeLogo} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 14px", fontSize: 13, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                🗑 Supprimer le logo
+              </button>
+            )}
+          </div>
+        </div>
+      </Surface>
+
       {/* Email */}
       <Surface style={{ padding: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>📧 Email — Resend</h3>
@@ -1905,7 +1959,7 @@ function SettingsTab({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onCuisine, onClient, onFranchise, onHome }) {
+function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onCuisine, onClient, onFranchise, onHome, onRestaurantUpdate }) {
   const store = useContext(StoreCtx);
   const [tab, setTab] = useState("overview");
   const isMobile = useIsMobile();
@@ -1955,7 +2009,9 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
           <div style={{ padding: "20px 16px 16px" }}>
             <Logo size={16} onClick={onHome} />
             <div onClick={onBack} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: C.bg, cursor: "pointer" }}>
-              <div style={{ fontSize: 22 }}>{restaurant.emoji}</div>
+              <div style={{ width: 32, height: 32, borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, background: C.border }}>
+                {restaurant.logo_url ? <img src={restaurant.logo_url} alt={restaurant.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : restaurant.emoji}
+              </div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, letterSpacing: "-0.01em" }}>{restaurant.name}</div>
                 <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>← Changer</div>
@@ -2016,7 +2072,9 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
           /* Mobile header */
           <header style={{ background: "rgba(245,245,247,0.95)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
             <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <div style={{ fontSize: 20 }}>{restaurant.emoji}</div>
+              <div style={{ width: 28, height: 28, borderRadius: 7, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, background: C.border }}>
+                {restaurant.logo_url ? <img src={restaurant.logo_url} alt={restaurant.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : restaurant.emoji}
+              </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{restaurant.name}</div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -2113,7 +2171,7 @@ function DashboardPage({ user, restaurant, franchiseGroup, onBack, onLogout, onC
           {tab === "promos" && <PromosTab restaurant={restaurant} store={store} />}
           {tab === "crm" && <CRMTab restaurant={restaurant} store={store} />}
           {tab === "menu" && <MenuTabDash restaurant={restaurant} />}
-          {tab === "settings" && <SettingsTab restaurant={restaurant} />}
+          {tab === "settings" && <SettingsTab restaurant={restaurant} onRestaurantUpdate={onRestaurantUpdate} />}
         </div>
       </main>
       {/* Mobile bottom nav */}
@@ -8089,7 +8147,7 @@ function Dashboard() {
         }
         setPage("dashboard");
       }} />}
-      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} onHome={() => { if (!user || user.id === "demo") setPage("landing"); else if (franchiseGroup) setPage("franchise"); else setPage("restaurants"); }} />}
+      {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onRestaurantUpdate={r => setRestaurant(prev => ({ ...prev, ...r }))} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} onHome={() => { if (!user || user.id === "demo") setPage("landing"); else if (franchiseGroup) setPage("franchise"); else setPage("restaurants"); }} />}
       {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
