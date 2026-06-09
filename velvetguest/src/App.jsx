@@ -3411,6 +3411,7 @@ const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", em
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
+  const store = useContext(StoreCtx);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // null | { mode: 'add'|'edit', item }
@@ -3421,6 +3422,7 @@ function MenuTabDash({ restaurant }) {
   const [showOrder, setShowOrder] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const dragCat = useRef(null);
+  const [groupClipboard, setGroupClipboard] = useState(null); // copied supplements groups
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
@@ -3699,15 +3701,39 @@ function MenuTabDash({ restaurant }) {
                   <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 600 }}>🧩 Garnitures & Composition</label>
                   <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>Créez des groupes de choix (ex: Viande, Sauce, Légumes)</p>
                 </div>
-                <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), { groupName: "", required: true, maxChoices: 1, options: [{ name: "", price: "" }] }] }))}
-                  style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, ...FF }}>
-                  + Groupe
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {groupClipboard && (
+                    <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), ...groupClipboard.map(g => ({ ...g, options: g.options.map(o => ({ ...o })) }))] }))}
+                      style={{ background: "#0071E3", color: C.white, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}
+                      title={`Coller ${groupClipboard.length} groupe(s)`}>
+                      📋 Coller ({groupClipboard.length})
+                    </button>
+                  )}
+                  {(form.supplements || []).length > 0 && (
+                    <button type="button" onClick={() => { setGroupClipboard((form.supplements || []).map(g => ({ ...g, options: g.options.map(o => ({ ...o })) }))); store.pushNotif(`✅ ${form.supplements.length} groupe(s) copié(s)`, "success"); }}
+                      style={{ background: C.bg, color: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
+                      📄 Copier
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), { groupName: "", required: true, maxChoices: 1, options: [{ name: "", price: "" }] }] }))}
+                    style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, ...FF }}>
+                    + Groupe
+                  </button>
+                </div>
               </div>
               {(form.supplements || []).map((grp, gi) => (
                 <div key={gi} style={{ border: `1.5px solid ${C.border}`, borderRadius: 14, padding: 14, marginBottom: 12 }}>
                   {/* Group header */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                    {/* Reorder buttons */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <button type="button" disabled={gi === 0}
+                        onClick={() => setForm(p => { const s = [...p.supplements]; [s[gi-1], s[gi]] = [s[gi], s[gi-1]]; return { ...p, supplements: s }; })}
+                        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 5, width: 22, height: 20, fontSize: 10, cursor: gi === 0 ? "default" : "pointer", color: gi === 0 ? C.border : C.textSecondary, lineHeight: 1, padding: 0 }}>▲</button>
+                      <button type="button" disabled={gi === (form.supplements || []).length - 1}
+                        onClick={() => setForm(p => { const s = [...p.supplements]; [s[gi], s[gi+1]] = [s[gi+1], s[gi]]; return { ...p, supplements: s }; })}
+                        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 5, width: 22, height: 20, fontSize: 10, cursor: gi === (form.supplements || []).length - 1 ? "default" : "pointer", color: gi === (form.supplements || []).length - 1 ? C.border : C.textSecondary, lineHeight: 1, padding: 0 }}>▼</button>
+                    </div>
                     <input
                       placeholder="Nom du groupe (ex: Viande)"
                       value={grp.groupName}
