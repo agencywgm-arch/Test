@@ -3405,7 +3405,7 @@ function InventoryTab({ restaurant }) {
   );
 }
 
-const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "" };
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "", supplements: [] };
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
@@ -3430,7 +3430,7 @@ function MenuTabDash({ restaurant }) {
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
-  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock) }); setError(""); setModal({ mode: "edit", item }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [] }); setError(""); setModal({ mode: "edit", item }); }
 
   async function updateStock(item, delta) {
     const cur = item.stock == null ? null : item.stock;
@@ -3455,7 +3455,8 @@ function MenuTabDash({ restaurant }) {
     setSaving(true); setError("");
     const stock = form.stock === "" ? null : parseInt(form.stock, 10);
     const available = stock == null ? form.available : stock > 0;
-    const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id };
+    const supplements = (form.supplements || []).filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), price: parseFloat(s.price) || 0 }));
+    const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id, supplements };
     if (restaurant.id === "demo") {
       if (modal.mode === "add") {
         setItems(p => [...p, { ...payload, id: "dm_" + Date.now() }]);
@@ -3681,6 +3682,39 @@ function MenuTabDash({ restaurant }) {
                   <input type="checkbox" checked={form.available} onChange={e => setForm(p => ({ ...p, available: e.target.checked }))} style={{ width: 16, height: 16 }} />
                   <span style={{ fontSize: 14, color: C.dark }}>✅ Disponible</span>
                 </label>
+              )}
+            </div>
+            {/* Supplements section */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500 }}>Suppléments <span style={{ color: C.textTertiary, fontWeight: 400 }}>(optionnels)</span></label>
+                <button type="button" onClick={() => setForm(p => ({ ...p, supplements: [...(p.supplements || []), { name: "", price: "" }] }))}
+                  style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", ...FF }}>
+                  + Ajouter
+                </button>
+              </div>
+              {(form.supplements || []).map((sup, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                  <input
+                    placeholder="Ex: Fromage supplémentaire"
+                    value={sup.name}
+                    onChange={e => setForm(p => { const s = [...p.supplements]; s[idx] = { ...s[idx], name: e.target.value }; return { ...p, supplements: s }; })}
+                    style={{ flex: 1, background: C.bg, border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, outline: "none", ...FF }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={sup.price}
+                    onChange={e => setForm(p => { const s = [...p.supplements]; s[idx] = { ...s[idx], price: e.target.value }; return { ...p, supplements: s }; })}
+                    style={{ width: 80, background: C.bg, border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 14, color: C.dark, outline: "none", ...FF }}
+                  />
+                  <span style={{ fontSize: 13, color: C.textSecondary }}>€</span>
+                  <button type="button" onClick={() => setForm(p => ({ ...p, supplements: p.supplements.filter((_, i) => i !== idx) }))}
+                    style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 9px", cursor: "pointer", color: C.accent, fontSize: 13 }}>✕</button>
+                </div>
+              ))}
+              {(form.supplements || []).length > 0 && (
+                <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 4 }}>Le client pourra choisir parmi ces options lors de la commande.</p>
               )}
             </div>
             {error && <p style={{ color: C.accent, fontSize: 13, marginBottom: 12 }}>{error}</p>}
@@ -4599,6 +4633,17 @@ function ClientView({ restaurant, onBack }) {
 
   const [catOrderClient, setCatOrderClient] = useState([]);
   const [stripeEnabledCV, setStripeEnabledCV] = useState(false);
+  const [cvSupModal, setCvSupModal] = useState(null);
+  const [cvSelectedSups, setCvSelectedSups] = useState([]);
+
+  function cvAddToCart(item) {
+    if (item.supplements && item.supplements.length > 0) {
+      setCvSelectedSups([]);
+      setCvSupModal({ item });
+    } else {
+      setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
+    }
+  }
 
   useEffect(() => {
     if (restaurant.id === "demo") { setMenuItems(DEMO_MENU); setLoadingMenu(false); return; }
@@ -5862,6 +5907,17 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [supModal, setSupModal] = useState(null); // null | { item }
+  const [selectedSups, setSelectedSups] = useState([]);
+
+  function addToCart(item) {
+    if (item.supplements && item.supplements.length > 0) {
+      setSelectedSups([]);
+      setSupModal({ item });
+    } else {
+      setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -5927,7 +5983,7 @@ function CustomerPage({ slug, tableNum }) {
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
 
-  const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
+  const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
   async function confirm(paymentMethod = "cash") {
@@ -6121,10 +6177,10 @@ function CustomerPage({ slug, tableNum }) {
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <button onClick={() => rem(item.id)} style={{ width: 32, height: 32, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>−</button>
                         <span style={{ fontWeight: 800, fontSize: 16 }}>{inCart.qty}</span>
-                        <button onClick={() => add(item)} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>+</button>
+                        <button onClick={() => addToCart(item)} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>+</button>
                       </div>
                     ) : (
-                      <button onClick={() => add(item)} style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", ...FF }}>Ajouter</button>
+                      <button onClick={() => addToCart(item)} style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", ...FF }}>Ajouter</button>
                     )}
                   </div>
                 </div>
@@ -6150,6 +6206,9 @@ function CustomerPage({ slug, tableNum }) {
               <div style={{ fontSize: 26 }}>{item.emoji}</div>
               <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 600, fontSize: 15, color: C.dark }}>{item.name}</p>
+                {item.supplements && item.supplements.length > 0 && (
+                  <p style={{ color: C.textTertiary, fontSize: 11, marginTop: 2 }}>{item.supplements.map(s => s.name).join(", ")}</p>
+                )}
                 <p style={{ color: C.textSecondary, fontSize: 13 }}>{Number(item.price).toFixed(2)}€/u</p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -6392,6 +6451,35 @@ function CustomerPage({ slug, tableNum }) {
           onInput={e => setChatInput(e.target.value)}
           loading={chatLoading}
         />
+      )}
+
+      {/* Supplement selection modal */}
+      {supModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setSupModal(null)}>
+          <div style={{ background: C.white, borderRadius: "20px 20px 0 0", padding: "24px 20px 32px", width: "100%", maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{supModal.item.name}</p>
+            <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16 }}>Personnalisez votre commande</p>
+            {supModal.item.supplements.map((sup, idx) => (
+              <label key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input type="checkbox" checked={selectedSups.some(s => s.name === sup.name)}
+                    onChange={e => setSelectedSups(p => e.target.checked ? [...p, sup] : p.filter(s => s.name !== sup.name))}
+                    style={{ width: 18, height: 18, cursor: "pointer" }} />
+                  <span style={{ fontSize: 15, color: C.dark }}>{sup.name}</span>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>+{Number(sup.price).toFixed(2)}€</span>
+              </label>
+            ))}
+            <button onClick={() => {
+              const supsPriceSum = selectedSups.reduce((s, x) => s + x.price, 0);
+              const itemWithSups = { ...supModal.item, price: supModal.item.price + supsPriceSum, supplements: selectedSups };
+              setCart(p => [...p, { ...itemWithSups, qty: 1 }]);
+              setSupModal(null);
+            }} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 20, ...FF }}>
+              Ajouter au panier
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
