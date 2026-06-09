@@ -1177,6 +1177,8 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   const [form, setForm] = useState({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [uploadingRestLogo, setUploadingRestLogo] = useState(false);
+  const [newRestLogoUrl, setNewRestLogoUrl] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null); // restaurant to delete
   const [deleteStep, setDeleteStep] = useState(1); // 1 = confirm, 2 = type "supprimer"
   const [deleteInput, setDeleteInput] = useState("");
@@ -1200,7 +1202,7 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   }
 
   function mapRestaurant(r) {
-    return { id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji, logo_emoji: r.logo_emoji, scans: 0, revenue: 3840, rating: null, orders: 0 };
+    return { id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji, logo_emoji: r.logo_emoji, logo_url: r.logo_url || null, scans: 0, revenue: 3840, rating: null, orders: 0 };
   }
 
   useEffect(() => {
@@ -1265,11 +1267,35 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
     return name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   }
 
+  async function uploadRestaurantLogo(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploadingRestLogo(true);
+    if (user.id === "demo") { setNewRestLogoUrl(URL.createObjectURL(file)); setUploadingRestLogo(false); return; }
+    const ext = file.name.split(".").pop();
+    const path = `restaurant-logos/new-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
+    if (!upErr) {
+      const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
+      setNewRestLogoUrl(publicUrl);
+    }
+    setUploadingRestLogo(false);
+  }
+
+  async function uploadExistingRestaurantLogo(restaurantId, file) {
+    const ext = file.name.split(".").pop();
+    const path = `restaurant-logos/${restaurantId}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
+    if (upErr) return null;
+    const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
+    await supabase.from("restaurants").update({ logo_url: publicUrl }).eq("id", restaurantId);
+    return publicUrl;
+  }
+
   async function createRestaurant(e) {
     e.preventDefault(); setCreating(true); setCreateError("");
     const slug = `${slugify(form.name)}-${Math.random().toString(36).slice(2, 6)}`;
     const { data, error: err } = await supabase.from("restaurants")
-      .insert({ ...form, owner_id: user.id, slug, tables_count: Number(form.tables_count) })
+      .insert({ ...form, owner_id: user.id, slug, tables_count: Number(form.tables_count), logo_url: newRestLogoUrl || null })
       .select().single();
     if (err) { setCreateError(err.message); setCreating(false); return; }
     // Create table records
@@ -1281,6 +1307,7 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
     setRestaurants(p => [data, ...p]);
     setShowCreate(false);
     setForm({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
+    setNewRestLogoUrl("");
     setCreating(false);
   }
 
@@ -1392,7 +1419,21 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
               return (
                 <Surface key={r.id} className="hover-lift" onClick={() => onSelect(mapped)} style={{ padding: 24, cursor: "pointer", transition: "all 0.2s", position: "relative" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-                    <div style={{ width: 52, height: 52, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>{r.logo_emoji}</div>
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, overflow: "hidden", position: "relative" }}>
+                      {r.logo_url
+                        ? <img src={r.logo_url} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        : r.logo_emoji}
+                      <label title="Changer le logo" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0)", cursor: "pointer", borderRadius: 14, transition: "background 0.15s" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.4)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}>
+                        <span style={{ color: C.white, fontSize: 14, opacity: 0 }} className="logo-edit-icon">📷</span>
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={async ev => {
+                          const file = ev.target.files?.[0]; if (!file) return;
+                          const url = await uploadExistingRestaurantLogo(r.id, file);
+                          if (url) setRestaurants(p => p.map(x => x.id === r.id ? { ...x, logo_url: url } : x));
+                        }} onClick={e => e.stopPropagation()} />
+                      </label>
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Tag color={C.accentGreen}><Dot color={C.accentGreen} />Actif</Tag>
                       <button onClick={e => openDelete(e, r)} title="Supprimer ce restaurant"
@@ -1476,10 +1517,21 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
           <Surface style={{ padding: 32, width: "100%", maxWidth: 440 }}>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 24 }}>Nouveau restaurant</h2>
             <form onSubmit={createRestaurant}>
-              <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
                 <div>
+                  <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Logo</label>
+                  <label style={{ width: 60, height: 60, borderRadius: 14, background: C.bg, border: `2px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden", flexShrink: 0, position: "relative" }}>
+                    {newRestLogoUrl
+                      ? <img src={newRestLogoUrl} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ fontSize: 24 }}>{form.logo_emoji}</span>}
+                    {uploadingRestLogo && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ color: C.white, fontSize: 12 }}>...</span></div>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadRestaurantLogo} />
+                  </label>
+                  <p style={{ fontSize: 10, color: C.textTertiary, textAlign: "center", marginTop: 4 }}>Photo</p>
+                </div>
+                <div style={{ width: 52 }}>
                   <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Emoji</label>
-                  <input value={form.logo_emoji} onChange={fv("logo_emoji")} style={{ width: 60, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
+                  <input value={form.logo_emoji} onChange={fv("logo_emoji")} style={{ width: 52, textAlign: "center", background: C.bg, border: "none", borderRadius: 12, padding: "12px 8px", fontSize: 24, outline: "none" }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <InputField label="Nom du restaurant" placeholder="Le Petit Bistro" value={form.name} onChange={fv("name")} autoFocus />
@@ -5927,7 +5979,9 @@ function CustomerPage({ slug, tableNum }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 22 }}>{restaurant.emoji || restaurant.logo_emoji}</span>
+                  {restaurant.logo_url
+                    ? <img src={restaurant.logo_url} alt={restaurant.name} style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover" }} />
+                    : <span style={{ fontSize: 22 }}>{restaurant.emoji || restaurant.logo_emoji}</span>}
                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{restaurant.name}</p>
                 </div>
                 <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
@@ -6143,7 +6197,9 @@ function CustomerPage({ slug, tableNum }) {
               {/* Ticket header */}
               <div style={{ background: C.dark, padding: "20px 20px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                  <span style={{ fontSize: 24 }}>{restaurant?.logo_emoji}</span>
+                  {restaurant?.logo_url
+                    ? <img src={restaurant.logo_url} alt={restaurant.name} style={{ width: 28, height: 28, borderRadius: 8, objectFit: "cover" }} />
+                    : <span style={{ fontSize: 24 }}>{restaurant?.logo_emoji}</span>}
                   <p style={{ fontSize: 17, fontWeight: 800, color: C.white, letterSpacing: "-0.02em" }}>{restaurant?.name}</p>
                 </div>
                 <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Table {tableNum} · {orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
@@ -7291,7 +7347,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                     <Surface key={r.id} style={{ padding: 20 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{r.logo_emoji}</div>
+                          <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, overflow: "hidden" }}>
+                            {r.logo_url ? <img src={r.logo_url} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : r.logo_emoji}
+                          </div>
                           <div>
                             <div style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>{r.name}</div>
                             <div style={{ fontSize: 12, color: C.textSecondary }}>{r.region || "Région N/A"}</div>
@@ -7966,7 +8024,7 @@ function Dashboard() {
             const staffRes = await supabase.from("restaurant_staff").select("*, restaurants(*)").eq("email", u.email).single();
             if (staffRes?.data?.restaurants) {
               const r = staffRes.data.restaurants;
-              setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || "🍽️", logo_emoji: r.logo_emoji || "🍽️", scans: 0, rating: null, orders: 0 });
+              setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || "🍽️", logo_emoji: r.logo_emoji || "🍽️", logo_url: r.logo_url || null, scans: 0, rating: null, orders: 0 });
               setPage("dashboard");
               return;
             }
@@ -8026,7 +8084,7 @@ function Dashboard() {
           setRestaurant({ ...DEMO_RESTAURANT, name: r.name, emoji: r.logo_emoji, logo_emoji: r.logo_emoji, _demoStats: s });
           setFromFranchise(true);
         } else {
-          setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || r.emoji || "🍽️", logo_emoji: r.logo_emoji || r.emoji || "🍽️", scans: 0, rating: null, orders: 0, _realStats: stat });
+          setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || r.emoji || "🍽️", logo_emoji: r.logo_emoji || r.emoji || "🍽️", logo_url: r.logo_url || null, scans: 0, rating: null, orders: 0, _realStats: stat });
           setFromFranchise(true);
         }
         setPage("dashboard");
