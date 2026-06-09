@@ -4848,7 +4848,11 @@ function ClientView({ restaurant, onBack }) {
       }
 
       if (error || !order) { setOrderError("Erreur commande : " + (error?.message || "réessayez")); setOrdering(false); return; }
-      await supabase.from("order_items").insert(cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" })));
+      await supabase.from("order_items").insert(cart.map(i => {
+        const choices = i._choices || {};
+        const parts = Object.entries(choices).filter(([, v]) => v.length > 0).map(([k, v]) => k === "__extras__" ? "+" + v.map(o => o.name).join(", ") : v.map(o => o.name).join(", "));
+        return { order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: parts.join(" · ") };
+      }));
       setStep("done"); setPayMode(null);
     } catch (e) {
       setOrderError("Erreur inattendue, réessayez.");
@@ -6296,7 +6300,11 @@ function CustomerPage({ slug, tableNum }) {
 
       if (error || !order) { setConfirmError("Erreur lors de la commande : " + (error?.message || "réessayez")); setConfirming(false); return; }
 
-      const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
+      const orderItems = cart.map(i => {
+        const choices = i._choices || {};
+        const parts = Object.entries(choices).filter(([, v]) => v.length > 0).map(([k, v]) => k === "__extras__" ? "+" + v.map(o => o.name).join(", ") : v.map(o => o.name).join(", "));
+        return { order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: parts.join(" · ") };
+      });
       await supabase.from("order_items").insert(orderItems);
 
       for (const item of cart) {
