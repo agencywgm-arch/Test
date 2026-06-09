@@ -6969,9 +6969,9 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
               style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: tab === "establishments" ? C.bg : "transparent", color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, ...FF }}>
               <span>👥</span> Mes établissements
             </button>
-            <button onClick={isDemo ? onBack : onBack}
+            <button onClick={onBack}
               style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, background: "transparent", color: C.textSecondary, fontSize: 13, fontWeight: 500, cursor: "pointer", textAlign: "left", ...FF }}>
-              {isDemo ? "← Retour accueil" : "⏻ Déconnexion"}
+              {isDemo ? "← Retour accueil" : "← Mes restaurants"}
             </button>
           </div>
         </aside>
@@ -8043,7 +8043,7 @@ function Dashboard() {
       {page === "demo-kitchen" && <DemoKitchenPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "demo-customer" && <DemoCustomerPage onBack={() => setPage("landing")} onSignup={() => setPage("signup")} />}
       {page === "restaurants" && user && <RestaurantsPage user={user} franchiseGroup={franchiseGroup} noAutoRedirect={fromFranchise} onSelect={r => { setFromFranchise(false); setRestaurant(r); setPage("dashboard"); }} onLogout={handleLogout} onDemo={() => startDemo("restaurant")} onFranchise={() => setPage("franchise")} onHome={() => user ? setPage("restaurants") : setPage("landing")} onFranchiseCreated={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); setPage("franchise"); }} onFranchiseFound={grp => { localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); setFranchiseGroup(grp); }} />}
-      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : handleLogout()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
+      {page === "franchise" && <FranchiseDashboard user={user || { id: "demo", name: "Démo", email: "demo@wegemo.com" }} group={franchiseGroup || DEMO_GROUP} onBack={() => !user || user.id === "demo" ? setPage("landing") : (() => { setFromFranchise(true); setPage("restaurants"); })()} onHome={() => !user || user.id === "demo" ? setPage("landing") : setPage("franchise")} onGroupUpdate={grp => { setFranchiseGroup(grp); if (user?.id) localStorage.setItem(`vg_fg_${user.id}`, JSON.stringify(grp)); }} onRestaurant={(r, stat) => {
         const isDemo = !user || user.id === "demo";
         if (isDemo) {
           const s = stat || DEMO_FRANCHISE_STATS.find(s => s.restaurant_id === r.id) || DEMO_FRANCHISE_STATS[0];
