@@ -5896,9 +5896,16 @@ function CustomerPage({ slug, tableNum }) {
     : rawCats;
   const cats = ["Tous", ...sortedCats];
   const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const filteredSorted = activeCat === "Tous"
+    ? [...filtered].sort((a, b) => {
+        const ai = sortedCats.indexOf(a.category);
+        const bi = sortedCats.indexOf(b.category);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+    : filtered;
   // Apply best active promo discount to all items
   const bestDiscount = activePromos.reduce((max, p) => Math.max(max, p.discount_percent || 0), 0);
-  const filteredWithPromo = filtered.map(item => bestDiscount > 0 ? { ...item, _originalPrice: item.price, price: +(item.price * (1 - bestDiscount / 100)).toFixed(2) } : item);
+  const filteredWithPromo = filteredSorted.map(item => bestDiscount > 0 ? { ...item, _originalPrice: item.price, price: +(item.price * (1 - bestDiscount / 100)).toFixed(2) } : item);
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
 
