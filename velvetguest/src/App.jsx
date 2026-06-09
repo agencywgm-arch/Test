@@ -4570,7 +4570,20 @@ function CuisineView({ restaurant, onBack }) {
                           </div>
                           <div style={{ flex: 1 }}>
                             <p style={{ fontSize: 14, fontWeight: 600, color: item.done ? C.textTertiary : C.dark, textDecoration: item.done ? "line-through" : "none" }}>{item.emoji} {item.name}</p>
-                            {item.detail && <p style={{ fontSize: 11, color: C.accentOrange, fontWeight: 600 }}>{item.detail}</p>}
+                            {item.detail && (
+                              <details onClick={e => e.stopPropagation()} style={{ marginTop: 4 }}>
+                                <summary style={{ fontSize: 11, color: C.accentOrange, fontWeight: 700, cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", gap: 4, userSelect: "none" }}>
+                                  <span style={{ fontSize: 9 }}>▶</span> Composition
+                                </summary>
+                                <div style={{ marginTop: 5, paddingLeft: 8, borderLeft: `2px solid ${C.accentOrange}30` }}>
+                                  {item.detail.split(" · ").map((part, pi) => (
+                                    <p key={pi} style={{ fontSize: 12, color: part.startsWith("+") ? C.accentOrange : C.textSecondary, fontWeight: part.startsWith("+") ? 700 : 500, margin: "2px 0", lineHeight: 1.4 }}>
+                                      {part.startsWith("+") ? part : `• ${part}`}
+                                    </p>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
                           </div>
                         </div>
                       ))}
