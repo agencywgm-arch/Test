@@ -6164,6 +6164,96 @@ function GmailOAuthCallback() {
 // ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER PAGE — public, no auth, opened by scanning QR code
 // ─────────────────────────────────────────────────────────────────────────────
+const CUSTOMER_LANGS = [
+  { code: "fr", flag: "🇫🇷", name: "Français" },
+  { code: "en", flag: "🇬🇧", name: "English" },
+  { code: "ar", flag: "🇦🇪", name: "عربي" },
+  { code: "es", flag: "🇪🇸", name: "Español" },
+  { code: "pt", flag: "🇵🇹", name: "Português" },
+];
+const CT = {
+  fr: {
+    all: "Tous", cart: "Panier", add: "Ajouter", addMore: "+", popular: "⭐ Populaire", menuBadge: "🍽️+🥤 Menu",
+    note: "Note pour la cuisine", notePlaceholder: "Allergie, cuisson, sans gluten…",
+    total: "Total", payment: "Paiement →", back: "← Continuer",
+    payTitle: "Paiement", cashBtn: "💵 Payer en espèces", cardBtn: "💳 Payer par carte",
+    nameLabel: "Votre prénom", emailLabel: "Email (optionnel)", skip: "Passer",
+    confirm: "Confirmer la commande", confirming: "Commande en cours…",
+    doneTitle: "Commande envoyée !", doneMsg: "Votre commande est bien enregistrée.",
+    status_PENDING: "En attente", status_PREPARING: "En préparation", status_READY: "Prête !",
+    etaLabel: "Temps estimé", etaMin: "min",
+    compose: "Étape", of: "/", required: "Obligatoire", optional: "Optionnel",
+    maxChoice: "1 choix", maxChoices: "Jusqu'à %n choix",
+    addCart: "🛒 Ajouter au panier", next: "Suivant →", prev: "← Étape précédente",
+    extrasTitle: "Suppléments", extrasDesc: "Optionnel · Ajoutez des suppléments",
+    table: "Table",
+  },
+  en: {
+    all: "All", cart: "Cart", add: "Add", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Combo",
+    note: "Note for the kitchen", notePlaceholder: "Allergy, cooking preference, gluten-free…",
+    total: "Total", payment: "Payment →", back: "← Continue",
+    payTitle: "Payment", cashBtn: "💵 Pay in cash", cardBtn: "💳 Pay by card",
+    nameLabel: "Your first name", emailLabel: "Email (optional)", skip: "Skip",
+    confirm: "Confirm order", confirming: "Placing order…",
+    doneTitle: "Order placed!", doneMsg: "Your order has been successfully recorded.",
+    status_PENDING: "Waiting", status_PREPARING: "Preparing", status_READY: "Ready!",
+    etaLabel: "Estimated time", etaMin: "min",
+    compose: "Step", of: "/", required: "Required", optional: "Optional",
+    maxChoice: "1 choice", maxChoices: "Up to %n choices",
+    addCart: "🛒 Add to cart", next: "Next →", prev: "← Previous step",
+    extrasTitle: "Extras", extrasDesc: "Optional · Add extras",
+    table: "Table",
+  },
+  ar: {
+    all: "الكل", cart: "السلة", add: "إضافة", addMore: "+", popular: "⭐ الأكثر طلبًا", menuBadge: "🍽️+🥤 طبق+شراب",
+    note: "ملاحظة للمطبخ", notePlaceholder: "حساسية، طريقة الطهي…",
+    total: "الإجمالي", payment: "الدفع ←", back: "← متابعة",
+    payTitle: "الدفع", cashBtn: "💵 دفع نقداً", cardBtn: "💳 دفع بالبطاقة",
+    nameLabel: "اسمك", emailLabel: "البريد الإلكتروني (اختياري)", skip: "تخطي",
+    confirm: "تأكيد الطلب", confirming: "جارٍ الطلب…",
+    doneTitle: "تم الطلب!", doneMsg: "تم تسجيل طلبك بنجاح.",
+    status_PENDING: "في الانتظار", status_PREPARING: "قيد التحضير", status_READY: "جاهز!",
+    etaLabel: "الوقت المقدر", etaMin: "دقيقة",
+    compose: "خطوة", of: "/", required: "إلزامي", optional: "اختياري",
+    maxChoice: "خيار واحد", maxChoices: "حتى %n خيارات",
+    addCart: "🛒 إضافة إلى السلة", next: "التالي ←", prev: "← الخطوة السابقة",
+    extrasTitle: "إضافات", extrasDesc: "اختياري · أضف إضافات",
+    table: "طاولة",
+  },
+  es: {
+    all: "Todo", cart: "Cesta", add: "Añadir", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Menú",
+    note: "Nota para la cocina", notePlaceholder: "Alergia, cocción, sin gluten…",
+    total: "Total", payment: "Pago →", back: "← Continuar",
+    payTitle: "Pago", cashBtn: "💵 Pagar en efectivo", cardBtn: "💳 Pagar con tarjeta",
+    nameLabel: "Tu nombre", emailLabel: "Email (opcional)", skip: "Omitir",
+    confirm: "Confirmar pedido", confirming: "Realizando pedido…",
+    doneTitle: "¡Pedido realizado!", doneMsg: "Tu pedido ha sido registrado correctamente.",
+    status_PENDING: "En espera", status_PREPARING: "Preparando", status_READY: "¡Listo!",
+    etaLabel: "Tiempo estimado", etaMin: "min",
+    compose: "Paso", of: "/", required: "Obligatorio", optional: "Opcional",
+    maxChoice: "1 opción", maxChoices: "Hasta %n opciones",
+    addCart: "🛒 Añadir al carro", next: "Siguiente →", prev: "← Paso anterior",
+    extrasTitle: "Extras", extrasDesc: "Opcional · Añade extras",
+    table: "Mesa",
+  },
+  pt: {
+    all: "Tudo", cart: "Cesto", add: "Adicionar", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Menu",
+    note: "Nota para a cozinha", notePlaceholder: "Alergia, cozimento, sem glúten…",
+    total: "Total", payment: "Pagamento →", back: "← Continuar",
+    payTitle: "Pagamento", cashBtn: "💵 Pagar em dinheiro", cardBtn: "💳 Pagar com cartão",
+    nameLabel: "Seu nome", emailLabel: "Email (opcional)", skip: "Pular",
+    confirm: "Confirmar pedido", confirming: "Fazendo pedido…",
+    doneTitle: "Pedido feito!", doneMsg: "Seu pedido foi registrado com sucesso.",
+    status_PENDING: "Aguardando", status_PREPARING: "Preparando", status_READY: "Pronto!",
+    etaLabel: "Tempo estimado", etaMin: "min",
+    compose: "Etapa", of: "/", required: "Obrigatório", optional: "Opcional",
+    maxChoice: "1 escolha", maxChoices: "Até %n escolhas",
+    addCart: "🛒 Adicionar ao cesto", next: "Próximo →", prev: "← Etapa anterior",
+    extrasTitle: "Extras", extrasDesc: "Opcional · Adicione extras",
+    table: "Mesa",
+  },
+};
+
 function CustomerPage({ slug, tableNum }) {
   const [step, setStep] = useState("loading"); // loading | menu | cart | payment | done | error
   const [restaurant, setRestaurant] = useState(null);
@@ -6192,6 +6282,12 @@ function CustomerPage({ slug, tableNum }) {
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
   const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
+  const [lang, setLang] = useState(() => localStorage.getItem("vg_customer_lang") || "fr");
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const L = CT[lang] || CT.fr;
+  const isRtl = lang === "ar";
+
+  function changeLang(code) { setLang(code); localStorage.setItem("vg_customer_lang", code); setShowLangPicker(false); setActiveCat(CT[code]?.all || "Tous"); }
 
   function addToCart(item) {
     const groups = (item.supplements || []).filter(g => g.options?.length > 0);
@@ -6269,8 +6365,8 @@ function CustomerPage({ slug, tableNum }) {
   const sortedCats = catOrderCustomer.length
     ? [...catOrderCustomer.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrderCustomer.includes(c))]
     : rawCats;
-  const cats = ["Tous", ...sortedCats];
-  const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const cats = [L.all, ...sortedCats];
+  const filtered = activeCat === L.all || activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
   const filteredSorted = activeCat === "Tous"
     ? [...filtered].sort((a, b) => {
         const ai = sortedCats.indexOf(a.category);
@@ -6439,9 +6535,26 @@ function CustomerPage({ slug, tableNum }) {
                     : <span style={{ fontSize: 22 }}>{restaurant.emoji || restaurant.logo_emoji}</span>}
                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{restaurant.name}</p>
                 </div>
-                <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>Table {tableNum}</p>
+                <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>{L.table} {tableNum}</p>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Language picker */}
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setShowLangPicker(p => !p)}
+                    style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 20, padding: "7px 12px", color: C.white, fontSize: 16, cursor: "pointer", lineHeight: 1 }}>
+                    {CUSTOMER_LANGS.find(l => l.code === lang)?.flag || "🌐"}
+                  </button>
+                  {showLangPicker && (
+                    <div style={{ position: "absolute", right: 0, top: 40, background: C.white, borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,0.18)", padding: 6, zIndex: 200, minWidth: 140 }}>
+                      {CUSTOMER_LANGS.map(l => (
+                        <button key={l.code} onClick={() => changeLang(l.code)}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: l.code === lang ? C.bg : "transparent", border: "none", borderRadius: 10, fontSize: 14, cursor: "pointer", color: C.dark, fontWeight: l.code === lang ? 700 : 400, ...FF }}>
+                          <span>{l.flag}</span><span>{l.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {count > 0 && <button onClick={() => setStep("cart")} style={{ background: C.accent, border: "none", borderRadius: 20, padding: "10px 18px", color: C.white, fontWeight: 700, fontSize: 14, cursor: "pointer", ...FF }}>🛒 {count} · {total.toFixed(2)}€</button>}
               </div>
             </div>
@@ -6476,8 +6589,8 @@ function CustomerPage({ slug, tableNum }) {
                       <div>
                         <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{item.name}</p>
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 3 }}>
-                          {item.is_menu && <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>🍽️+🥤 Menu</span>}
-                          {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>⭐ Populaire</span>}
+                          {item.is_menu && <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>{L.menuBadge}</span>}
+                          {item.is_popular && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>{L.popular}</span>}
                         </div>
                       </div>
                       <div style={{ flexShrink: 0, marginLeft: 8, textAlign: "right" }}>
@@ -6493,7 +6606,7 @@ function CustomerPage({ slug, tableNum }) {
                         <button onClick={() => addToCart(item)} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 18, ...FF }}>+</button>
                       </div>
                     ) : (
-                      <button onClick={() => addToCart(item)} style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", ...FF }}>Ajouter</button>
+                      <button onClick={() => addToCart(item)} style={{ padding: "7px 16px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 13, cursor: "pointer", ...FF }}>{L.add}</button>
                     )}
                   </div>
                 </div>
@@ -6503,7 +6616,7 @@ function CustomerPage({ slug, tableNum }) {
           {count > 0 && (
             <div style={{ position: "sticky", bottom: 0, padding: "12px 16px", background: C.white, borderTop: `1px solid ${C.border}` }}>
               <button onClick={() => setStep("cart")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", ...FF }}>
-                <span>🛒 Voir le panier ({count})</span><span>{total.toFixed(2)}€</span>
+                <span>🛒 {L.cart} ({count})</span><span>{total.toFixed(2)}€</span>
               </button>
             </div>
           )}
@@ -6512,8 +6625,8 @@ function CustomerPage({ slug, tableNum }) {
 
       {step === "cart" && (
         <div style={{ padding: "40px 20px 24px" }}>
-          <button onClick={() => setStep("menu")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Continuer mes achats</button>
-          <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 24 }}>Mon panier</p>
+          <button onClick={() => setStep("menu")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>{L.back}</button>
+          <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 24 }}>🛒 {L.cart}</p>
           {cart.map((item, ci) => (
             <div key={ci} style={{ padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
@@ -6545,14 +6658,14 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           ))}
           <div style={{ marginTop: 16 }}>
-            <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>Note pour la cuisine (allergies, cuisson…)</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ex: sans gluten, viande bien cuite…" rows={3} style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", fontSize: 14, color: C.dark, resize: "none", outline: "none", ...FF }} />
+            <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>{L.note}</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder={L.notePlaceholder} rows={3} style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", fontSize: 14, color: C.dark, resize: "none", outline: "none", ...FF }} />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0" }}>
-            <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>Total</span>
+            <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>{L.total}</span>
             <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
           </div>
-          <button onClick={() => setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>Paiement →</button>
+          <button onClick={() => setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>{L.payment}</button>
         </div>
       )}
 
@@ -6596,13 +6709,13 @@ function CustomerPage({ slug, tableNum }) {
           {confirming ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 16 }}>
               <div style={{ width: 40, height: 40, border: `3px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
-              <p style={{ fontSize: 15, color: C.textSecondary, fontWeight: 500 }}>Enregistrement de votre commande…</p>
+              <p style={{ fontSize: 15, color: C.textSecondary, fontWeight: 500 }}>{L.confirming}</p>
             </div>
           ) : (
             <>
               <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
-              <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>Paiement</p>
-              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: restaurant?.id === "demo" ? 12 : 24 }}>Table {tableNum} · {restaurant?.name}</p>
+              <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>{L.payTitle}</p>
+              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: restaurant?.id === "demo" ? 12 : 24 }}>{L.table} {tableNum} · {restaurant?.name}</p>
               {restaurant?.id === "demo" && (
                 <div style={{ background: "#FFF9E6", border: "1.5px solid #F5C542", borderRadius: 12, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 18 }}>🎭</span>
@@ -6640,7 +6753,7 @@ function CustomerPage({ slug, tableNum }) {
                     onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
                     <div style={{ fontSize: 26 }}>💵</div>
-                    <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Espèces</p><p style={{ color: C.textSecondary, fontSize: 13 }}>Le serveur passera à votre table</p></div>
+                    <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{L.cashBtn}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{L.table}</p></div>
                     <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
                   </div>
                 </>
@@ -6876,11 +6989,11 @@ function CustomerPage({ slug, tableNum }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
                     <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>
-                      ÉTAPE {step + 1} / {totalSteps} · {item.emoji} {item.name}
+                      {L.compose} {step + 1} {L.of} {totalSteps} · {item.emoji} {item.name}
                     </p>
-                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{isExtrasStep ? "Suppléments" : grp.groupName}</p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{isExtrasStep ? L.extrasTitle : grp.groupName}</p>
                     <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>
-                      {isExtrasStep ? "Optionnel · Ajoutez des suppléments" : (grp.required ? "Obligatoire" : "Optionnel") + " · " + (grp.maxChoices === 1 ? "1 choix" : `Jusqu'à ${grp.maxChoices} choix`)}
+                      {isExtrasStep ? L.extrasDesc : (grp.required ? L.required : L.optional) + " · " + (grp.maxChoices === 1 ? L.maxChoice : L.maxChoices.replace("%n", grp.maxChoices))}
                     </p>
                   </div>
                   <button onClick={() => setComposeModal(null)} style={{ background: C.bg, border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
@@ -6917,12 +7030,12 @@ function CustomerPage({ slug, tableNum }) {
                 {step > 0 && (
                   <button onClick={() => setComposeModal(p => ({ ...p, step: p.step - 1 }))}
                     style={{ background: "none", border: "none", color: C.textSecondary, fontSize: 14, cursor: "pointer", marginBottom: 8, padding: 0, ...FF }}>
-                    ← Étape précédente
+                    {L.prev}
                   </button>
                 )}
                 <button onClick={nextStep} disabled={!canNext}
                   style={{ width: "100%", padding: 16, background: canNext ? C.dark : C.border, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: canNext ? "pointer" : "not-allowed", transition: "background 0.2s", ...FF }}>
-                  {isLast ? "🛒 Ajouter au panier" : `Suivant →`}
+                  {isLast ? L.addCart : L.next}
                 </button>
               </div>
             </div>
