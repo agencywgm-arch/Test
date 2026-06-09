@@ -5952,17 +5952,23 @@ function CustomerPage({ slug, tableNum }) {
       }
 
       let { data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim(), customer_email: customerEmail.trim() })
+        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null })
         .select().single();
 
-      // Fallback if extra columns not migrated yet
-      if (error && (error.message?.includes("column") || error.message?.includes("payment_method"))) {
+      // Fallback 1: without customer fields
+      if (error) {
+        ({ data: order, error } = await supabase.from("orders")
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod })
+          .select().single());
+      }
+      // Fallback 2: without payment_method either
+      if (error) {
         ({ data: order, error } = await supabase.from("orders")
           .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING" })
           .select().single());
       }
 
-      if (error || !order) { setConfirmError("Erreur lors de la commande. Veuillez réessayer."); setConfirming(false); return; }
+      if (error || !order) { setConfirmError("Erreur lors de la commande : " + (error?.message || "réessayez")); setConfirming(false); return; }
 
       const orderItems = cart.map(i => ({ order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: "" }));
       await supabase.from("order_items").insert(orderItems);
