@@ -3405,8 +3405,9 @@ function InventoryTab({ restaurant }) {
   );
 }
 
-const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "", supplements: [] };
+const EMPTY_ITEM = { name: "", description: "", price: "", category: "Plats", emoji: "🍽️", photo_url: "", is_popular: false, available: true, stock: "", supplements: [], extras: [] };
 // supplements format: [{ groupName, required, maxChoices, options: [{name, price}] }]
+// extras format: [{name, price}] — optional add-ons shown at end of composition tunnel
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
 function MenuTabDash({ restaurant }) {
@@ -3431,7 +3432,7 @@ function MenuTabDash({ restaurant }) {
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
-  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [] }); setError(""); setModal({ mode: "edit", item }); }
+  function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [], extras: item.extras || [] }); setError(""); setModal({ mode: "edit", item }); }
 
   async function updateStock(item, delta) {
     const cur = item.stock == null ? null : item.stock;
@@ -3460,7 +3461,10 @@ function MenuTabDash({ restaurant }) {
       .filter(g => g.groupName?.trim())
       .map(g => ({ groupName: g.groupName.trim(), required: !!g.required, maxChoices: g.maxChoices || 1, options: (g.options || []).filter(o => o.name?.trim()).map(o => ({ name: o.name.trim(), price: parseFloat(o.price) || 0 })) }))
       .filter(g => g.options.length > 0);
-    const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id, supplements };
+    const extras = (form.extras || [])
+      .filter(e => e.name?.trim())
+      .map(e => ({ name: e.name.trim(), price: parseFloat(e.price) || 0 }));
+    const payload = { ...form, price: parseFloat(form.price), stock, available, restaurant_id: restaurant.id, supplements, extras };
     if (restaurant.id === "demo") {
       if (modal.mode === "add") {
         setItems(p => [...p, { ...payload, id: "dm_" + Date.now() }]);
@@ -3748,6 +3752,38 @@ function MenuTabDash({ restaurant }) {
                     style={{ background: "none", border: `1px dashed ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textSecondary, cursor: "pointer", marginTop: 4, width: "100%", ...FF }}>
                     + Option
                   </button>
+                </div>
+              ))}
+            </div>
+            {/* Suppléments additionnels */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div>
+                  <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 600 }}>➕ Suppléments additionnels</label>
+                  <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>Options optionnelles proposées à la fin du tunnel (ex: Sauce pimentée, Extra fromage)</p>
+                </div>
+                <button type="button" onClick={() => setForm(p => ({ ...p, extras: [...(p.extras || []), { name: "", price: "" }] }))}
+                  style={{ background: C.dark, color: C.white, border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, ...FF }}>
+                  + Supplément
+                </button>
+              </div>
+              {(form.extras || []).map((ext, ei) => (
+                <div key={ei} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                  <input
+                    placeholder="Ex: Extra fromage, Sauce pimentée…"
+                    value={ext.name}
+                    onChange={e => setForm(p => { const ex = [...(p.extras || [])]; ex[ei] = { ...ex[ei], name: e.target.value }; return { ...p, extras: ex }; })}
+                    style={{ flex: 1, background: C.bg, border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+                  />
+                  <input
+                    type="number" placeholder="0" min="0" step="0.5"
+                    value={ext.price}
+                    onChange={e => setForm(p => { const ex = [...(p.extras || [])]; ex[ei] = { ...ex[ei], price: e.target.value }; return { ...p, extras: ex }; })}
+                    style={{ width: 64, background: C.bg, border: "none", borderRadius: 8, padding: "8px 8px", fontSize: 13, color: C.dark, outline: "none", ...FF }}
+                  />
+                  <span style={{ fontSize: 12, color: C.textSecondary }}>€</span>
+                  <button type="button" onClick={() => setForm(p => ({ ...p, extras: (p.extras || []).filter((_, i) => i !== ei) }))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.textTertiary, fontSize: 14, padding: "0 2px" }}>✕</button>
                 </div>
               ))}
             </div>
@@ -4720,7 +4756,8 @@ function ClientView({ restaurant, onBack }) {
 
   function cvAddToCart(item) {
     const groups = (item.supplements || []).filter(g => g.options?.length > 0);
-    if (groups.length > 0) {
+    const extras = (item.extras || []).filter(e => e.name?.trim());
+    if (groups.length > 0 || extras.length > 0) {
       setCvComposeModal({ item, step: 0, choices: {} });
     } else {
       setCart(p => { const e = p.find(i => i.id === item.id && !i._composed); return e ? p.map(i => i.id === item.id && !i._composed ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, _choices: {} }]; });
@@ -4875,30 +4912,50 @@ function ClientView({ restaurant, onBack }) {
       {cvComposeModal && (() => {
         const { item, step, choices } = cvComposeModal;
         const groups = (item.supplements || []).filter(g => g.options?.length > 0);
-        const grp = groups[step];
-        if (!grp) return null;
-        const selected = choices[grp.groupName] || [];
-        const canNext = !grp.required || selected.length > 0;
-        const isLast = step === groups.length - 1;
+        const itemExtras = (item.extras || []).filter(e => e.name?.trim());
+        const hasExtras = itemExtras.length > 0;
+        const totalSteps = groups.length + (hasExtras ? 1 : 0);
+        const isExtrasStep = hasExtras && step === groups.length;
+        const grp = !isExtrasStep ? groups[step] : null;
+        if (!grp && !isExtrasStep) return null;
+        const selected = grp ? (choices[grp.groupName] || []) : (choices["__extras__"] || []);
+        const canNext = isExtrasStep ? true : (!grp.required || selected.length > 0);
+        const isLast = step === totalSteps - 1;
         function toggleOpt(opt) {
-          const already = selected.some(s => s.name === opt.name);
-          let next;
-          if (already) { next = selected.filter(s => s.name !== opt.name); }
-          else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
-          else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
-          else { next = selected; }
-          setCvComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+          if (isExtrasStep) {
+            const already = selected.some(s => s.name === opt.name);
+            const next = already ? selected.filter(s => s.name !== opt.name) : [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }];
+            setCvComposeModal(p => ({ ...p, choices: { ...p.choices, "__extras__": next } }));
+          } else {
+            const already = selected.some(s => s.name === opt.name);
+            let next;
+            if (already) { next = selected.filter(s => s.name !== opt.name); }
+            else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+            else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+            else { next = selected; }
+            setCvComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+          }
         }
         function nextStep() {
           if (!canNext) return;
           if (isLast) {
-            const allChoices = { ...choices, [grp.groupName]: selected };
-            const extraPrice = Object.values(allChoices).flat().reduce((s, o) => s + (o.price || 0), 0);
+            const allChoices = isExtrasStep
+              ? { ...choices, "__extras__": selected }
+              : { ...choices, [grp.groupName]: selected };
+            const extraPrice = Object.entries(allChoices)
+              .filter(([k]) => k !== "__extras__")
+              .flatMap(([, v]) => v)
+              .reduce((s, o) => s + (o.price || 0), 0)
+              + (allChoices["__extras__"] || []).reduce((s, o) => s + (o.price || 0), 0);
             const cartItem = { ...item, _composed: true, _choices: allChoices, price: item.price + extraPrice, qty: 1 };
             setCart(p => [...p, cartItem]);
             setCvComposeModal(null);
           } else {
-            setCvComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+            if (!isExtrasStep) {
+              setCvComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+            } else {
+              setCvComposeModal(p => ({ ...p, step: p.step + 1 }));
+            }
           }
         }
         return (
@@ -4907,25 +4964,25 @@ function ClientView({ restaurant, onBack }) {
               <div style={{ padding: "20px 20px 0" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>ÉTAPE {step + 1}/{groups.length} · {item.emoji} {item.name}</p>
-                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{grp.groupName}</p>
-                    <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>{grp.required ? "Obligatoire" : "Optionnel"} · {grp.maxChoices === 1 ? "1 choix" : `Max ${grp.maxChoices}`}</p>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>ÉTAPE {step + 1}/{totalSteps} · {item.emoji} {item.name}</p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{isExtrasStep ? "Suppléments" : grp.groupName}</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>{isExtrasStep ? "Optionnel · Ajoutez des suppléments" : (grp.required ? "Obligatoire" : "Optionnel") + " · " + (grp.maxChoices === 1 ? "1 choix" : `Max ${grp.maxChoices}`)}</p>
                   </div>
                   <button onClick={() => setCvComposeModal(null)} style={{ background: C.bg, border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
                 </div>
                 <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-                  {groups.map((_, i) => <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= step ? C.dark : C.border }} />)}
+                  {Array.from({ length: totalSteps }).map((_, i) => <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= step ? C.dark : C.border }} />)}
                 </div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
-                {grp.options.map((opt, oi) => {
+                {(isExtrasStep ? itemExtras : grp.options).map((opt, oi) => {
                   const isSelected = selected.some(s => s.name === opt.name);
                   return (
                     <div key={oi} onClick={() => toggleOpt(opt)}
                       style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 14, marginBottom: 8, background: isSelected ? C.dark : C.bg, border: `1.5px solid ${isSelected ? C.dark : C.border}`, cursor: "pointer", transition: "all 0.15s" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ width: 22, height: 22, borderRadius: grp.maxChoices === 1 ? "50%" : 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: grp.maxChoices === 1 ? "50%" : 3, background: C.dark }} />}
+                        <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: 3, background: C.dark }} />}
                         </div>
                         <span style={{ fontSize: 15, fontWeight: 600, color: isSelected ? C.white : C.dark }}>{opt.name}</span>
                       </div>
@@ -6079,7 +6136,8 @@ function CustomerPage({ slug, tableNum }) {
 
   function addToCart(item) {
     const groups = (item.supplements || []).filter(g => g.options?.length > 0);
-    if (groups.length > 0) {
+    const extras = (item.extras || []).filter(e => e.name?.trim());
+    if (groups.length > 0 || extras.length > 0) {
       setComposeModal({ item, step: 0, choices: {} });
     } else {
       setCart(p => { const e = p.find(i => i.id === item.id && !i._composed); return e ? p.map(i => i.id === item.id && !i._composed ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, _choices: {} }]; });
@@ -6698,31 +6756,50 @@ function CustomerPage({ slug, tableNum }) {
       {composeModal && (() => {
         const { item, step, choices } = composeModal;
         const groups = (item.supplements || []).filter(g => g.options?.length > 0);
-        const grp = groups[step];
-        if (!grp) return null;
-        const selected = choices[grp.groupName] || [];
-        const canNext = !grp.required || selected.length > 0;
-        const isLast = step === groups.length - 1;
+        const itemExtras = (item.extras || []).filter(e => e.name?.trim());
+        const hasExtras = itemExtras.length > 0;
+        const totalSteps = groups.length + (hasExtras ? 1 : 0);
+        const isExtrasStep = hasExtras && step === groups.length;
+        const grp = !isExtrasStep ? groups[step] : null;
+        if (!grp && !isExtrasStep) return null;
+        const selected = grp ? (choices[grp.groupName] || []) : (choices["__extras__"] || []);
+        const canNext = isExtrasStep ? true : (!grp.required || selected.length > 0);
+        const isLast = step === totalSteps - 1;
         function toggleOpt(opt) {
-          const already = selected.some(s => s.name === opt.name);
-          let next;
-          if (already) { next = selected.filter(s => s.name !== opt.name); }
-          else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
-          else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
-          else { next = selected; }
-          setComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+          if (isExtrasStep) {
+            const already = selected.some(s => s.name === opt.name);
+            const next = already ? selected.filter(s => s.name !== opt.name) : [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }];
+            setComposeModal(p => ({ ...p, choices: { ...p.choices, "__extras__": next } }));
+          } else {
+            const already = selected.some(s => s.name === opt.name);
+            let next;
+            if (already) { next = selected.filter(s => s.name !== opt.name); }
+            else if (selected.length < (grp.maxChoices || 1)) { next = [...selected, { name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+            else if (grp.maxChoices === 1) { next = [{ name: opt.name, price: parseFloat(opt.price) || 0 }]; }
+            else { next = selected; }
+            setComposeModal(p => ({ ...p, choices: { ...p.choices, [grp.groupName]: next } }));
+          }
         }
         function nextStep() {
           if (!canNext) return;
           if (isLast) {
-            // Build cart item with all choices
-            const allChoices = { ...choices, [grp.groupName]: selected };
-            const extraPrice = Object.values(allChoices).flat().reduce((s, o) => s + (o.price || 0), 0);
+            const allChoices = isExtrasStep
+              ? { ...choices, "__extras__": selected }
+              : { ...choices, [grp.groupName]: selected };
+            const extraPrice = Object.entries(allChoices)
+              .filter(([k]) => k !== "__extras__")
+              .flatMap(([, v]) => v)
+              .reduce((s, o) => s + (o.price || 0), 0)
+              + (allChoices["__extras__"] || []).reduce((s, o) => s + (o.price || 0), 0);
             const cartItem = { ...item, _composed: true, _choices: allChoices, price: item.price + extraPrice, qty: 1 };
             setCart(p => [...p, cartItem]);
             setComposeModal(null);
           } else {
-            setComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+            if (!isExtrasStep) {
+              setComposeModal(p => ({ ...p, step: p.step + 1, choices: { ...p.choices, [grp.groupName]: selected } }));
+            } else {
+              setComposeModal(p => ({ ...p, step: p.step + 1 }));
+            }
           }
         }
         return (
@@ -6733,32 +6810,32 @@ function CustomerPage({ slug, tableNum }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
                     <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 4 }}>
-                      ÉTAPE {step + 1} / {groups.length} · {item.emoji} {item.name}
+                      ÉTAPE {step + 1} / {totalSteps} · {item.emoji} {item.name}
                     </p>
-                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{grp.groupName}</p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: C.dark }}>{isExtrasStep ? "Suppléments" : grp.groupName}</p>
                     <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>
-                      {grp.required ? "Obligatoire" : "Optionnel"} · {grp.maxChoices === 1 ? "1 choix" : `Jusqu'à ${grp.maxChoices} choix`}
+                      {isExtrasStep ? "Optionnel · Ajoutez des suppléments" : (grp.required ? "Obligatoire" : "Optionnel") + " · " + (grp.maxChoices === 1 ? "1 choix" : `Jusqu'à ${grp.maxChoices} choix`)}
                     </p>
                   </div>
                   <button onClick={() => setComposeModal(null)} style={{ background: C.bg, border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 18, cursor: "pointer", color: C.textSecondary }}>×</button>
                 </div>
-                {/* Progress dots */}
+                {/* Progress bar */}
                 <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-                  {groups.map((_, i) => (
+                  {Array.from({ length: totalSteps }).map((_, i) => (
                     <div key={i} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= step ? C.dark : C.border, transition: "background 0.2s" }} />
                   ))}
                 </div>
               </div>
               {/* Options */}
               <div style={{ flex: 1, overflowY: "auto", padding: "0 20px" }}>
-                {grp.options.map((opt, oi) => {
+                {(isExtrasStep ? itemExtras : grp.options).map((opt, oi) => {
                   const isSelected = selected.some(s => s.name === opt.name);
                   return (
                     <div key={oi} onClick={() => toggleOpt(opt)}
                       style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderRadius: 14, marginBottom: 8, background: isSelected ? C.dark : C.bg, border: `1.5px solid ${isSelected ? C.dark : C.border}`, cursor: "pointer", transition: "all 0.15s" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ width: 22, height: 22, borderRadius: grp.maxChoices === 1 ? "50%" : 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: grp.maxChoices === 1 ? "50%" : 3, background: C.dark }} />}
+                        <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isSelected ? C.white : C.border}`, background: isSelected ? C.white : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {isSelected && <div style={{ width: 10, height: 10, borderRadius: 3, background: C.dark }} />}
                         </div>
                         <span style={{ fontSize: 15, fontWeight: 600, color: isSelected ? C.white : C.dark }}>{opt.name}</span>
                       </div>
