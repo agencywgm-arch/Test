@@ -4771,10 +4771,10 @@ function ClientView({ restaurant, onBack }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <button onClick={() => rem(item.id)} style={{ width: 28, height: 28, borderRadius: "50%", border: `1.5px solid ${C.borderStrong}`, background: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>−</button>
                       <span style={{ fontWeight: 800, fontSize: 15 }}>{inCart.qty}</span>
-                      <button onClick={() => add(item)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
+                      <button onClick={() => cvAddToCart(item)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: C.dark, color: C.white, fontWeight: 900, cursor: "pointer", fontSize: 16, ...FF }}>+</button>
                     </div>
                   ) : (
-                    <button onClick={() => add(item)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>Ajouter</button>
+                    <button onClick={() => cvAddToCart(item)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${C.borderStrong}`, background: C.white, color: C.dark, fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>Ajouter</button>
                   )}
                 </div>
               </div>
@@ -4790,6 +4790,33 @@ function ClientView({ restaurant, onBack }) {
         </div>
       )}
       <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
+      {cvSupModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setCvSupModal(null)}>
+          <div style={{ background: C.white, borderRadius: "20px 20px 0 0", padding: "24px 20px 32px", width: "100%", maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: C.dark, marginBottom: 4 }}>{cvSupModal.item.name}</p>
+            <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16 }}>Personnalisez votre commande</p>
+            {cvSupModal.item.supplements.map((sup, idx) => (
+              <label key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input type="checkbox" checked={cvSelectedSups.some(s => s.name === sup.name)}
+                    onChange={e => setCvSelectedSups(p => e.target.checked ? [...p, sup] : p.filter(s => s.name !== sup.name))}
+                    style={{ width: 18, height: 18, cursor: "pointer" }} />
+                  <span style={{ fontSize: 15, color: C.dark }}>{sup.name}</span>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>+{Number(sup.price).toFixed(2)}€</span>
+              </label>
+            ))}
+            <button onClick={() => {
+              const supsPriceSum = cvSelectedSups.reduce((s, x) => s + x.price, 0);
+              const itemWithSups = { ...cvSupModal.item, price: cvSupModal.item.price + supsPriceSum, supplements: cvSelectedSups };
+              setCart(p => [...p, { ...itemWithSups, qty: 1 }]);
+              setCvSupModal(null);
+            }} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 20, ...FF }}>
+              Ajouter au panier
+            </button>
+          </div>
+        </div>
+      )}
     </Frame>
   );
 
