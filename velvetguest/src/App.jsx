@@ -4597,20 +4597,34 @@ function ClientView({ restaurant, onBack }) {
     setCvChatLoading(false);
   }
 
+  const [catOrderClient, setCatOrderClient] = useState([]);
+
   useEffect(() => {
     if (restaurant.id === "demo") { setMenuItems(DEMO_MENU); setLoadingMenu(false); return; }
-    supabase.from("menu_items").select("*")
-      .eq("restaurant_id", restaurant.id).eq("available", true)
-      .order("category").order("name")
-      .then(({ data }) => {
-        const seen = new Set();
-        setMenuItems((data ?? []).filter(i => seen.has(i.id) ? false : seen.add(i.id)));
-        setLoadingMenu(false);
-      });
+    Promise.all([
+      supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).eq("available", true).order("category").order("name"),
+      supabase.from("restaurant_settings").select("category_order").eq("restaurant_id", restaurant.id).maybeSingle(),
+    ]).then(([menuRes, settRes]) => {
+      const seen = new Set();
+      setMenuItems((menuRes.data ?? []).filter(i => seen.has(i.id) ? false : seen.add(i.id)));
+      if (settRes.data?.category_order?.length) setCatOrderClient(settRes.data.category_order);
+      setLoadingMenu(false);
+    });
   }, [restaurant.id]);
 
-  const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
-  const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const rawCatsClient = Array.from(new Set(menuItems.map(i => i.category)));
+  const sortedCatsClient = catOrderClient.length
+    ? [...catOrderClient.filter(c => rawCatsClient.includes(c)), ...rawCatsClient.filter(c => !catOrderClient.includes(c))]
+    : rawCatsClient;
+  const cats = ["Tous", ...sortedCatsClient];
+  const baseFiltered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const filtered = activeCat === "Tous"
+    ? [...baseFiltered].sort((a, b) => {
+        const ai = sortedCatsClient.indexOf(a.category);
+        const bi = sortedCatsClient.indexOf(b.category);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+    : baseFiltered;
   const total = cart.reduce((s, i) => s + Number(i.price) * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
   const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1 }]; });
