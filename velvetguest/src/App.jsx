@@ -4945,31 +4945,7 @@ function ClientView({ restaurant, onBack }) {
   const [payMode, setPayMode] = useState(null);
   const [orderError, setOrderError] = useState("");
   const [ordering, setOrdering] = useState(false);
-  const [cvChatOpen, setCvChatOpen] = useState(false);
-  const [cvChatMsgs, setCvChatMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
-  const [cvChatInput, setCvChatInput] = useState("");
-  const [cvChatLoading, setCvChatLoading] = useState(false);
   const tableNum = 1;
-
-  async function sendCvChat() {
-    if (!cvChatInput.trim() || cvChatLoading) return;
-    const userMsg = { role: "user", content: cvChatInput.trim() };
-    const next = [...cvChatMsgs, userMsg];
-    setCvChatMsgs(next); setCvChatInput(""); setCvChatLoading(true);
-    try {
-      const menuSummary = menuItems.map(i => `${i.emoji} ${i.name} (${i.category}) — ${i.description || "sans description"}`).join("\n");
-      const ctx = `Restaurant : ${restaurant?.name}\nTable : ${tableNum}\n\nMenu disponible :\n${menuSummary}`;
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ messages: next, context: ctx, mode: "customer" }),
-      });
-      const { content } = await res.json();
-      setCvChatMsgs(p => [...p, { role: "assistant", content: content || "Désolé, je n'ai pas pu répondre." }]);
-    } catch { setCvChatMsgs(p => [...p, { role: "assistant", content: "Désolé, une erreur est survenue." }]); }
-    setCvChatLoading(false);
-  }
-
   const [catOrderClient, setCatOrderClient] = useState([]);
   const [stripeEnabledCV, setStripeEnabledCV] = useState(false);
   const [cvComposeModal, setCvComposeModal] = useState(null);
@@ -5135,7 +5111,6 @@ function ClientView({ restaurant, onBack }) {
           </button>
         </div>
       )}
-      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
       {cvComposeModal && (() => {
         const { item, step, choices } = cvComposeModal;
         const groups = (item.supplements || []).filter(g => g.options?.length > 0);
@@ -5258,7 +5233,6 @@ function ClientView({ restaurant, onBack }) {
         </div>
         <button onClick={() => setStep("payment")} style={{ width: "100%", padding: 15, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", marginBottom: 16, ...FF }}>Paiement →</button>
       </div>
-      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
     </Frame>
   );
 
@@ -5320,7 +5294,6 @@ function ClientView({ restaurant, onBack }) {
           <CardPaymentForm total={total} onSuccess={confirmOrder} onCancel={() => setPayMode(null)} restaurant={restaurant} />
         )}
       </div>
-      <ClientViewChat menuItems={menuItems} restaurant={restaurant} tableNum={tableNum} />
     </Frame>
   );
 
@@ -5343,85 +5316,6 @@ function ClientView({ restaurant, onBack }) {
         <button onClick={() => { setStep("menu"); setCart([]); setRating(0); setNote(""); }} style={{ width: "100%", padding: 14, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander à nouveau</button>
       </div>
     </Frame>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CLIENT VIEW CHAT WIDGET — allergen assistant in admin preview
-// ─────────────────────────────────────────────────────────────────────────────
-function ClientViewChat({ menuItems, restaurant, tableNum }) {
-  const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-
-  useEffect(() => { if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
-
-  async function send() {
-    if (!input.trim() || loading) return;
-    const userMsg = { role: "user", content: input.trim() };
-    const next = [...msgs, userMsg];
-    setMsgs(next); setInput(""); setLoading(true);
-    try {
-      const menuSummary = menuItems.map(i => `${i.emoji} ${i.name} (${i.category}) — ${i.description || "sans description"}`).join("\n");
-      const ctx = `Restaurant : ${restaurant?.name}\nTable : ${tableNum}\n\nMenu disponible :\n${menuSummary}`;
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ messages: next, context: ctx, mode: "customer" }),
-      });
-      const { content } = await res.json();
-      setMsgs(p => [...p, { role: "assistant", content: content || "Désolé, je n'ai pas pu répondre." }]);
-    } catch { setMsgs(p => [...p, { role: "assistant", content: "Désolé, une erreur est survenue." }]); }
-    setLoading(false);
-  }
-
-  return (
-    <>
-      <button onClick={() => setOpen(p => !p)}
-        style={{ position: "fixed", bottom: 100, right: 32, width: 48, height: 48, borderRadius: "50%", background: C.dark, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 200, ...FF }}
-        title="Aide & allergènes">💬</button>
-      {open && (
-        <div style={{ position: "fixed", bottom: 162, right: 20, left: 20, maxWidth: 380, margin: "0 auto", background: C.white, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", zIndex: 200, display: "flex", flexDirection: "column", maxHeight: 400, ...FF }}>
-          <div style={{ background: C.dark, borderRadius: "20px 20px 0 0", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <span style={{ fontSize: 18 }}>🤖</span>
-              <div>
-                <p style={{ color: C.white, fontWeight: 700, fontSize: 13, margin: 0 }}>Assistant Gémo</p>
-                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, margin: 0 }}>Allergènes & ingrédients</p>
-              </div>
-            </div>
-            <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, width: 26, height: 26, color: C.white, cursor: "pointer", fontSize: 13, ...FF }}>✕</button>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {msgs.map((m, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                <div style={{ maxWidth: "82%", background: m.role === "user" ? C.dark : C.bg, color: m.role === "user" ? C.white : C.dark, borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", padding: "9px 12px", fontSize: 12, lineHeight: 1.5 }}>{m.content}</div>
-              </div>
-            ))}
-            {loading && <div style={{ display: "flex" }}><div style={{ background: C.bg, borderRadius: "16px 16px 16px 4px", padding: "9px 14px", fontSize: 12, color: C.textTertiary }}>···</div></div>}
-            {msgs.length === 1 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4 }}>
-                {["Plats sans gluten ?", "Végétarien ?", "Allergènes ?"].map(q => (
-                  <button key={q} onClick={() => setInput(q)} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 20, padding: "5px 10px", fontSize: 11, color: C.dark, cursor: "pointer", ...FF }}>{q}</button>
-                ))}
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-          <div style={{ padding: "8px 12px 12px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 7 }}>
-            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
-              placeholder="Poser une question…"
-              style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "8px 11px", fontSize: 12, color: C.dark, outline: "none", ...FF }} />
-            <button onClick={send} disabled={!input.trim() || loading}
-              style={{ width: 34, height: 34, borderRadius: 10, background: input.trim() && !loading ? C.dark : C.bg, border: "none", cursor: input.trim() && !loading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", ...FF }}>
-              <span style={{ color: input.trim() && !loading ? C.white : C.textTertiary, fontSize: 14 }}>↑</span>
-            </button>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
