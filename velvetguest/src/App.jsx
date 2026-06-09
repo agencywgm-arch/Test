@@ -3670,9 +3670,11 @@ function MenuTabDash({ restaurant }) {
               </div>
               <div style={{ flex: 1 }}>
                 <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Catégorie</label>
-                <select value={form.category} onChange={fv("category")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF, marginBottom: 16 }}>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
+                <input list="cat-suggestions" value={form.category} onChange={fv("category")} placeholder="Ex: Tacos, Pizzas…"
+                  style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 15, color: C.dark, outline: "none", ...FF, marginBottom: 16, boxSizing: "border-box" }} />
+                <datalist id="cat-suggestions">
+                  {[...CATEGORIES, ...Array.from(new Set(items.map(i => i.category).filter(c => c && !CATEGORIES.includes(c))))].map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
             </div>
             <div style={{ marginBottom: 16 }}>
