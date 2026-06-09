@@ -4355,7 +4355,34 @@ function CuisineView({ restaurant, onBack }) {
   const store = useContext(StoreCtx);
   const { orders, served, loading, advanceOrder, toggleItem } = useLiveOrders(restaurant.id, store.pushNotif);
   const [clock, setClock] = useState(new Date());
+  const [etaMap, setEtaMap] = useState({}); // orderId -> ISO string
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  // Load existing ETAs on mount
+  useEffect(() => {
+    if (!orders.length || restaurant.id === "demo") return;
+    const ids = orders.map(o => o.id).filter(id => !id.startsWith("demo"));
+    if (!ids.length) return;
+    supabase.from("orders").select("id,estimated_ready_at").in("id", ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const map = {};
+        data.forEach(r => { if (r.estimated_ready_at) map[r.id] = r.estimated_ready_at; });
+        setEtaMap(map);
+      });
+  }, [orders.length]);
+
+  async function adjustETA(orderId, deltaMin) {
+    const current = etaMap[orderId] ? new Date(etaMap[orderId]) : new Date(Date.now() + 15 * 60 * 1000);
+    const next = new Date(current.getTime() + deltaMin * 60 * 1000);
+    // Don't go below 1 minute from now
+    const min1 = new Date(Date.now() + 60 * 1000);
+    const clamped = next < min1 ? min1 : next;
+    setEtaMap(p => ({ ...p, [orderId]: clamped.toISOString() }));
+    if (restaurant.id !== "demo") {
+      await supabase.from("orders").update({ estimated_ready_at: clamped.toISOString() }).eq("id", orderId);
+    }
+  }
 
   const COLS = [
     { key: "new", label: "Nouvelles", color: "#0071E3", orders: orders.filter(o => o.status === "new") },
@@ -4458,6 +4485,28 @@ function CuisineView({ restaurant, onBack }) {
                         <p style={{ textAlign: "right", fontSize: 10, color: C.textTertiary, marginTop: 3, fontWeight: 600 }}>{doneCount}/{order.items.length} prêts</p>
                       </div>
                     )}
+                    {order.status !== "ready" && (() => {
+                      const eta = etaMap[order.id] ? new Date(etaMap[order.id]) : null;
+                      const diffMin = eta ? Math.round((eta - clock) / 60000) : null;
+                      const etaStr = eta ? eta.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : null;
+                      return (
+                        <div style={{ padding: "0 12px 8px" }}>
+                          <div style={{ background: "#FFF8E7", border: "1px solid #FFD60A30", borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div>
+                              <p style={{ fontSize: 10, color: "#7A5C00", fontWeight: 700, letterSpacing: "0.05em" }}>TEMPS CLIENT</p>
+                              <p style={{ fontSize: 15, fontWeight: 800, color: "#7A5C00", lineHeight: 1.1 }}>
+                                {eta ? (diffMin <= 0 ? "Prêt!" : `≈ ${diffMin} min`) : "— min"}
+                                {etaStr && diffMin > 0 && <span style={{ fontSize: 11, fontWeight: 500, color: "#A07800" }}> · {etaStr}</span>}
+                              </p>
+                            </div>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button onClick={() => adjustETA(order.id, -5)} style={{ background: C.accentGreen + "20", border: "none", borderRadius: 8, width: 32, height: 32, fontSize: 14, fontWeight: 800, color: C.accentGreen, cursor: "pointer", ...FF }}>−5</button>
+                              <button onClick={() => adjustETA(order.id, 5)} style={{ background: C.accent + "20", border: "none", borderRadius: 8, width: 32, height: 32, fontSize: 14, fontWeight: 800, color: C.accent, cursor: "pointer", ...FF }}>+5</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div style={{ padding: "6px 12px 12px" }}>
                       <button onClick={() => canAdvance && advanceOrder(order.id)} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
                         {!canAdvance ? `${order.items.length - doneCount} élément${order.items.length - doneCount > 1 ? "s" : ""} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
@@ -5934,6 +5983,8 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
+  const [orderStatus, setOrderStatus] = useState("PENDING");
   const [supModal, setSupModal] = useState(null); // null | { item }
   const [selectedSups, setSelectedSups] = useState([]);
 
@@ -5990,6 +6041,23 @@ function CustomerPage({ slug, tableNum }) {
     }
     load();
   }, [slug, tableNum]);
+
+  // Poll order status + estimated time every 10s when on "done" step
+  useEffect(() => {
+    if (step !== "done" || !orderId || orderId.startsWith("demo-")) return;
+    function poll() {
+      supabase.from("orders").select("status,estimated_ready_at").eq("id", orderId).single()
+        .then(({ data }) => {
+          if (data) {
+            setOrderStatus(data.status);
+            if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
+          }
+        }).catch(() => {});
+    }
+    poll();
+    const t = setInterval(poll, 10000);
+    return () => clearInterval(t);
+  }, [step, orderId]);
 
   const rawCats = Array.from(new Set(menuItems.map(i => i.category)));
   const sortedCats = catOrderCustomer.length
@@ -6081,6 +6149,11 @@ function CustomerPage({ slug, tableNum }) {
         }
       } catch {}
       setOrderId(order.id);
+      // Set default estimated ready time (15 min from now)
+      try {
+        const eta = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        await supabase.from("orders").update({ estimated_ready_at: eta }).eq("id", order.id);
+      } catch {}
       setStep("done");
       // Upsert customer profile
       try {
@@ -6366,6 +6439,40 @@ function CustomerPage({ slug, tableNum }) {
               <p style={{ fontSize: 24, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>Commande envoyée !</p>
               <p style={{ color: C.textSecondary, fontSize: 14 }}>Votre commande est en cuisine · Table {tableNum}</p>
             </div>
+
+            {/* ETA banner */}
+            {(() => {
+              if (orderStatus === "READY" || orderStatus === "ready") {
+                return (
+                  <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
+                    <p style={{ fontSize: 18, fontWeight: 800, color: C.accentGreen, marginBottom: 2 }}>Votre commande est prête !</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary }}>Le serveur arrive à votre table.</p>
+                  </div>
+                );
+              }
+              if (!estimatedReadyAt) return null;
+              const eta = new Date(estimatedReadyAt);
+              const now = new Date();
+              const diffMs = eta - now;
+              const diffMin = Math.max(0, Math.round(diffMs / 60000));
+              const etaStr = eta.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+              const isLate = diffMs < 0;
+              return (
+                <div style={{ background: isLate ? C.accent + "12" : "#FFF8E7", border: `1.5px solid ${isLate ? C.accent + "40" : "#FFD60A40"}`, borderRadius: 16, padding: "16px 20px", marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ fontSize: 32 }}>{isLate ? "⏰" : "🕐"}</div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 2 }}>Temps d'attente estimé</p>
+                      {isLate
+                        ? <p style={{ fontSize: 16, fontWeight: 800, color: C.accent }}>Préparation en cours…</p>
+                        : <p style={{ fontSize: 22, fontWeight: 900, color: "#7A5C00", lineHeight: 1.1 }}>≈ {diffMin} min <span style={{ fontSize: 13, fontWeight: 500, color: C.textSecondary }}>(vers {etaStr})</span></p>
+                      }
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Ticket */}
             <div id="ticket-receipt" style={{ background: C.white, borderRadius: 20, overflow: "hidden", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", marginBottom: 20 }}>
