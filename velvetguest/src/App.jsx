@@ -3306,12 +3306,18 @@ function MenuTabDash({ restaurant }) {
   const [form, setForm] = useState(EMPTY_ITEM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [catOrder, setCatOrder] = useState([]); // custom category order
+  const [showOrder, setShowOrder] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const dragCat = useRef(null);
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
     if (restaurant.id === "demo") { setItems(DEMO_MENU); setLoading(false); return; }
     supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).order("category").order("name")
       .then(({ data }) => { setItems(data ?? []); setLoading(false); });
+    supabase.from("restaurant_settings").select("category_order").eq("restaurant_id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data?.category_order) setCatOrder(data.category_order); });
   }, [restaurant.id]);
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
@@ -3373,13 +3379,85 @@ function MenuTabDash({ restaurant }) {
   }
 
   const byCategory = items.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
+  const allCats = Object.keys(byCategory);
+  // Merge: catOrder first (only those that still exist), then any new cats not yet in order
+  const orderedCats = [...catOrder.filter(c => allCats.includes(c)), ...allCats.filter(c => !catOrder.includes(c))];
+
+  function onDragStart(cat) { dragCat.current = cat; }
+  function onDragOver(e, cat) {
+    e.preventDefault();
+    if (dragCat.current === cat) return;
+    setCatOrder(prev => {
+      const order = orderedCats.filter(c => prev.length === 0 || prev.includes(c) || allCats.includes(c));
+      const from = order.indexOf(dragCat.current);
+      const to = order.indexOf(cat);
+      if (from === -1 || to === -1) return prev;
+      const next = [...order];
+      next.splice(from, 1);
+      next.splice(to, 0, dragCat.current);
+      return next;
+    });
+  }
+  function onDragEnd() { dragCat.current = null; }
+
+  async function saveOrder() {
+    setSavingOrder(true);
+    if (restaurant.id !== "demo") {
+      await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, category_order: orderedCats, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    }
+    setCatOrder(orderedCats);
+    setSavingOrder(false);
+    setShowOrder(false);
+  }
 
   return (
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
-        <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" size="sm" onClick={() => setShowOrder(o => !o)}>📋 Disposition</Btn>
+          <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
+        </div>
       </div>
+
+      {/* Category order panel */}
+      {showOrder && (
+        <Surface style={{ padding: 20, marginBottom: 20, border: `1.5px solid ${C.accentBlue}30` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>📋 Disposition de la carte</div>
+              <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Glissez les catégories pour les réordonner. L'ordre s'applique à la vue client.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => setShowOrder(false)}>Annuler</Btn>
+              <Btn variant="primary" size="sm" disabled={savingOrder} onClick={saveOrder}>{savingOrder ? "..." : "💾 Enregistrer"}</Btn>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {orderedCats.map((cat, i) => (
+              <div key={cat}
+                draggable
+                onDragStart={() => onDragStart(cat)}
+                onDragOver={e => onDragOver(e, cat)}
+                onDragEnd={onDragEnd}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.bg, borderRadius: 10, border: `1.5px solid ${C.border}`, cursor: "grab", userSelect: "none", transition: "box-shadow 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.1)"}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                <span style={{ fontSize: 14, color: C.textTertiary, cursor: "grab" }}>⠿</span>
+                <span style={{ fontSize: 18 }}>{byCategory[cat]?.[0]?.emoji || "🍽️"}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark, flex: 1 }}>{cat}</span>
+                <span style={{ fontSize: 12, color: C.textTertiary }}>{byCategory[cat]?.length} plat{byCategory[cat]?.length !== 1 ? "s" : ""}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === 0) return o; o.splice(i, 1); o.splice(i - 1, 0, cat); return o; })}
+                    style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▲</button>
+                  <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === orderedCats.length - 1) return o; o.splice(i, 1); o.splice(i + 1, 0, cat); return o; })}
+                    style={{ background: "none", border: "none", cursor: i === orderedCats.length - 1 ? "default" : "pointer", opacity: i === orderedCats.length - 1 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▼</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Surface>
+      )}
 
       {loading ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -3393,7 +3471,7 @@ function MenuTabDash({ restaurant }) {
           <Btn variant="primary" onClick={openAdd}>+ Premier plat</Btn>
         </Surface>
       ) : (
-        Object.entries(byCategory).map(([cat, catItems]) => (
+        orderedCats.map(cat => { const catItems = byCategory[cat]; if (!catItems) return null; return (
           <div key={cat} style={{ marginBottom: 20 }}>
             <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8, paddingLeft: 4 }}>{cat.toUpperCase()}</p>
             <Surface style={{ overflow: "hidden" }}>
@@ -3432,7 +3510,7 @@ function MenuTabDash({ restaurant }) {
               ))}
             </Surface>
           </div>
-        ))
+        ); })
       )}
 
       {modal && (
@@ -5657,6 +5735,7 @@ function CustomerPage({ slug, tableNum }) {
   const [confirmError, setConfirmError] = useState("");
   const [activePromos, setActivePromos] = useState([]);
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
+  const [catOrderCustomer, setCatOrderCustomer] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -5688,10 +5767,11 @@ function CustomerPage({ slug, tableNum }) {
           const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
           setActivePromos(promos ?? []);
         } catch {}
-        // Google review settings
+        // Google review settings + category order
         try {
-          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled").eq("restaurant_id", resto.id).maybeSingle();
+          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order").eq("restaurant_id", resto.id).maybeSingle();
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
+          if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
         } catch {}
         setStep("menu");
       } catch {
@@ -5701,7 +5781,11 @@ function CustomerPage({ slug, tableNum }) {
     load();
   }, [slug, tableNum]);
 
-  const cats = ["Tous", ...Array.from(new Set(menuItems.map(i => i.category)))];
+  const rawCats = Array.from(new Set(menuItems.map(i => i.category)));
+  const sortedCats = catOrderCustomer.length
+    ? [...catOrderCustomer.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrderCustomer.includes(c))]
+    : rawCats;
+  const cats = ["Tous", ...sortedCats];
   const filtered = activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
   // Apply best active promo discount to all items
   const bestDiscount = activePromos.reduce((max, p) => Math.max(max, p.discount_percent || 0), 0);
