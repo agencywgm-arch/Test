@@ -4598,16 +4598,18 @@ function ClientView({ restaurant, onBack }) {
   }
 
   const [catOrderClient, setCatOrderClient] = useState([]);
+  const [stripeEnabledCV, setStripeEnabledCV] = useState(false);
 
   useEffect(() => {
     if (restaurant.id === "demo") { setMenuItems(DEMO_MENU); setLoadingMenu(false); return; }
     Promise.all([
       supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).eq("available", true).order("category").order("name"),
-      supabase.from("restaurant_settings").select("category_order").eq("restaurant_id", restaurant.id).maybeSingle(),
+      supabase.from("restaurant_settings").select("category_order,stripe_publishable_key").eq("restaurant_id", restaurant.id).maybeSingle(),
     ]).then(([menuRes, settRes]) => {
       const seen = new Set();
       setMenuItems((menuRes.data ?? []).filter(i => seen.has(i.id) ? false : seen.add(i.id)));
       if (settRes.data?.category_order?.length) setCatOrderClient(settRes.data.category_order);
+      if (settRes.data?.stripe_publishable_key) setStripeEnabledCV(true);
       setLoadingMenu(false);
     });
   }, [restaurant.id]);
@@ -4804,7 +4806,7 @@ function ClientView({ restaurant, onBack }) {
         )}
         {!payMode ? (
           <>
-            {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
+            {stripeEnabledCV && [{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
               <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, border: `1.5px solid ${C.border}`, borderRadius: 14, marginBottom: 10, cursor: "pointer", transition: "border-color 0.15s" }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = C.dark} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
                 <div style={{ fontSize: 24 }}>{m.icon}</div>
@@ -5859,6 +5861,7 @@ function CustomerPage({ slug, tableNum }) {
   const [activePromos, setActivePromos] = useState([]);
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -5892,9 +5895,10 @@ function CustomerPage({ slug, tableNum }) {
         } catch {}
         // Google review settings + category order
         try {
-          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order").eq("restaurant_id", resto.id).maybeSingle();
+          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key").eq("restaurant_id", resto.id).maybeSingle();
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
           if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
+          if (sett?.stripe_publishable_key) setStripeEnabled(true);
         } catch {}
         setStep("menu");
       } catch {
@@ -6233,7 +6237,7 @@ function CustomerPage({ slug, tableNum }) {
               )}
               {!payMode ? (
                 <>
-                  {[{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
+                  {stripeEnabled && [{ icon: "💳", l: "Carte bancaire", s: "Visa, Mastercard, Amex" }, { icon: "📱", l: "Apple Pay / Google Pay", s: "Paiement instantané" }].map(m => (
                     <div key={m.l} onClick={() => setPayMode("card")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, marginBottom: 12, cursor: "pointer", transition: "all 0.15s" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
