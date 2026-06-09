@@ -4390,21 +4390,54 @@ function exportRapportZ(orders, restaurant) {
 }
 
 function CaisseTab({ store, restaurant }) {
-  const today = store.doneOrders || [];
-  const revenue = store.revenue;
-  const avgTicket = today.length > 0 ? revenue / today.length : 0;
   const isMobile = useIsMobile();
-  const byMethod = today.reduce((acc, o) => {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [histOrders, setHistOrders] = useState(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const isToday = selectedDate === todayStr;
+  const orders = isToday ? (store.doneOrders || []) : (histOrders || []);
+
+  useEffect(() => {
+    if (isToday) { setHistOrders(null); return; }
+    setHistLoading(true);
+    const dayStart = new Date(selectedDate + "T00:00:00");
+    const dayEnd = new Date(selectedDate + "T23:59:59.999");
+    supabase.from("orders").select(ORDER_QUERY)
+      .eq("restaurant_id", restaurant.id).eq("status", "DONE")
+      .gte("created_at", dayStart.toISOString()).lte("created_at", dayEnd.toISOString())
+      .order("created_at", { ascending: false })
+      .then(({ data }) => { setHistOrders((data ?? []).map(fmtOrder)); setHistLoading(false); });
+  }, [selectedDate, isToday, restaurant.id]);
+
+  const revenue = orders.reduce((s, o) => s + o.total, 0);
+  const avgTicket = orders.length > 0 ? revenue / orders.length : 0;
+  const byMethod = orders.reduce((acc, o) => {
     const m = o.payment_method || "cash";
     acc[m] = (acc[m] || 0) + o.total;
     return acc;
   }, {});
 
+  const dateLabel = isToday ? "Aujourd'hui" : new Date(selectedDate + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
   return (
     <div className="fade-in">
+      {/* Date navigation */}
+      <Surface style={{ padding: "14px 20px", marginBottom: isMobile ? 12 : 20, display: "flex", alignItems: "center", gap: 12 }}>
+        <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toISOString().split("T")[0]); }} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, ...FF }}>‹</button>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark, textTransform: "capitalize", margin: 0 }}>{dateLabel}</p>
+          <p style={{ fontSize: 11, color: C.textTertiary, margin: 0 }}>Historique caisse</p>
+        </div>
+        <input type="date" value={selectedDate} max={todayStr}
+          onChange={e => e.target.value && setSelectedDate(e.target.value)}
+          style={{ fontSize: 13, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "6px 10px", background: C.white, cursor: "pointer", ...FF }} />
+        <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); const next = d.toISOString().split("T")[0]; if (next <= todayStr) setSelectedDate(next); }} disabled={isToday} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: isToday ? C.bg : C.white, cursor: isToday ? "not-allowed" : "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: isToday ? 0.4 : 1, ...FF }}>›</button>
+      </Surface>
+
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
-        <KPICard label="CA jour" value={`${revenue.toFixed(0)}€`} sub="clôturées" />
-        <KPICard label="Commandes" value={today.length} sub="servies" />
+        <KPICard label="CA du jour" value={`${revenue.toFixed(0)}€`} sub="clôturées" />
+        <KPICard label="Commandes" value={orders.length} sub="servies" />
         <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="" />
         <KPICard label="Espèces" value={`${(byMethod.cash || 0).toFixed(0)}€`} sub="à encaisser" />
       </div>
@@ -4429,15 +4462,15 @@ function CaisseTab({ store, restaurant }) {
         <Surface style={{ padding: "22px 24px" }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 6 }}>Exports comptables</p>
           <p style={{ fontSize: 12, color: C.textTertiary, marginBottom: 16 }}>Détail par article, client, TVA, mode de paiement</p>
-          <Btn variant="primary" full onClick={() => exportCSV(today, restaurant)} style={{ marginBottom: 10 }}>
+          <Btn variant="primary" full onClick={() => exportCSV(orders, restaurant)} style={{ marginBottom: 10 }}>
             📊 Exporter CSV (Excel / comptable)
           </Btn>
-          <Btn variant="ghost" full onClick={() => exportRapportZ(today, restaurant)} style={{ marginBottom: 10 }}>
+          <Btn variant="ghost" full onClick={() => exportRapportZ(orders, restaurant)} style={{ marginBottom: 10 }}>
             🖨️ Rapport Z — impression / PDF
           </Btn>
-          {today.length === 0 && (
+          {orders.length === 0 && !histLoading && (
             <p style={{ color: C.textTertiary, fontSize: 13, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
-              Les commandes clôturées<br />apparaîtront ici.
+              Aucune commande clôturée<br />{isToday ? "aujourd'hui" : "ce jour-là"}.
             </p>
           )}
         </Surface>
@@ -4445,19 +4478,21 @@ function CaisseTab({ store, restaurant }) {
 
       <Surface style={{ overflow: "hidden" }}>
         <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Journal du jour</p>
-          <p style={{ fontSize: 13, color: C.textSecondary }}>{today.length} commande{today.length !== 1 ? "s" : ""}</p>
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Journal — {isToday ? "Aujourd'hui" : new Date(selectedDate + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</p>
+          <p style={{ fontSize: 13, color: C.textSecondary }}>{orders.length} commande{orders.length !== 1 ? "s" : ""}</p>
         </div>
-        {today.length === 0 ? (
+        {histLoading ? (
+          <div style={{ padding: 40, textAlign: "center", color: C.textTertiary, fontSize: 14 }}>Chargement…</div>
+        ) : orders.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: C.textTertiary, fontSize: 14 }}>
-            Aucune commande clôturée aujourd'hui.<br />
-            <span style={{ fontSize: 12 }}>Passez les commandes en "Servie" depuis la vue cuisine.</span>
+            Aucune commande clôturée {isToday ? "aujourd'hui" : "ce jour-là"}.<br />
+            {isToday && <span style={{ fontSize: 12 }}>Passez les commandes en "Servie" depuis la vue cuisine.</span>}
           </div>
-        ) : today.map((o, i) => {
+        ) : orders.map((o, i) => {
           const pm = pmLabel(o.payment_method);
           const pmColor = o.payment_method === "card" ? C.accentBlue : o.payment_method?.includes("pay") ? C.accentPurple : C.accentGreen;
           return (
-            <div key={o.id} style={{ padding: "14px 22px", borderBottom: i < today.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div key={o.id} style={{ padding: "14px 22px", borderBottom: i < orders.length - 1 ? `1px solid ${C.border}` : "none" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -4483,9 +4518,9 @@ function CaisseTab({ store, restaurant }) {
             </div>
           );
         })}
-        {today.length > 0 && (
+        {orders.length > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", background: C.bg, borderTop: `2px solid ${C.borderStrong}` }}>
-            <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Total du jour</p>
+            <p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>Total</p>
             <p style={{ fontWeight: 900, fontSize: 20, color: C.dark, letterSpacing: "-0.03em" }}>{revenue.toFixed(2)} €</p>
           </div>
         )}
@@ -6349,7 +6384,39 @@ function CustomerPage({ slug, tableNum }) {
   const L = CT[lang] || CT.fr;
   const isRtl = lang === "ar";
 
+  const [translCache, setTranslCache] = useState({}); // `${lang}:${id}` → {name, description}
+
   function changeLang(code) { setLang(code); localStorage.setItem("vg_customer_lang", code); setShowLangPicker(false); setActiveCat(CT[code]?.all || "Tous"); }
+
+  // Translate menu items when language changes (unofficial Google Translate, no key needed)
+  useEffect(() => {
+    if (lang === "fr" || menuItems.length === 0) return;
+    const uncached = menuItems.filter(i => !translCache[`${lang}:${i.id}`]);
+    if (uncached.length === 0) return;
+    (async () => {
+      const results = {};
+      await Promise.all(uncached.map(async (item) => {
+        try {
+          const [tName, tDesc] = await Promise.all(
+            [item.name, item.description || ""].map(async (t) => {
+              if (!t) return t;
+              const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${lang}&dt=t&q=${encodeURIComponent(t)}`);
+              if (!res.ok) return t;
+              const json = await res.json();
+              return json?.[0]?.map(s => s[0]).join("") || t;
+            })
+          );
+          results[`${lang}:${item.id}`] = { name: tName || item.name, description: tDesc || item.description };
+        } catch { results[`${lang}:${item.id}`] = { name: item.name, description: item.description }; }
+      }));
+      setTranslCache(prev => ({ ...prev, ...results }));
+    })();
+  }, [lang, menuItems]);
+
+  function tItem(item) {
+    const t = translCache[`${lang}:${item.id}`];
+    return t ? { ...item, name: t.name || item.name, description: t.description || item.description } : item;
+  }
 
   function addToCart(item) {
     const groups = (item.supplements || []).filter(g => g.options?.length > 0);
@@ -6438,7 +6505,10 @@ function CustomerPage({ slug, tableNum }) {
     : filtered;
   // Apply best active promo discount to all items
   const bestDiscount = activePromos.reduce((max, p) => Math.max(max, p.discount_percent || 0), 0);
-  const filteredWithPromo = filteredSorted.map(item => bestDiscount > 0 ? { ...item, _originalPrice: item.price, price: +(item.price * (1 - bestDiscount / 100)).toFixed(2) } : item);
+  const filteredWithPromo = filteredSorted.map(item => {
+    const translated = tItem(item);
+    return bestDiscount > 0 ? { ...translated, _originalPrice: translated.price, price: +(translated.price * (1 - bestDiscount / 100)).toFixed(2) } : translated;
+  });
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const count = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -6523,7 +6593,7 @@ function CustomerPage({ slug, tableNum }) {
         await supabase.from("orders").update({ estimated_ready_at: eta }).eq("id", order.id);
       } catch {}
       setStep("done");
-      // Upsert customer profile
+      // Upsert customer profile + send receipt email
       try {
         if (customerEmail.trim()) {
           await supabase.from("customers").upsert({
@@ -6534,6 +6604,14 @@ function CustomerPage({ slug, tableNum }) {
             last_visit: new Date().toISOString().split("T")[0],
             last_order_total: total,
           }, { onConflict: "restaurant_id,email", ignoreDuplicates: false });
+
+          // Send receipt email regardless of payment method
+          const payLabelMap = { cash: "Espèces", card: "Carte bancaire", apple_pay: "Apple Pay", google_pay: "Google Pay" };
+          const itemsHtml = cart.map(i => `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;">${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:700;font-size:14px;">${(i.price * i.qty).toFixed(2)} €</td></tr>`).join("");
+          const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2><p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">Merci de votre visite ! 🙏</p></div></body></html>`;
+          supabase.functions.invoke("send-receipt-email", {
+            body: { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml }
+          }).catch(() => {});
         }
       } catch {}
     } catch (e) {
