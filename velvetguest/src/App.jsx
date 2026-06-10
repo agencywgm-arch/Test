@@ -5059,34 +5059,28 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
-  // Mock form state (used when Stripe not configured)
-  const [cardNum, setCardNum] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [name, setName] = useState("");
-  const [dbStripeKey, setDbStripeKey] = useState(null);
   const ENV_STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-  const STRIPE_KEY = ENV_STRIPE_KEY || dbStripeKey;
 
   useEffect(() => {
-    if (ENV_STRIPE_KEY || !restaurant?.id || restaurant.id === "demo") return;
-    supabase.from("restaurant_settings").select("stripe_publishable_key").eq("restaurant_id", restaurant.id).single()
-      .then(({ data }) => { if (data?.stripe_publishable_key) setDbStripeKey(data.stripe_publishable_key); });
-  }, [restaurant?.id, ENV_STRIPE_KEY]);
-
-  useEffect(() => {
-    if (!STRIPE_KEY) { setReady(true); return; }
+    let cancelled = false;
     const init = async () => {
       try {
+        // The edge function resolves the restaurant's Stripe keys server-side
+        // (RLS blocks anonymous customers from reading restaurant_settings)
         const res = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
-          { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` }, body: JSON.stringify({ amount: total }) }
+          { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+            body: JSON.stringify({ amount: total, restaurant_id: restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null }) }
         );
-        const { client_secret, error: fnErr } = await res.json();
+        const { client_secret, publishable_key, error: fnErr } = await res.json();
+        if (cancelled) return;
+        const pubKey = ENV_STRIPE_KEY || publishable_key;
+        if (fnErr === "stripe_not_configured" || !pubKey) { setConfigured(false); setReady(true); return; }
         if (fnErr || !client_secret) throw new Error(fnErr || "Pas de client_secret");
-        const stripe = window.Stripe(STRIPE_KEY);
+        const stripe = window.Stripe(pubKey);
         stripeRef.current = stripe;
         const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
         const payEl = elements.create("payment");
@@ -5094,24 +5088,19 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
         elementsRef.current = elements;
         setReady(true);
       } catch (e) {
+        if (cancelled) return;
         setError("Impossible de charger le module de paiement. Vérifiez votre connexion.");
         setReady(true);
       }
     };
+    let check;
     if (window.Stripe) { init(); } else {
-      const check = setInterval(() => { if (window.Stripe) { clearInterval(check); init(); } }, 100);
-      return () => clearInterval(check);
+      check = setInterval(() => { if (window.Stripe) { clearInterval(check); init(); } }, 100);
     }
-  }, [total, ENV_STRIPE_KEY, dbStripeKey]);
+    return () => { cancelled = true; if (check) clearInterval(check); };
+  }, [total, restaurant?.id]);
 
   async function pay() {
-    if (!STRIPE_KEY) {
-      // Simulate processing with a short delay
-      setPaying(true);
-      await new Promise(r => setTimeout(r, 1800));
-      await onSuccess("card");
-      return;
-    }
     if (!stripeRef.current || !elementsRef.current || paying) return;
     setPaying(true); setError("");
     const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
@@ -5127,7 +5116,7 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
   );
 
   // ── Stripe not configured — show clear message instead of fake form ─────────
-  if (!STRIPE_KEY) {
+  if (!configured) {
     return (
       <div style={{ textAlign: "center", padding: "32px 16px" }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>💳</div>
