@@ -297,9 +297,11 @@ function fmtOrder(o) {
     shortId: o.id.slice(0, 6).toUpperCase(),
     table: o.tables?.number ?? "?",
     customerName: o.customer_name || "",
+    customerEmail: o.customer_email || "",
     note: o.note || "",
     total: Number(o.total || 0),
     payment_method: o.payment_method || "cash",
+    paid: o.paid === true,
     status: fmtStatus(o.status),
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
     items: (o.order_items || []).map(oi => ({
@@ -451,7 +453,7 @@ function useStore(restaurantId) {
             const { data } = await supabase.from("orders").select(ORDER_QUERY).eq("id", row.id).single();
             if (data) setDoneOrders(prev => [fmtOrder(data), ...prev.slice(0, 49)]);
           } else {
-            setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: fmtStatus(row.status) } : o));
+            setOrders(prev => prev.map(o => o.id === row.id ? { ...o, status: fmtStatus(row.status), paid: row.paid === true } : o));
           }
         }
       )
@@ -2494,6 +2496,7 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
   const all = [...store.orders, ...store.servedOrders.slice(0, 4)];
   const isMobile = useIsMobile();
   const [editOrder, setEditOrder] = useState(null);
+  const [payingIds, setPayingIds] = useState({});
   const storeCtx = useContext(StoreCtx);
   const resolvedRestaurant = restaurantProp || { id: "demo" };
 
@@ -2502,6 +2505,42 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
       storeCtx.setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
     }
     setEditOrder(null);
+  }
+
+  // Cashier validates a cash payment → mark paid + send PAYÉ receipt email
+  async function markPaid(o) {
+    if (payingIds[o.id]) return;
+    setPayingIds(p => ({ ...p, [o.id]: true }));
+    try {
+      if (resolvedRestaurant.id !== "demo") {
+        const { error } = await supabase.from("orders").update({ paid: true }).eq("id", o.id);
+        if (error) {
+          storeCtx?.pushNotif?.(error.message?.includes("paid") ? "⚠️ Exécutez la migration SQL (colonne paid)" : "Erreur : " + error.message, "warning");
+          setPayingIds(p => ({ ...p, [o.id]: false }));
+          return;
+        }
+      }
+      if (storeCtx?.setOrders) storeCtx.setOrders(prev => prev.map(x => x.id === o.id ? { ...x, paid: true } : x));
+      storeCtx?.pushNotif?.(`💶 Table ${o.table} encaissée — ${o.total.toFixed(2)} €`, "success");
+
+      // Send the PAYÉ receipt by email if the customer left one
+      if (resolvedRestaurant.id !== "demo" && o.customerEmail) {
+        let tk = null;
+        try {
+          const { data } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resolvedRestaurant.id).maybeSingle();
+          tk = data;
+        } catch {}
+        const headerInfo = [tk?.ticket_address, tk?.ticket_phone ? `Tél : ${tk.ticket_phone}` : "", tk?.ticket_tax_id]
+          .filter(Boolean).map(l => `<p style="color:rgba(255,255,255,0.55);margin:2px 0 0;font-size:11px;">${l}</p>`).join("");
+        const itemsHtml = o.items.map(i => `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;">${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:700;font-size:14px;">${(i.price * i.qty).toFixed(2)} €</td></tr>`).join("");
+        const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${resolvedRestaurant.name || ""}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${o.table} · ${new Date(o.createdAt).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${o.shortId || o.id.slice(0,8).toUpperCase()}</p>${o.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${o.customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${o.total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : Espèces</p><div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${tk?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
+        supabase.functions.invoke("send-receipt-email", {
+          body: { restaurant_id: resolvedRestaurant.id, to_email: o.customerEmail, subject: `Votre reçu — ${resolvedRestaurant.name || "Wegemo"}`, html_body: receiptHtml }
+        }).catch(() => {});
+      }
+    } finally {
+      setPayingIds(p => ({ ...p, [o.id]: false }));
+    }
   }
 
   return (
@@ -2537,6 +2576,19 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
                 <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.items.map(i => i.name).join(", ")}</p>
               </div>
               {!isMobile && <p style={{ fontSize: 13, color: C.textSecondary, flexShrink: 0 }}>{Math.round(o.elapsed)} min</p>}
+              {/* Cash payment status */}
+              {o.payment_method === "cash" && !o.paid ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <Tag color="#FF9F0A">💵 {isMobile ? "Attente" : "En attente de paiement"}</Tag>
+                  <button onClick={() => markPaid(o)} disabled={!!payingIds[o.id]}
+                    style={{ background: C.accentGreen, border: "none", borderRadius: 8, padding: isMobile ? "6px 10px" : "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0, opacity: payingIds[o.id] ? 0.5 : 1, ...FF }}
+                    title="Valider le paiement en espèces">
+                    {payingIds[o.id] ? "..." : "✓ Encaissé"}
+                  </button>
+                </div>
+              ) : o.paid ? (
+                <Tag color={C.accentGreen}>✓ Payé</Tag>
+              ) : null}
               <Tag color={sc}>{sl}</Tag>
               {o.status !== "served" && (
                 <button onClick={() => setEditOrder(o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, color: C.textSecondary, flexShrink: 0, ...FF }} title="Modifier la commande">✏️</button>
@@ -6695,9 +6747,15 @@ function CustomerPage({ slug, tableNum }) {
       }
 
       let { data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null })
+        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash" })
         .select().single();
 
+      // Fallback 0: without paid column (not migrated yet)
+      if (error && error.message?.includes("paid")) {
+        ({ data: order, error } = await supabase.from("orders")
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null })
+          .select().single());
+      }
       // Fallback 1: without customer fields
       if (error) {
         ({ data: order, error } = await supabase.from("orders")
@@ -6763,7 +6821,9 @@ function CustomerPage({ slug, tableNum }) {
             last_order_total: total,
           }, { onConflict: "restaurant_id,email", ignoreDuplicates: false });
 
-          // Send receipt email regardless of payment method
+          // Send receipt email immediately only for paid (card) orders.
+          // Cash orders: the cashier triggers the PAYÉ receipt from the live orders view.
+          if (paymentMethod !== "cash") {
           const payLabelMap = { cash: "Espèces", card: "Carte bancaire", apple_pay: "Apple Pay", google_pay: "Google Pay" };
           const itemsHtml = cart.map(i => `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;">${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:700;font-size:14px;">${(i.price * i.qty).toFixed(2)} €</td></tr>`).join("");
           const isPaid = paymentMethod && paymentMethod !== "cash";
@@ -6779,6 +6839,7 @@ function CustomerPage({ slug, tableNum }) {
           supabase.functions.invoke("send-receipt-email", {
             body: { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml }
           }).catch(() => {});
+          }
         }
       } catch {}
     } catch (e) {
