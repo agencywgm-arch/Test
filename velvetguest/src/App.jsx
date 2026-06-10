@@ -5969,8 +5969,17 @@ function CampaignSender({ restaurant, customers }) {
 
           {/* Result */}
           {result && (
-            <div style={{ padding: "10px 14px", borderRadius: 10, background: result.error ? C.accent + "12" : C.accentGreen + "12", color: result.error ? C.accent : C.accentGreen, fontSize: 13, fontWeight: 600 }}>
-              {result.error ? `❌ Erreur : ${result.error}` : `✅ ${result.sent} envoyé${result.sent !== 1 ? "s" : ""}${result.failed > 0 ? `, ${result.failed} échoué(s)` : ""}`}
+            <div style={{ padding: "10px 14px", borderRadius: 10, background: result.error || result.failed > 0 ? C.accent + "12" : C.accentGreen + "12", color: result.error || result.failed > 0 ? C.accent : C.accentGreen, fontSize: 13, fontWeight: 600 }}>
+              {result.error
+                ? `❌ Erreur : ${result.error}`
+                : result.failed > 0 && result.sent === 0
+                  ? `❌ Échec de l'envoi`
+                  : `✅ ${result.sent} envoyé${result.sent !== 1 ? "s" : ""}${result.failed > 0 ? `, ${result.failed} échoué(s)` : ""}`}
+              {(result.errors || []).length > 0 && (
+                <div style={{ marginTop: 6, fontWeight: 500, fontSize: 12, lineHeight: 1.5 }}>
+                  {result.errors.slice(0, 3).map((e, i) => <p key={i} style={{ margin: 0 }}>{e}</p>)}
+                </div>
+              )}
             </div>
           )}
 
