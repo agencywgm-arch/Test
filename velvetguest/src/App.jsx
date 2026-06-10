@@ -1761,6 +1761,35 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
+const settingsInputStyle = (focused) => ({ width: "100%", background: focused ? "#fff" : "#F5F5F7", border: `1.5px solid ${focused ? "#1D1D1F" : "transparent"}`, borderRadius: 12, padding: "12px 44px 12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", transition: "all 0.15s", boxSizing: "border-box", fontFamily: "'Figtree', -apple-system, sans-serif" });
+const settingsEyeBtn = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: C.textTertiary, padding: 4 };
+
+function SettingsPwField({ label, placeholder, value, onChange, shown, onToggle }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
+      <div style={{ position: "relative" }}>
+        <input type={shown ? "text" : "password"} placeholder={placeholder} value={value}
+          onChange={onChange} style={settingsInputStyle(focused)}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
+        <button style={settingsEyeBtn} onClick={onToggle} type="button">{shown ? "🙈" : "👁"}</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsTxtField({ label, placeholder, value, onChange }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
+      <input type="text" placeholder={placeholder} value={value} onChange={onChange}
+        style={settingsInputStyle(focused)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
+    </div>
+  );
+}
+
 function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const store = useContext(StoreCtx);
   const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false };
@@ -1824,35 +1853,6 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     else store.pushNotif("✅ Configuration enregistrée", "success");
   }
 
-  const inputStyle = (focused) => ({ width: "100%", background: focused ? "#fff" : "#F5F5F7", border: `1.5px solid ${focused ? "#1D1D1F" : "transparent"}`, borderRadius: 12, padding: "12px 44px 12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", transition: "all 0.15s", fontFamily: "'Figtree', -apple-system, sans-serif" });
-  const eyeBtn = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: C.textTertiary, padding: 4 };
-
-  function PwField({ label, field, placeholder }) {
-    const [focused, setFocused] = useState(false);
-    return (
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
-        <div style={{ position: "relative" }}>
-          <input type={show[field] ? "text" : "password"} placeholder={placeholder} value={settings[field]}
-            onChange={set(field)} style={inputStyle(focused)}
-            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
-          <button style={eyeBtn} onClick={() => toggleShow(field)} type="button">{show[field] ? "🙈" : "👁"}</button>
-        </div>
-      </div>
-    );
-  }
-
-  function TxtField({ label, field, placeholder }) {
-    const [focused, setFocused] = useState(false);
-    return (
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
-        <input type="text" placeholder={placeholder} value={settings[field]} onChange={set(field)}
-          style={inputStyle(focused)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
-      </div>
-    );
-  }
-
   function ExtLink({ href, children }) {
     return (
       <a href="#" onClick={e => { e.preventDefault(); window.open(href, "_blank", "noopener"); }}
@@ -1905,8 +1905,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       <Surface style={{ padding: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>📧 Email — Resend</h3>
         <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Utilisé pour envoyer vos campagnes email à vos clients.</p>
-        <PwField label="Clé API Resend" field="resend_api_key" placeholder="re_xxxx..." />
-        <TxtField label="Email expéditeur" field="resend_from" placeholder="contact@monresto.fr" />
+        <SettingsPwField label="Clé API Resend" placeholder="re_xxxx..." value={settings.resend_api_key} onChange={set("resend_api_key")} shown={!!show.resend_api_key} onToggle={() => toggleShow("resend_api_key")} />
+        <SettingsTxtField label="Email expéditeur" placeholder="contact@monresto.fr" value={settings.resend_from} onChange={set("resend_from")} />
         <ExtLink href="https://resend.com">Obtenir une clé API Resend</ExtLink>
       </Surface>
 
@@ -1914,8 +1914,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       <Surface style={{ padding: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>💳 Paiement en ligne — Stripe</h3>
         <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Permet à vos clients de payer en ligne par carte bancaire.</p>
-        <TxtField label="Clé publique Stripe" field="stripe_publishable_key" placeholder="pk_live_..." />
-        <PwField label="Clé secrète Stripe" field="stripe_secret_key" placeholder="sk_live_..." />
+        <SettingsTxtField label="Clé publique Stripe" placeholder="pk_live_..." value={settings.stripe_publishable_key} onChange={set("stripe_publishable_key")} />
+        <SettingsPwField label="Clé secrète Stripe" placeholder="sk_live_..." value={settings.stripe_secret_key} onChange={set("stripe_secret_key")} shown={!!show.stripe_secret_key} onToggle={() => toggleShow("stripe_secret_key")} />
         <ExtLink href="https://dashboard.stripe.com/apikeys">Obtenir vos clés Stripe</ExtLink>
       </Surface>
 
@@ -1923,7 +1923,7 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       <Surface style={{ padding: 24 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>⭐ Avis Google</h3>
         <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Après chaque commande QR, proposez à vos clients de laisser un avis Google sur votre établissement.</p>
-        <TxtField label="URL de votre page avis Google" field="google_review_url" placeholder="https://g.page/r/xxxxx/review" />
+        <SettingsTxtField label="URL de votre page avis Google" placeholder="https://g.page/r/xxxxx/review" value={settings.google_review_url} onChange={set("google_review_url")} />
         <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 16, marginTop: -10 }}>
           Trouvez votre lien sur <a href="https://business.google.com" target="_blank" rel="noreferrer" style={{ color: C.accentBlue }}>Google Business Profile</a> → Demander des avis
         </p>
