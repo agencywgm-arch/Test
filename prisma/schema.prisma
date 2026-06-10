@@ -78,6 +78,29 @@ model AgentConfig {
   updatedAt DateTime @updatedAt
 }
 
+model RestaurantHistory {
+  id             String        @id @default(cuid())
+  name           String        @unique
+  address        String?
+  arrondissement String?
+  proposedAt     DateTime      @default(now())
+  status         String        @default("proposed")
+  carousels      CarouselPost[]
+}
+
+model CarouselPost {
+  id                String            @id @default(cuid())
+  restaurantId      String
+  restaurant        RestaurantHistory  @relation(fields: [restaurantId], references: [id])
+  slides            String
+  caption           String?
+  hashtags          String?
+  verificationNotes String?
+  status            String            @default("draft")
+  finalAssets       String?
+  createdAt         DateTime          @default(now())
+}
+
 model Contenu {
   id           String    @id @default(cuid())
   restaurant   String

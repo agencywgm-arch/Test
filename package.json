@@ -18,6 +18,7 @@
     "setup": "npm install && npm run db:push && npm run db:seed"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@prisma/client": "^5.14.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
