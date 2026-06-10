@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// Sécurité optionnelle : si WEBHOOK_SECRET est défini, le requérant doit le
+// fournir (header x-webhook-secret ou ?secret=). Sinon accès libre (plug-and-play).
+function checkSecret(req: NextRequest): boolean {
+  const secret = process.env.WEBHOOK_SECRET;
+  if (!secret) return true;
+  const provided =
+    req.headers.get("x-webhook-secret") ?? req.nextUrl.searchParams.get("secret");
+  return provided === secret;
+}
+
 export async function POST(req: NextRequest) {
+  if (!checkSecret(req)) {
+    return NextResponse.json({ error: "Secret invalide" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { type, id, action } = body;

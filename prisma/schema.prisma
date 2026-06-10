@@ -70,6 +70,14 @@ model StaffEvenement {
   @@unique([staffId, evenementId])
 }
 
+model AgentConfig {
+  id        String   @id @default(cuid())
+  agentId   String   @unique
+  active    Boolean  @default(false)
+  values    String   @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
 model Contenu {
   id           String    @id @default(cuid())
   restaurant   String

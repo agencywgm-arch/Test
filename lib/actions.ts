@@ -157,3 +157,73 @@ export async function deleteStaff(id: string) {
   revalidatePath("/staff");
   revalidatePath("/dashboard");
 }
+
+// ─── Agents IA ───────────────────────────────────────────────────────────────
+
+export async function saveAgentConfig(
+  agentId: string,
+  active: boolean,
+  values: Record<string, string>
+) {
+  await prisma.agentConfig.upsert({
+    where: { agentId },
+    update: { active, values: JSON.stringify(values) },
+    create: { agentId, active, values: JSON.stringify(values) },
+  });
+  revalidatePath("/staff");
+  revalidatePath("/evenements");
+  return { success: true };
+}
+
+export async function testAgentConfig(
+  agentId: string,
+  values: Record<string, string>
+): Promise<{ ok: boolean; message: string }> {
+  if (agentId === "agent-staff-whatsapp") {
+    const token = values.wa_business_token?.trim();
+    const phoneId = values.wa_phone_number_id?.trim();
+    if (!token || !phoneId) {
+      return { ok: false, message: "Renseigne le token WhatsApp Business et le Phone Number ID avant de tester." };
+    }
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v19.0/${encodeURIComponent(phoneId)}?access_token=${encodeURIComponent(token)}`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      if (res.ok && data.id) {
+        return { ok: true, message: `Connexion WhatsApp Business OK — numéro vérifié : ${data.display_phone_number ?? data.id}` };
+      }
+      return { ok: false, message: `Meta a refusé les identifiants : ${data.error?.message ?? `HTTP ${res.status}`}` };
+    } catch {
+      return { ok: false, message: "Impossible de joindre l'API Meta. Vérifie la connexion réseau du serveur." };
+    }
+  }
+
+  if (agentId === "agent-dm") {
+    const token = values.manychat_token?.trim();
+    if (!token) {
+      return { ok: false, message: "Renseigne le token ManyChat avant de tester." };
+    }
+    try {
+      const res = await fetch("https://api.manychat.com/fb/page/getInfo", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (res.ok && data.status === "success") {
+        return { ok: true, message: `Connexion ManyChat OK — page : ${data.data?.name ?? "vérifiée"}` };
+      }
+      return { ok: false, message: `ManyChat a refusé le token : ${data.message ?? `HTTP ${res.status}`}` };
+    } catch {
+      return { ok: false, message: "Impossible de joindre l'API ManyChat. Vérifie la connexion réseau du serveur." };
+    }
+  }
+
+  // Agents sans clé externe : on valide juste que les champs sont remplis
+  const empty = Object.entries(values).filter(([, v]) => !String(v ?? "").trim());
+  if (empty.length > 0) {
+    return { ok: false, message: `Champs manquants : ${empty.map(([k]) => k).join(", ")}` };
+  }
+  return { ok: true, message: "Configuration complète — l'agent est prêt à être activé." };
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { saveAgentConfig, testAgentConfig } from "@/lib/actions";
 
 interface AgentConfigProps {
   agentId: string;
@@ -8,6 +9,8 @@ interface AgentConfigProps {
   agentDescription: string;
   icon: string;
   color: string;
+  initialActive?: boolean;
+  initialValues?: Record<string, string>;
   fields: {
     key: string;
     label: string;
@@ -22,21 +25,49 @@ interface AgentConfigProps {
 
 export function AgentConfigPanel({
   agentId, agentName, agentDescription, icon, color, fields,
+  initialActive = false, initialValues,
 }: AgentConfigProps) {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(false);
+  const [active, setActive] = useState(initialActive);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [values, setValues] = useState<Record<string, string | boolean | number>>(() =>
-    Object.fromEntries(fields.map(f => [f.key, f.defaultValue ?? ""]))
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map(f => [
+      f.key,
+      initialValues?.[f.key] ?? String(f.defaultValue ?? ""),
+    ]))
   );
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const persist = async (nextActive: boolean) => {
+    setSaving(true);
+    try {
+      await saveAgentConfig(agentId, nextActive, values);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setTestResult({ ok: false, message: "Échec de la sauvegarde. Réessaie." });
+    }
+    setSaving(false);
   };
 
-  const handleTest = () => {
-    alert(`✅ Agent "${agentName}" testé avec succès.\n\nRéponse simulée reçue en 342ms.`);
+  const handleToggle = async () => {
+    const next = !active;
+    setActive(next);
+    await persist(next);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testAgentConfig(agentId, values);
+      setTestResult(result);
+    } catch {
+      setTestResult({ ok: false, message: "Erreur pendant le test. Réessaie." });
+    }
+    setTesting(false);
   };
 
   return (
@@ -102,9 +133,11 @@ export function AgentConfigPanel({
               </div>
             </div>
             <button
-              onClick={() => setActive(a => !a)}
+              onClick={handleToggle}
+              disabled={saving}
               style={{
-                width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer",
+                width: 52, height: 28, borderRadius: 14, border: "none",
+                cursor: saving ? "wait" : "pointer",
                 background: active ? "#10b981" : "#3f3f46",
                 position: "relative", transition: "background 0.2s", flexShrink: 0,
               }}
@@ -135,7 +168,7 @@ export function AgentConfigPanel({
 
                   {field.type === "textarea" ? (
                     <textarea
-                      value={String(values[field.key] ?? "")}
+                      value={values[field.key] ?? ""}
                       onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
                       placeholder={field.placeholder}
                       rows={4}
@@ -149,7 +182,7 @@ export function AgentConfigPanel({
                     />
                   ) : field.type === "select" ? (
                     <select
-                      value={String(values[field.key] ?? "")}
+                      value={values[field.key] ?? ""}
                       onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
                       style={{
                         width: "100%", padding: "10px 12px",
@@ -165,7 +198,7 @@ export function AgentConfigPanel({
                   ) : (
                     <input
                       type={field.secret ? "password" : field.type === "number" ? "number" : "text"}
-                      value={String(values[field.key] ?? "")}
+                      value={values[field.key] ?? ""}
                       onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
                       placeholder={field.placeholder}
                       style={{
@@ -181,27 +214,43 @@ export function AgentConfigPanel({
             })}
           </div>
 
+          {/* Résultat du test */}
+          {testResult && (
+            <div style={{
+              marginTop: 16, padding: "10px 14px", borderRadius: 10, fontSize: 13,
+              background: testResult.ok ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+              border: `1px solid ${testResult.ok ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+              color: testResult.ok ? "#10b981" : "#f87171",
+              lineHeight: 1.5,
+            }}>
+              {testResult.ok ? "✅" : "⚠️"} {testResult.message}
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
             <button
-              onClick={handleSave}
+              onClick={() => persist(active)}
+              disabled={saving}
               style={{
                 flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 700,
-                cursor: "pointer", border: "none",
+                cursor: saving ? "wait" : "pointer", border: "none",
                 background: saved ? "rgba(16,185,129,0.2)" : `linear-gradient(135deg, ${color}, ${color}cc)`,
                 color: saved ? "#10b981" : "white",
               }}
             >
-              {saved ? "✅ Sauvegardé" : "💾 Sauvegarder"}
+              {saving ? "⏳ Sauvegarde…" : saved ? "✅ Sauvegardé" : "💾 Sauvegarder"}
             </button>
             <button
               onClick={handleTest}
+              disabled={testing}
               style={{
                 padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600,
-                cursor: "pointer", background: "#27272a", color: "#a1a1aa", border: "none",
+                cursor: testing ? "wait" : "pointer",
+                background: "#27272a", color: "#a1a1aa", border: "none",
               }}
             >
-              🧪 Tester
+              {testing ? "⏳ Test…" : "🧪 Tester"}
             </button>
           </div>
         </div>

@@ -23,7 +23,19 @@ const ROLE_ICON: Record<string, string> = {
   Manager: "👑",
 };
 
+function parseValues(json: string): Record<string, string> {
+  try { return JSON.parse(json); } catch { return {}; }
+}
+
 export default async function Staff() {
+  const agentConfigs = await prisma.agentConfig.findMany();
+  const cfg = (agentId: string) => {
+    const c = agentConfigs.find(a => a.agentId === agentId);
+    return c
+      ? { initialActive: c.active, initialValues: parseValues(c.values) }
+      : {};
+  };
+
   const staff = await prisma.staff.findMany({
     orderBy: [{ role: "asc" }, { prenom: "asc" }],
     include: {
@@ -278,6 +290,7 @@ export default async function Staff() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
             <AgentConfigPanel
+              {...cfg("agent-staff-whatsapp")}
               agentId="agent-staff-whatsapp"
               agentName="Agent 3 — Convocations WhatsApp Staff"
               agentDescription="Envoie les convocations via WhatsApp Business, recueille les confirmations et alerte le promoteur"
@@ -346,6 +359,7 @@ export default async function Staff() {
             />
 
             <AgentConfigPanel
+              {...cfg("agent-staff-planning")}
               agentId="agent-staff-planning"
               agentName="Agent 3b — Planning automatique"
               agentDescription="Génère et envoie le planning détaillé à chaque membre confirmé 24h avant l'événement"

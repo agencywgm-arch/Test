@@ -12,7 +12,18 @@ const STATUT_LABEL: Record<string, string> = {
   PLANIFIE: "Planifié", CONFIRME: "Confirmé", TERMINE: "Terminé", ANNULE: "Annulé"
 };
 
+function parseValues(json: string): Record<string, string> {
+  try { return JSON.parse(json); } catch { return {}; }
+}
+
 export default async function Evenements() {
+  const agentConfigs = await prisma.agentConfig.findMany();
+  const cfg = (agentId: string) => {
+    const c = agentConfigs.find(a => a.agentId === agentId);
+    return c
+      ? { initialActive: c.active, initialValues: parseValues(c.values) }
+      : {};
+  };
 
   const evenements = await prisma.evenement.findMany({
     orderBy: { date: "asc" },
@@ -208,6 +219,7 @@ export default async function Evenements() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
             <AgentConfigPanel
+              {...cfg("agent-dm")}
               agentId="agent-dm"
               agentName="Agent 2 — Invitations Instagram DM"
               agentDescription="Envoie automatiquement les invitations aux participantes acceptées via ManyChat"
@@ -259,6 +271,7 @@ export default async function Evenements() {
             />
 
             <AgentConfigPanel
+              {...cfg("agent-event-notif")}
               agentId="agent-event-notif"
               agentName="Agent 2b — Rappels automatiques"
               agentDescription="Envoie un rappel Instagram 24h avant chaque événement aux participantes confirmées"
