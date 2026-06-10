@@ -5068,8 +5068,8 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
     let cancelled = false;
     const init = async () => {
       try {
-        // The edge function resolves the restaurant's Stripe keys server-side
-        // (RLS blocks anonymous customers from reading restaurant_settings)
+        // Edge function resolves restaurant Stripe keys server-side
+        // (RLS blocks anonymous customers from reading restaurant_settings directly)
         const res = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
           { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
