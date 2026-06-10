@@ -3422,6 +3422,9 @@ function MenuTabDash({ restaurant }) {
   const [showOrder, setShowOrder] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const dragCat = useRef(null);
+  const [expandedCats, setExpandedCats] = useState({}); // cat → bool (show dishes in disposition)
+  const [dishOrder, setDishOrder] = useState({}); // cat → [item ids] (pending reorder)
+  const [renamingCat, setRenamingCat] = useState(null); // { oldName, value }
   const [groupClipboard, setGroupClipboard] = useState(null); // copied supplements groups
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
@@ -3499,7 +3502,39 @@ function MenuTabDash({ restaurant }) {
   }
 
   const byCategory = items.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
+  Object.values(byCategory).forEach(arr => arr.sort((a, b) => ((a.sort_order ?? 9999) - (b.sort_order ?? 9999)) || a.name.localeCompare(b.name)));
   const allCats = Object.keys(byCategory);
+  // Dish list for a category, applying any pending reorder
+  function catDishes(cat) {
+    const base = byCategory[cat] || [];
+    const ids = dishOrder[cat];
+    if (!ids) return base;
+    const map = Object.fromEntries(base.map(i => [i.id, i]));
+    return [...ids.map(id => map[id]).filter(Boolean), ...base.filter(i => !ids.includes(i.id))];
+  }
+  function moveDish(cat, idx, dir) {
+    const list = catDishes(cat);
+    const to = idx + dir;
+    if (to < 0 || to >= list.length) return;
+    const ids = list.map(i => i.id);
+    [ids[idx], ids[to]] = [ids[to], ids[idx]];
+    setDishOrder(p => ({ ...p, [cat]: ids }));
+  }
+  async function renameCategory(oldName, newName) {
+    const name = newName.trim();
+    if (!name || name === oldName) { setRenamingCat(null); return; }
+    if (allCats.includes(name)) { store?.pushNotif?.("Cette catégorie existe déjà — les plats seront fusionnés", "info"); }
+    setItems(p => p.map(i => i.category === oldName ? { ...i, category: name } : i));
+    setCatOrder(p => p.map(c => c === oldName ? name : c));
+    setDishOrder(p => { const { [oldName]: moved, ...rest } = p; return moved ? { ...rest, [name]: moved } : rest; });
+    setExpandedCats(p => { const { [oldName]: was, ...rest } = p; return was ? { ...rest, [name]: true } : rest; });
+    setRenamingCat(null);
+    if (restaurant.id !== "demo") {
+      await supabase.from("menu_items").update({ category: name }).eq("restaurant_id", restaurant.id).eq("category", oldName);
+      await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, category_order: orderedCats.map(c => c === oldName ? name : c), updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    }
+    store?.pushNotif?.(`✅ Catégorie renommée : ${name}`, "success");
+  }
   // Merge: catOrder first (only those that still exist), then any new cats not yet in order
   const orderedCats = [...catOrder.filter(c => allCats.includes(c)), ...allCats.filter(c => !catOrder.includes(c))];
 
@@ -3524,8 +3559,26 @@ function MenuTabDash({ restaurant }) {
     setSavingOrder(true);
     if (restaurant.id !== "demo") {
       await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, category_order: orderedCats, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+      // Persist dish order within each reordered category
+      let sortErr = false;
+      for (const [cat, ids] of Object.entries(dishOrder)) {
+        for (let idx = 0; idx < ids.length; idx++) {
+          const { error } = await supabase.from("menu_items").update({ sort_order: idx }).eq("id", ids[idx]);
+          if (error?.message?.includes("column")) { sortErr = true; break; }
+        }
+        if (sortErr) break;
+      }
+      if (sortErr) store?.pushNotif?.("⚠️ Ordre des plats non sauvegardé : exécutez la migration SQL (colonne sort_order)", "warning");
     }
+    // Apply dish order locally
+    setItems(p => p.map(i => {
+      const ids = dishOrder[i.category];
+      if (!ids) return i;
+      const idx = ids.indexOf(i.id);
+      return idx === -1 ? i : { ...i, sort_order: idx };
+    }));
     setCatOrder(orderedCats);
+    setDishOrder({});
     setSavingOrder(false);
     setShowOrder(false);
   }
@@ -3554,27 +3607,65 @@ function MenuTabDash({ restaurant }) {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {orderedCats.map((cat, i) => (
-              <div key={cat}
-                draggable
-                onDragStart={() => onDragStart(cat)}
-                onDragOver={e => onDragOver(e, cat)}
-                onDragEnd={onDragEnd}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.bg, borderRadius: 10, border: `1.5px solid ${C.border}`, cursor: "grab", userSelect: "none", transition: "box-shadow 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.1)"}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
-                <span style={{ fontSize: 14, color: C.textTertiary, cursor: "grab" }}>⠿</span>
-                <span style={{ fontSize: 18 }}>{byCategory[cat]?.[0]?.emoji || "🍽️"}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark, flex: 1 }}>{cat}</span>
-                <span style={{ fontSize: 12, color: C.textTertiary }}>{byCategory[cat]?.length} plat{byCategory[cat]?.length !== 1 ? "s" : ""}</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === 0) return o; o.splice(i, 1); o.splice(i - 1, 0, cat); return o; })}
-                    style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▲</button>
-                  <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === orderedCats.length - 1) return o; o.splice(i, 1); o.splice(i + 1, 0, cat); return o; })}
-                    style={{ background: "none", border: "none", cursor: i === orderedCats.length - 1 ? "default" : "pointer", opacity: i === orderedCats.length - 1 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▼</button>
+            {orderedCats.map((cat, i) => {
+              const dishes = catDishes(cat);
+              const expanded = !!expandedCats[cat];
+              const renaming = renamingCat?.oldName === cat;
+              return (
+                <div key={cat} style={{ background: C.bg, borderRadius: 10, border: `1.5px solid ${expanded ? C.accentBlue + "50" : C.border}` }}>
+                  <div
+                    draggable={!renaming}
+                    onDragStart={() => onDragStart(cat)}
+                    onDragOver={e => onDragOver(e, cat)}
+                    onDragEnd={onDragEnd}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", cursor: renaming ? "default" : "grab", userSelect: "none" }}>
+                    <span style={{ fontSize: 14, color: C.textTertiary, cursor: "grab" }}>⠿</span>
+                    <span style={{ fontSize: 18 }}>{dishes[0]?.emoji || "🍽️"}</span>
+                    {renaming ? (
+                      <input autoFocus value={renamingCat.value}
+                        onChange={e => setRenamingCat(p => ({ ...p, value: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") renameCategory(cat, renamingCat.value); if (e.key === "Escape") setRenamingCat(null); }}
+                        onBlur={() => renameCategory(cat, renamingCat.value)}
+                        style={{ flex: 1, fontSize: 14, fontWeight: 600, color: C.dark, background: "#fff", border: `1.5px solid ${C.accentBlue}`, borderRadius: 8, padding: "5px 10px", outline: "none", ...FF }} />
+                    ) : (
+                      <span style={{ fontSize: 14, fontWeight: 600, color: C.dark, flex: 1 }}>{cat}</span>
+                    )}
+                    {!renaming && (
+                      <button onClick={e => { e.stopPropagation(); setRenamingCat({ oldName: cat, value: cat }); }} title="Renommer la catégorie"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: "2px 4px", opacity: 0.6 }}>✏️</button>
+                    )}
+                    <button onClick={() => setExpandedCats(p => ({ ...p, [cat]: !p[cat] }))}
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.accentBlue, fontWeight: 600, padding: "2px 6px", ...FF }}>
+                      {dishes.length} plat{dishes.length !== 1 ? "s" : ""} {expanded ? "▴" : "▾"}
+                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === 0) return o; o.splice(i, 1); o.splice(i - 1, 0, cat); return o; })}
+                        style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▲</button>
+                      <button onClick={() => setCatOrder(p => { const o = [...orderedCats]; if (i === orderedCats.length - 1) return o; o.splice(i, 1); o.splice(i + 1, 0, cat); return o; })}
+                        style={{ background: "none", border: "none", cursor: i === orderedCats.length - 1 ? "default" : "pointer", opacity: i === orderedCats.length - 1 ? 0.3 : 1, fontSize: 10, lineHeight: 1, padding: "1px 4px" }}>▼</button>
+                    </div>
+                  </div>
+                  {/* Dishes inside category — reorderable */}
+                  {expanded && (
+                    <div style={{ borderTop: `1px solid ${C.border}`, padding: "6px 10px 10px 38px", display: "flex", flexDirection: "column", gap: 4 }}>
+                      {dishes.map((d, di) => (
+                        <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: "#fff", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 16 }}>{d.photo_url ? <img src={d.photo_url} alt="" style={{ width: 24, height: 24, borderRadius: 6, objectFit: "cover", verticalAlign: "middle" }} /> : d.emoji}</span>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: C.dark, flex: 1 }}>{d.name}</span>
+                          <span style={{ fontSize: 12, color: C.textTertiary }}>{Number(d.price).toFixed(2)} €</span>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                            <button onClick={() => moveDish(cat, di, -1)}
+                              style={{ background: "none", border: "none", cursor: di === 0 ? "default" : "pointer", opacity: di === 0 ? 0.3 : 1, fontSize: 9, lineHeight: 1, padding: "1px 4px" }}>▲</button>
+                            <button onClick={() => moveDish(cat, di, 1)}
+                              style={{ background: "none", border: "none", cursor: di === dishes.length - 1 ? "default" : "pointer", opacity: di === dishes.length - 1 ? 0.3 : 1, fontSize: 9, lineHeight: 1, padding: "1px 4px" }}>▼</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Surface>
       )}
@@ -6511,7 +6602,10 @@ function CustomerPage({ slug, tableNum }) {
         // deduplicate by id in case DB has duplicate rows
         const raw = itemsRes.data ?? [];
         const seen = new Set();
-        setMenuItems(raw.filter(i => seen.has(i.id) ? false : seen.add(i.id)));
+        const deduped = raw.filter(i => seen.has(i.id) ? false : seen.add(i.id));
+        // Sort dishes within each category by custom sort_order (stable sort keeps category grouping logic intact)
+        deduped.sort((a, b) => ((a.sort_order ?? 9999) - (b.sort_order ?? 9999)) || a.name.localeCompare(b.name));
+        setMenuItems(deduped);
         // promos optional — table may not exist yet
         try {
           const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
