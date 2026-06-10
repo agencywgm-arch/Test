@@ -10,7 +10,6 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
   try {
-    // Verify caller is an authenticated Supabase user
     const authHeader = req.headers.get("Authorization")
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -31,7 +30,8 @@ serve(async (req) => {
       })
     }
 
-    const { restaurant_id, restaurant_name, subject, html_body, recipients } = await req.json()
+    const body = await req.json()
+    const { restaurant_id, restaurant_name, subject, html_body, recipients } = body
 
     if (!subject || !html_body || !Array.isArray(recipients) || recipients.length === 0) {
       return new Response(
@@ -40,75 +40,84 @@ serve(async (req) => {
       )
     }
 
-    // Verify the restaurant belongs to the authenticated user
-    if (restaurant_id) {
-      const { data: resto, error: restoErr } = await supabase
-        .from("restaurants")
-        .select("id")
-        .eq("id", restaurant_id)
-        .eq("owner_id", user.id)
-        .single()
-      if (restoErr || !resto) {
-        return new Response(JSON.stringify({ error: "Forbidden: restaurant not owned by user" }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
-        })
-      }
-    }
-
-    // Cap recipients to avoid abuse
     if (recipients.length > 500) {
       return new Response(JSON.stringify({ error: "Too many recipients (max 500)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
       })
     }
 
-    // Load restaurant-level API keys if available
-    const { data: rSettings } = restaurant_id
-      ? await supabase.from("restaurant_settings").select("resend_api_key, resend_from").eq("restaurant_id", restaurant_id).single()
-      : { data: null }
+    // Verify restaurant ownership (non-blocking if restaurant_id missing)
+    if (restaurant_id) {
+      const { data: resto } = await supabase
+        .from("restaurants")
+        .select("id")
+        .eq("id", restaurant_id)
+        .eq("owner_id", user.id)
+        .maybeSingle()
+      if (!resto) {
+        return new Response(JSON.stringify({ error: "Forbidden: restaurant not owned by user" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        })
+      }
+    }
+
+    // Load restaurant-level API keys — maybeSingle() won't throw if row missing
+    let rSettings: { resend_api_key?: string; resend_from?: string } | null = null
+    if (restaurant_id) {
+      const { data } = await supabase
+        .from("restaurant_settings")
+        .select("resend_api_key, resend_from")
+        .eq("restaurant_id", restaurant_id)
+        .maybeSingle()
+      rSettings = data
+    }
 
     const RESEND_API_KEY = rSettings?.resend_api_key || Deno.env.get("RESEND_API_KEY")
     if (!RESEND_API_KEY) {
       return new Response(
-        JSON.stringify({ error: "RESEND_API_KEY not configured" }),
+        JSON.stringify({ error: "RESEND_API_KEY not configured. Add it in Wegemo Settings → Email." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
-    const fromName = restaurant_name || "Wegemo"
     const fromEmail = rSettings?.resend_from || Deno.env.get("RESEND_FROM") || "onboarding@resend.dev"
-    const from = `${fromName} <${fromEmail}>`
+    const from = `${restaurant_name || "Wegemo"} <${fromEmail}>`
 
     let sent = 0
     let failed = 0
     const errors: string[] = []
 
     for (const to of recipients) {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ from, to, subject, html: html_body }),
-      })
-
-      if (res.ok) {
-        sent++
-      } else {
+      try {
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ from, to, subject, html: html_body }),
+        })
+        if (res.ok) {
+          sent++
+        } else {
+          failed++
+          const err = await res.json().catch(() => ({}))
+          errors.push(`${to}: ${err?.message || `HTTP ${res.status}`}`)
+        }
+      } catch (fetchErr) {
         failed++
-        const err = await res.json().catch(() => ({}))
-        errors.push(`${to}: ${err?.message || `HTTP ${res.status}`}`)
+        errors.push(`${to}: network error`)
       }
     }
 
+    // Log campaign (ignore if table doesn't exist)
     if (restaurant_id) {
       await supabase.from("campaign_logs").insert({
         restaurant_id,
         subject,
         sent_count: sent,
         failed_count: failed,
-      }).throwOnError().catch(() => {})
+      }).catch(() => {})
     }
 
     return new Response(
@@ -117,7 +126,7 @@ serve(async (req) => {
     )
   } catch (e) {
     return new Response(
-      JSON.stringify({ error: e.message }),
+      JSON.stringify({ error: String(e?.message || e) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
   }
