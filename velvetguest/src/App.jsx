@@ -1763,7 +1763,7 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const store = useContext(StoreCtx);
-  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false, ticket_address: "", ticket_phone: "", ticket_tax_id: "", ticket_footer: "" };
+  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false };
   const [settings, setSettings] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
@@ -1804,7 +1804,7 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     if (restaurant.id === "demo") return;
     supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
       .then(({ data, error }) => {
-        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled, ticket_address: data.ticket_address || "", ticket_phone: data.ticket_phone || "", ticket_tax_id: data.ticket_tax_id || "", ticket_footer: data.ticket_footer || "" });
+        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
         else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
@@ -1818,13 +1818,7 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       return;
     }
     setSaving(true);
-    let { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
-    // Fallback if ticket columns not migrated yet
-    if (error && error.message?.includes("column")) {
-      const { ticket_address, ticket_phone, ticket_tax_id, ticket_footer, ...legacy } = settings;
-      ({ error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...legacy, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" }));
-      if (!error) { setSaving(false); store.pushNotif("⚠️ Sauvegardé, sauf le ticket : exécutez la migration SQL (colonnes ticket_*)", "warning"); return; }
-    }
+    const { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
     setSaving(false);
     if (error) store.pushNotif("Erreur : " + error.message, "warning");
     else store.pushNotif("✅ Configuration enregistrée", "success");
@@ -1942,32 +1936,6 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
             style={{ width: 44, height: 26, borderRadius: 13, background: settings.google_review_enabled ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
             <div style={{ position: "absolute", top: 3, left: settings.google_review_enabled ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
           </div>
-        </div>
-      </Surface>
-
-      {/* Ticket de caisse */}
-      <Surface style={{ padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🧾 Ticket de caisse</h3>
-        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Personnalisez les informations affichées sur le ticket remis au client à la fin de sa commande. Le nom du restaurant apparaît toujours.</p>
-        <TxtField label="Adresse du restaurant" field="ticket_address" placeholder="12 rue de la République, 75001 Paris" />
-        <TxtField label="Téléphone" field="ticket_phone" placeholder="+33 1 23 45 67 89" />
-        <TxtField label="N° d'identification fiscale (NIF, SIRET, TVA…)" field="ticket_tax_id" placeholder="NIF 123456789 / SIRET 123 456 789 00012" />
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Message en bas du ticket (libre)</label>
-          <textarea value={settings.ticket_footer} onChange={set("ticket_footer")} rows={2} placeholder="Merci de votre visite ! À bientôt 🙏"
-            style={{ width: "100%", background: "#F5F5F7", border: "1.5px solid transparent", borderRadius: 12, padding: "12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", resize: "vertical", boxSizing: "border-box", ...FF }} />
-        </div>
-        {/* Aperçu */}
-        <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em", marginBottom: 8 }}>APERÇU</p>
-        <div style={{ maxWidth: 280, margin: "0 auto", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 16px", fontFamily: "monospace", fontSize: 11, color: C.dark, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-          <p style={{ textAlign: "center", fontWeight: 800, fontSize: 13, margin: "0 0 2px" }}>{restaurant.name}</p>
-          {settings.ticket_address && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{settings.ticket_address}</p>}
-          {settings.ticket_phone && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>Tél : {settings.ticket_phone}</p>}
-          {settings.ticket_tax_id && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{settings.ticket_tax_id}</p>}
-          <p style={{ textAlign: "center", margin: "6px 0", borderTop: `1px dashed ${C.border}`, borderBottom: `1px dashed ${C.border}`, padding: "6px 0" }}>1× Tacos poulet — 8.50 €<br />1× Coca-Cola — 2.50 €</p>
-          <p style={{ textAlign: "center", fontWeight: 800, fontSize: 12, margin: "0 0 6px" }}>TOTAL : 11.00 €</p>
-          <p style={{ textAlign: "center", fontWeight: 800, color: C.accentGreen, border: `1.5px solid ${C.accentGreen}`, borderRadius: 6, padding: "3px 0", margin: "0 0 6px" }}>✓ PAYÉ</p>
-          {settings.ticket_footer && <p style={{ textAlign: "center", margin: 0, fontStyle: "italic", color: C.textSecondary }}>{settings.ticket_footer}</p>}
         </div>
       </Surface>
 
@@ -4450,6 +4418,25 @@ function CaisseTab({ store, restaurant }) {
     return acc;
   }, {});
 
+  // Ticket de caisse customization
+  const [ticketForm, setTicketForm] = useState({ ticket_address: "", ticket_phone: "", ticket_tax_id: "", ticket_footer: "" });
+  const [ticketSaving, setTicketSaving] = useState(false);
+  useEffect(() => {
+    if (restaurant.id === "demo") return;
+    supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) setTicketForm({ ticket_address: data.ticket_address || "", ticket_phone: data.ticket_phone || "", ticket_tax_id: data.ticket_tax_id || "", ticket_footer: data.ticket_footer || "" }); });
+  }, [restaurant.id]);
+  async function saveTicket() {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    setTicketSaving(true);
+    const { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...ticketForm, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    setTicketSaving(false);
+    if (error) store.pushNotif(error.message?.includes("column") ? "⚠️ Exécutez la migration SQL (colonnes ticket_*)" : "Erreur : " + error.message, "warning");
+    else store.pushNotif("✅ Ticket de caisse enregistré", "success");
+  }
+  const tf = field => e => setTicketForm(p => ({ ...p, [field]: e.target.value }));
+  const tInput = { width: "100%", background: C.bg, border: "1.5px solid transparent", borderRadius: 12, padding: "12px 14px", color: C.dark, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF };
+
   const dateLabel = isToday ? "Aujourd'hui" : new Date(selectedDate + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   return (
@@ -4557,6 +4544,36 @@ function CaisseTab({ store, restaurant }) {
           </div>
         )}
       </Surface>
+
+      {/* Personnalisation du ticket de caisse */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: isMobile ? 8 : 12, marginTop: isMobile ? 12 : 20 }}>
+        <Surface style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🧾 Ticket de caisse</p>
+          <p style={{ fontSize: 12, color: C.textTertiary, marginBottom: 18 }}>Ces informations apparaissent sur le ticket remis au client (espèces et carte) et sur le reçu envoyé par email. Le nom du restaurant apparaît toujours.</p>
+          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Adresse du restaurant</label>
+          <input type="text" value={ticketForm.ticket_address} onChange={tf("ticket_address")} placeholder="12 rue de la République, 75001 Paris" style={{ ...tInput, marginBottom: 14 }} />
+          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Téléphone</label>
+          <input type="text" value={ticketForm.ticket_phone} onChange={tf("ticket_phone")} placeholder="+33 1 23 45 67 89" style={{ ...tInput, marginBottom: 14 }} />
+          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>N° d'identification fiscale (NIF, SIRET, TVA…)</label>
+          <input type="text" value={ticketForm.ticket_tax_id} onChange={tf("ticket_tax_id")} placeholder="NIF 123456789" style={{ ...tInput, marginBottom: 14 }} />
+          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Message en bas du ticket</label>
+          <textarea value={ticketForm.ticket_footer} onChange={tf("ticket_footer")} rows={2} placeholder="Merci de votre visite ! À bientôt 🙏" style={{ ...tInput, resize: "vertical", marginBottom: 16 }} />
+          <Btn variant="primary" full onClick={saveTicket} disabled={ticketSaving}>{ticketSaving ? "Enregistrement…" : "💾 Enregistrer le ticket"}</Btn>
+        </Surface>
+        <Surface style={{ padding: "22px 20px" }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em", marginBottom: 10, textAlign: "center" }}>APERÇU</p>
+          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 16px", fontFamily: "monospace", fontSize: 11, color: C.dark, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+            <p style={{ textAlign: "center", fontWeight: 800, fontSize: 13, margin: "0 0 2px" }}>{restaurant.name}</p>
+            {ticketForm.ticket_address && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{ticketForm.ticket_address}</p>}
+            {ticketForm.ticket_phone && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>Tél : {ticketForm.ticket_phone}</p>}
+            {ticketForm.ticket_tax_id && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{ticketForm.ticket_tax_id}</p>}
+            <p style={{ textAlign: "center", margin: "6px 0", borderTop: `1px dashed ${C.border}`, borderBottom: `1px dashed ${C.border}`, padding: "6px 0" }}>1× Tacos poulet — 8.50 €<br />1× Coca-Cola — 2.50 €</p>
+            <p style={{ textAlign: "center", fontWeight: 800, fontSize: 12, margin: "0 0 6px" }}>TOTAL : 11.00 €</p>
+            <p style={{ textAlign: "center", fontWeight: 800, color: "#C77700", border: "1.5px solid #FF9F0A", background: "#FF9F0A10", borderRadius: 6, padding: "3px 0", margin: "0 0 6px" }}>💵 À PAYER À LA CAISSE</p>
+            {ticketForm.ticket_footer && <p style={{ textAlign: "center", margin: 0, fontStyle: "italic", color: C.textSecondary }}>{ticketForm.ticket_footer}</p>}
+          </div>
+        </Surface>
+      </div>
     </div>
   );
 }
@@ -6965,6 +6982,37 @@ function CustomerPage({ slug, tableNum }) {
         const orderDate = new Date();
         const shortId = orderId ? orderId.slice(0, 8).toUpperCase() : "--------";
         const payLabel = { cash: "Espèces", card: "Carte bancaire", apple_pay: "Apple Pay", google_pay: "Google Pay" };
+        const isPaid = payMode && payMode !== "cash";
+        function downloadTicketPdf() {
+          const headerInfo = [
+            ticketInfo?.ticket_address,
+            ticketInfo?.ticket_phone ? `Tél : ${ticketInfo.ticket_phone}` : "",
+            ticketInfo?.ticket_tax_id,
+          ].filter(Boolean).map(l => `<p style="margin:1px 0;color:#666;font-size:11px;">${l}</p>`).join("");
+          const itemsHtml = cart.map(i => {
+            const choicesHtml = i._choices ? Object.entries(i._choices).filter(([, v]) => v.length > 0).map(([k, v]) =>
+              `<p style="margin:1px 0 0;font-size:10px;color:#888;">${k === "__extras__" ? "+ " : k + " : "}${v.map(o => o.name).join(", ")}</p>`).join("") : "";
+            return `<tr><td style="padding:5px 0;border-bottom:1px dashed #ddd;font-size:12px;">${i.qty}× ${i.name}${choicesHtml}</td><td style="padding:5px 0;border-bottom:1px dashed #ddd;text-align:right;font-weight:700;font-size:12px;vertical-align:top;">${(Number(i.price) * i.qty).toFixed(2)} €</td></tr>`;
+          }).join("");
+          const statusHtml = isPaid
+            ? `<div style="border:2px solid #34C759;border-radius:8px;padding:8px;text-align:center;margin:12px 0;"><span style="color:#34C759;font-weight:900;font-size:15px;letter-spacing:.05em;">✓ PAYÉ</span></div>`
+            : `<div style="border:2px solid #FF9F0A;border-radius:8px;padding:8px;text-align:center;margin:12px 0;"><span style="color:#C77700;font-weight:900;font-size:15px;letter-spacing:.05em;">💵 À PAYER À LA CAISSE</span><br/><span style="color:#C77700;font-size:11px;font-weight:600;">Présentez ce ticket au comptoir</span></div>`;
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket #${shortId}</title>
+<style>@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { margin: 8mm; size: 80mm auto; } }</style></head>
+<body style="font-family:'Courier New',monospace;max-width:300px;margin:0 auto;padding:16px;color:#1d1d1f;">
+<p style="text-align:center;font-weight:900;font-size:16px;margin:0 0 2px;">${restaurant?.name || ""}</p>
+<div style="text-align:center;">${headerInfo}</div>
+<p style="text-align:center;font-size:11px;color:#666;margin:6px 0;">Table ${tableNum} · ${orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })} ${orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+<p style="text-align:center;font-size:11px;margin:0 0 10px;">Commande <b style="font-size:13px;">#${shortId}</b>${customerName ? ` · ${customerName}` : ""}</p>
+<table style="width:100%;border-collapse:collapse;border-top:1px dashed #999;">${itemsHtml}</table>
+<table style="width:100%;margin-top:8px;"><tr><td style="font-weight:900;font-size:14px;">TOTAL</td><td style="text-align:right;font-weight:900;font-size:16px;">${total.toFixed(2)} €</td></tr></table>
+<p style="font-size:11px;color:#666;margin:4px 0 0;">Paiement : ${payLabel[payMode] ?? "Espèces"}</p>
+${statusHtml}
+<p style="text-align:center;font-size:11px;font-style:italic;color:#666;margin-top:10px;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p>
+<script>window.onload = function(){ window.print(); };</script></body></html>`;
+          const w = window.open("", "_blank");
+          if (w) { w.document.write(html); w.document.close(); }
+        }
         return (
           <div style={{ padding: "40px 20px 60px", background: "#f8f8f8", minHeight: "100vh" }}>
             {/* Success banner */}
@@ -7072,15 +7120,16 @@ function CustomerPage({ slug, tableNum }) {
                   <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>Paiement : {payLabel[payMode] ?? "Espèces"}</p>
                 </div>
 
-                {/* Payment status badge */}
-                {(payMode && payMode !== "cash") ? (
-                  <div style={{ border: `2px solid ${C.accentGreen}`, borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center" }}>
+                {/* Payment status badge — tap to download PDF */}
+                {isPaid ? (
+                  <div onClick={downloadTicketPdf} style={{ border: `2px solid ${C.accentGreen}`, borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center", cursor: "pointer" }}>
                     <p style={{ fontSize: 16, fontWeight: 900, color: C.accentGreen, letterSpacing: "0.04em", margin: 0 }}>✓ PAYÉ</p>
+                    <p style={{ fontSize: 11, color: C.accentGreen, margin: "3px 0 0", fontWeight: 600 }}>Touchez pour télécharger le ticket PDF</p>
                   </div>
                 ) : (
-                  <div style={{ border: "2px solid #FF9F0A", background: "#FF9F0A10", borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center" }}>
+                  <div onClick={downloadTicketPdf} style={{ border: "2px solid #FF9F0A", background: "#FF9F0A10", borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center", cursor: "pointer" }}>
                     <p style={{ fontSize: 16, fontWeight: 900, color: "#C77700", letterSpacing: "0.04em", margin: 0 }}>💵 À PAYER À LA CAISSE</p>
-                    <p style={{ fontSize: 12, color: "#C77700", margin: "3px 0 0", fontWeight: 600 }}>Présentez ce ticket au comptoir</p>
+                    <p style={{ fontSize: 12, color: "#C77700", margin: "3px 0 0", fontWeight: 600 }}>Présentez ce ticket au comptoir · Touchez pour le PDF</p>
                   </div>
                 )}
 
@@ -7091,6 +7140,11 @@ function CustomerPage({ slug, tableNum }) {
               {/* Decorative zigzag bottom */}
               <div style={{ height: 12, background: `repeating-linear-gradient(90deg, #f8f8f8 0px, #f8f8f8 8px, ${C.white} 8px, ${C.white} 16px)` }} />
             </div>
+
+            {/* Download PDF */}
+            <button onClick={downloadTicketPdf} style={{ width: "100%", padding: 15, background: C.dark, color: "#fff", border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 16, ...FF }}>
+              📄 Télécharger le ticket (PDF)
+            </button>
 
             {/* Rating */}
             <div style={{ background: C.white, borderRadius: 16, padding: "18px 20px", marginBottom: 16, textAlign: "center" }}>
