@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Médina Tacos — La Gratinade | French Tacos faits maison</title>
+  <meta name="description" content="Médina Tacos (La Gratinade) — French tacos généreux, gratinés et faits maison. Commandez en ligne, sur place ou en livraison." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --orange: #ff6b1a;
+      --orange-dark: #e85d04;
+      --red: #d62828;
+      --cream: #fdf6ee;
+      --black: #141210;
+      --black-soft: #1f1c19;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: var(--cream);
+      color: var(--black);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, .brand {
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 0.03em;
+      line-height: 1.05;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* ===== Boutons ===== */
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--orange), var(--red));
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 1.05rem;
+      padding: 16px 36px;
+      border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(214, 40, 40, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .btn:hover, .btn:focus-visible {
+      transform: translateY(-3px) scale(1.03);
+      box-shadow: 0 12px 32px rgba(214, 40, 40, 0.45);
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      position: relative;
+      background:
+        radial-gradient(ellipse at 20% 10%, rgba(255, 107, 26, 0.25), transparent 50%),
+        radial-gradient(ellipse at 85% 80%, rgba(214, 40, 40, 0.3), transparent 55%),
+        var(--black);
+      color: var(--cream);
+      text-align: center;
+      padding: 88px 0 96px;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "🌮  🧀  🍟  🔥  🌮  🧀  🍟  🔥  🌮  🧀  🍟  🔥";
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 1.1rem;
+      opacity: 0.35;
+      letter-spacing: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: rgba(255, 107, 26, 0.15);
+      border: 1px solid rgba(255, 107, 26, 0.5);
+      color: var(--orange);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 6px 18px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(3rem, 11vw, 5.5rem);
+      margin-bottom: 8px;
+    }
+
+    .hero h1 .accent { color: var(--orange); }
+
+    .hero .brand-sub {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(1.3rem, 4.5vw, 2rem);
+      color: var(--red);
+      text-transform: uppercase;
+      letter-spacing: 0.25em;
+      margin-bottom: 24px;
+    }
+
+    .hero .slogan {
+      font-size: clamp(1.05rem, 3.5vw, 1.35rem);
+      max-width: 560px;
+      margin: 0 auto 40px;
+      color: rgba(253, 246, 238, 0.85);
+    }
+
+    /* ===== Présentation ===== */
+    .intro {
+      padding: 72px 0;
+      text-align: center;
+    }
+
+    .intro h2 {
+      font-size: clamp(2rem, 7vw, 3rem);
+      margin-bottom: 18px;
+    }
+
+    .intro h2 span { color: var(--orange-dark); }
+
+    .intro p {
+      max-width: 640px;
+      margin: 0 auto;
+      font-size: 1.05rem;
+      color: #4a443d;
+    }
+
+    /* ===== Points forts ===== */
+    .features {
+      background: var(--black-soft);
+      color: var(--cream);
+      padding: 72px 0;
+    }
+
+    .features h2 {
+      text-align: center;
+      font-size: clamp(2rem, 7vw, 3rem);
+      margin-bottom: 48px;
+    }
+
+    .features h2 span { color: var(--orange); }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: rgba(253, 246, 238, 0.05);
+      border: 1px solid rgba(255, 107, 26, 0.25);
+      border-radius: 20px;
+      padding: 32px 28px;
+      text-align: center;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--orange);
+    }
+
+    .card .emoji { font-size: 2.6rem; display: block; margin-bottom: 14px; }
+
+    .card h3 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.5rem;
+      letter-spacing: 0.05em;
+      color: var(--orange);
+      margin-bottom: 8px;
+    }
+
+    .card p { font-size: 0.95rem; color: rgba(253, 246, 238, 0.75); }
+
+    /* ===== CTA final ===== */
+    .cta-final {
+      background: linear-gradient(135deg, var(--orange-dark), var(--red));
+      color: #fff;
+      text-align: center;
+      padding: 80px 0;
+    }
+
+    .cta-final h2 {
+      font-size: clamp(2.2rem, 8vw, 3.4rem);
+      margin-bottom: 14px;
+    }
+
+    .cta-final p {
+      font-size: 1.1rem;
+      margin-bottom: 36px;
+      opacity: 0.9;
+    }
+
+    .cta-final .btn {
+      background: var(--cream);
+      color: var(--red);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      background: var(--black);
+      color: rgba(253, 246, 238, 0.6);
+      text-align: center;
+      padding: 32px 20px;
+      font-size: 0.9rem;
+    }
+
+    footer .brand {
+      color: var(--cream);
+      font-size: 1.4rem;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    footer .brand span { color: var(--orange); }
+
+    /* ===== Desktop ===== */
+    @media (min-width: 720px) {
+      .features-grid { grid-template-columns: repeat(3, 1fr); }
+      .hero { padding: 120px 0 130px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== HERO ===== -->
+  <header class="hero">
+    <div class="container">
+      <span class="badge">🔥 French Tacos &amp; Street Food</span>
+      <h1>Médina <span class="accent">Tacos</span></h1>
+      <p class="brand-sub">— La Gratinade —</p>
+      <p class="slogan">Le french tacos gratiné, généreux et 100&nbsp;% fait maison. Une seule bouchée et vous êtes accro.&nbsp;🧀</p>
+      <a class="btn" href="https://agencywgm-arch.github.io/Test/r/8d26d2e2-4f0d-41be-9743-634a677e7873/t/10">🌮 Commander en ligne</a>
+    </div>
+  </header>
+
+  <!-- ===== PRÉSENTATION ===== -->
+  <section class="intro">
+    <div class="container">
+      <h2>Nos French Tacos <span>faits maison</span></h2>
+      <p>
+        Chez <strong>Médina Tacos</strong>, chaque tacos est préparé à la commande&nbsp;: viandes
+        marinées, frites croustillantes, sauce fromagère onctueuse… le tout pressé et
+        gratiné à la perfection. C'est ça, <strong>La Gratinade</strong>&nbsp;: du goût,
+        de la générosité, et zéro compromis sur la fraîcheur.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== POINTS FORTS ===== -->
+  <section class="features">
+    <div class="container">
+      <h2>Pourquoi vous allez <span>adorer</span></h2>
+      <div class="features-grid">
+        <div class="card">
+          <span class="emoji">🥬</span>
+          <h3>Frais &amp; fait maison</h3>
+          <p>Ingrédients frais sélectionnés chaque jour, sauces et marinades préparées sur place.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">🧀</span>
+          <h3>Généreux &amp; gratiné</h3>
+          <p>Des portions XXL, une sauce fromagère signature et un gratinage doré irrésistible.</p>
+        </div>
+        <div class="card">
+          <span class="emoji">🛵</span>
+          <h3>Sur place ou livré</h3>
+          <p>Dégustez au resto ou commandez en ligne en quelques clics&nbsp;: c'est chaud, c'est rapide.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CTA FINAL ===== -->
+  <section class="cta-final">
+    <div class="container">
+      <h2>Une petite faim&nbsp;? 😋</h2>
+      <p>Votre french tacos gratiné vous attend. Commandez maintenant, régalez-vous dans quelques minutes.</p>
+      <a class="btn" href="https://agencywgm-arch.github.io/Test/r/8d26d2e2-4f0d-41be-9743-634a677e7873/t/10">Commander maintenant&nbsp;→</a>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer>
+    <span class="brand">Médina Tacos <span>· La Gratinade</span></span>
+    © 2026 Médina Tacos — Tous droits réservés.
+  </footer>
+
+</body>
+</html>
