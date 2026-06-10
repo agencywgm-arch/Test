@@ -1763,7 +1763,7 @@ function AlertBubbles({ store, restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const store = useContext(StoreCtx);
-  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false };
+  const emptySettings = { resend_api_key: "", resend_from: "", stripe_publishable_key: "", stripe_secret_key: "", google_review_url: "", google_review_enabled: false, ticket_address: "", ticket_phone: "", ticket_tax_id: "", ticket_footer: "" };
   const [settings, setSettings] = useState(emptySettings);
   const [saving, setSaving] = useState(false);
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
@@ -1804,7 +1804,7 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     if (restaurant.id === "demo") return;
     supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
       .then(({ data, error }) => {
-        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
+        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled, ticket_address: data.ticket_address || "", ticket_phone: data.ticket_phone || "", ticket_tax_id: data.ticket_tax_id || "", ticket_footer: data.ticket_footer || "" });
         else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
@@ -1818,7 +1818,13 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    let { error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...settings, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    // Fallback if ticket columns not migrated yet
+    if (error && error.message?.includes("column")) {
+      const { ticket_address, ticket_phone, ticket_tax_id, ticket_footer, ...legacy } = settings;
+      ({ error } = await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, ...legacy, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" }));
+      if (!error) { setSaving(false); store.pushNotif("⚠️ Sauvegardé, sauf le ticket : exécutez la migration SQL (colonnes ticket_*)", "warning"); return; }
+    }
     setSaving(false);
     if (error) store.pushNotif("Erreur : " + error.message, "warning");
     else store.pushNotif("✅ Configuration enregistrée", "success");
@@ -1936,6 +1942,32 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
             style={{ width: 44, height: 26, borderRadius: 13, background: settings.google_review_enabled ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
             <div style={{ position: "absolute", top: 3, left: settings.google_review_enabled ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
           </div>
+        </div>
+      </Surface>
+
+      {/* Ticket de caisse */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🧾 Ticket de caisse</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Personnalisez les informations affichées sur le ticket remis au client à la fin de sa commande. Le nom du restaurant apparaît toujours.</p>
+        <TxtField label="Adresse du restaurant" field="ticket_address" placeholder="12 rue de la République, 75001 Paris" />
+        <TxtField label="Téléphone" field="ticket_phone" placeholder="+33 1 23 45 67 89" />
+        <TxtField label="N° d'identification fiscale (NIF, SIRET, TVA…)" field="ticket_tax_id" placeholder="NIF 123456789 / SIRET 123 456 789 00012" />
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", color: C.textSecondary, fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Message en bas du ticket (libre)</label>
+          <textarea value={settings.ticket_footer} onChange={set("ticket_footer")} rows={2} placeholder="Merci de votre visite ! À bientôt 🙏"
+            style={{ width: "100%", background: "#F5F5F7", border: "1.5px solid transparent", borderRadius: 12, padding: "12px 14px", color: "#1D1D1F", fontSize: 15, outline: "none", resize: "vertical", boxSizing: "border-box", ...FF }} />
+        </div>
+        {/* Aperçu */}
+        <p style={{ fontSize: 12, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.06em", marginBottom: 8 }}>APERÇU</p>
+        <div style={{ maxWidth: 280, margin: "0 auto", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 16px", fontFamily: "monospace", fontSize: 11, color: C.dark, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+          <p style={{ textAlign: "center", fontWeight: 800, fontSize: 13, margin: "0 0 2px" }}>{restaurant.name}</p>
+          {settings.ticket_address && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{settings.ticket_address}</p>}
+          {settings.ticket_phone && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>Tél : {settings.ticket_phone}</p>}
+          {settings.ticket_tax_id && <p style={{ textAlign: "center", margin: "0 0 1px", color: C.textSecondary }}>{settings.ticket_tax_id}</p>}
+          <p style={{ textAlign: "center", margin: "6px 0", borderTop: `1px dashed ${C.border}`, borderBottom: `1px dashed ${C.border}`, padding: "6px 0" }}>1× Tacos poulet — 8.50 €<br />1× Coca-Cola — 2.50 €</p>
+          <p style={{ textAlign: "center", fontWeight: 800, fontSize: 12, margin: "0 0 6px" }}>TOTAL : 11.00 €</p>
+          <p style={{ textAlign: "center", fontWeight: 800, color: C.accentGreen, border: `1.5px solid ${C.accentGreen}`, borderRadius: 6, padding: "3px 0", margin: "0 0 6px" }}>✓ PAYÉ</p>
+          {settings.ticket_footer && <p style={{ textAlign: "center", margin: 0, fontStyle: "italic", color: C.textSecondary }}>{settings.ticket_footer}</p>}
         </div>
       </Surface>
 
@@ -6390,6 +6422,7 @@ function CustomerPage({ slug, tableNum }) {
   const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
   const [lang, setLang] = useState(() => localStorage.getItem("vg_customer_lang") || "fr");
   const [showLangPicker, setShowLangPicker] = useState(false);
+  const [ticketInfo, setTicketInfo] = useState(null); // { ticket_address, ticket_phone, ticket_tax_id, ticket_footer }
   const L = CT[lang] || CT.fr;
   const isRtl = lang === "ar";
 
@@ -6473,6 +6506,11 @@ function CustomerPage({ slug, tableNum }) {
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
           if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
           if (sett?.stripe_publishable_key) setStripeEnabled(true);
+        } catch {}
+        // Ticket customization (separate query — columns may not exist yet)
+        try {
+          const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
+          if (tk) setTicketInfo(tk);
         } catch {}
         setStep("menu");
       } catch {
@@ -6617,7 +6655,16 @@ function CustomerPage({ slug, tableNum }) {
           // Send receipt email regardless of payment method
           const payLabelMap = { cash: "Espèces", card: "Carte bancaire", apple_pay: "Apple Pay", google_pay: "Google Pay" };
           const itemsHtml = cart.map(i => `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;">${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:700;font-size:14px;">${(i.price * i.qty).toFixed(2)} €</td></tr>`).join("");
-          const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2><p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">Merci de votre visite ! 🙏</p></div></body></html>`;
+          const isPaid = paymentMethod && paymentMethod !== "cash";
+          const headerInfo = [
+            ticketInfo?.ticket_address,
+            ticketInfo?.ticket_phone ? `Tél : ${ticketInfo.ticket_phone}` : "",
+            ticketInfo?.ticket_tax_id,
+          ].filter(Boolean).map(l => `<p style="color:rgba(255,255,255,0.55);margin:2px 0 0;font-size:11px;">${l}</p>`).join("");
+          const statusHtml = isPaid
+            ? `<div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div>`
+            : `<div style="border:2px solid #FF9F0A;background:#FF9F0A10;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#C77700;font-weight:900;font-size:16px;letter-spacing:.04em;">💵 À PAYER À LA CAISSE</span><br/><span style="color:#C77700;font-size:12px;font-weight:600;">Présentez ce ticket au comptoir</span></div>`;
+          const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p>${statusHtml}<p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
           supabase.functions.invoke("send-receipt-email", {
             body: { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml }
           }).catch(() => {});
@@ -6971,6 +7018,9 @@ function CustomerPage({ slug, tableNum }) {
                     : <span style={{ fontSize: 24 }}>{restaurant?.logo_emoji}</span>}
                   <p style={{ fontSize: 17, fontWeight: 800, color: C.white, letterSpacing: "-0.02em" }}>{restaurant?.name}</p>
                 </div>
+                {ticketInfo?.ticket_address && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 1px" }}>{ticketInfo.ticket_address}</p>}
+                {ticketInfo?.ticket_phone && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 1px" }}>Tél : {ticketInfo.ticket_phone}</p>}
+                {ticketInfo?.ticket_tax_id && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 4px" }}>{ticketInfo.ticket_tax_id}</p>}
                 <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Table {tableNum} · {orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
               </div>
 
@@ -7022,8 +7072,20 @@ function CustomerPage({ slug, tableNum }) {
                   <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>Paiement : {payLabel[payMode] ?? "Espèces"}</p>
                 </div>
 
+                {/* Payment status badge */}
+                {(payMode && payMode !== "cash") ? (
+                  <div style={{ border: `2px solid ${C.accentGreen}`, borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center" }}>
+                    <p style={{ fontSize: 16, fontWeight: 900, color: C.accentGreen, letterSpacing: "0.04em", margin: 0 }}>✓ PAYÉ</p>
+                  </div>
+                ) : (
+                  <div style={{ border: "2px solid #FF9F0A", background: "#FF9F0A10", borderRadius: 12, padding: "10px 16px", marginBottom: 14, textAlign: "center" }}>
+                    <p style={{ fontSize: 16, fontWeight: 900, color: "#C77700", letterSpacing: "0.04em", margin: 0 }}>💵 À PAYER À LA CAISSE</p>
+                    <p style={{ fontSize: 12, color: "#C77700", margin: "3px 0 0", fontWeight: 600 }}>Présentez ce ticket au comptoir</p>
+                  </div>
+                )}
+
                 {/* Footer */}
-                <p style={{ fontSize: 13, color: C.textTertiary, textAlign: "center", fontStyle: "italic" }}>Merci de votre visite ! 🙏</p>
+                <p style={{ fontSize: 13, color: C.textTertiary, textAlign: "center", fontStyle: "italic" }}>{ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p>
               </div>
 
               {/* Decorative zigzag bottom */}
