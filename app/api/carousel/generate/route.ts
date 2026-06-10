@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -152,55 +152,30 @@ async function searchUnsplash(query: string, perPage = 3): Promise<ImageCandidat
   }
 }
 
-// ── Agent loop ──────────────────────────────────────────────────────────────
+// ── Agent ────────────────────────────────────────────────────────────────────
 
 async function runAgent(systemPrompt: string, userPrompt: string): Promise<string> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userPrompt }];
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 8000,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+  });
 
-  for (let i = 0; i < 8; i++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8000,
-      system: systemPrompt,
-      tools: [{ type: "web_search_20250305", name: "web_search" } as unknown as Anthropic.Tool],
-      messages,
-    });
-
-    if (response.stop_reason === "end_turn") {
-      return response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map(b => b.text)
-        .join("");
-    }
-
-    if (response.stop_reason === "tool_use") {
-      messages.push({ role: "assistant", content: response.content });
-      const toolResults: Anthropic.ToolResultBlockParam[] = response.content
-        .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
-        .map(b => ({ type: "tool_result" as const, tool_use_id: b.id, content: "" }));
-      messages.push({ role: "user", content: toolResults });
-      continue;
-    }
-
-    // Unexpected stop — return what we have
-    return response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map(b => b.text)
-      .join("");
-  }
-
-  throw new Error("Agent loop timed out after 8 iterations");
+  return response.choices[0]?.message?.content ?? "";
 }
 
 // ── Route handler ───────────────────────────────────────────────────────────
 
 export async function POST() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "no_key", message: "ANTHROPIC_API_KEY manquante — ajoute-la dans les variables Railway." },
+      { error: "no_key", message: "OPENAI_API_KEY manquante — ajoute-la dans les variables Railway." },
       { status: 503 }
     );
   }
