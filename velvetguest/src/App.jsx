@@ -3472,6 +3472,58 @@ function MenuTabDash({ restaurant }) {
   const [error, setError] = useState("");
   const [catOrder, setCatOrder] = useState([]); // custom category order
   const [showOrder, setShowOrder] = useState(false);
+  const [showTranslate, setShowTranslate] = useState(false);
+  const [translateLang, setTranslateLang] = useState("en");
+  const [translations, setTranslations] = useState({}); // id → { name, description }
+  const [translating, setTranslating] = useState(false);
+  const [savingTranslations, setSavingTranslations] = useState(false);
+  const TRANSLATE_LANGS = [
+    { code: "en", label: "🇬🇧 Anglais" },
+    { code: "ar", label: "🇸🇦 Arabe" },
+    { code: "es", label: "🇪🇸 Espagnol" },
+    { code: "pt", label: "🇵🇹 Portugais" },
+    { code: "de", label: "🇩🇪 Allemand" },
+    { code: "it", label: "🇮🇹 Italien" },
+  ];
+
+  async function gtranslate(text, tl) {
+    if (!text?.trim()) return text;
+    try {
+      const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`);
+      const j = await r.json();
+      return j?.[0]?.map(s => s[0]).join("") || text;
+    } catch { return text; }
+  }
+
+  async function autoTranslate() {
+    setTranslating(true);
+    const result = {};
+    await Promise.all(items.map(async item => {
+      const existing = item.translations?.[translateLang] || {};
+      const [name, description] = await Promise.all([
+        gtranslate(item.name, translateLang),
+        item.description ? gtranslate(item.description, translateLang) : Promise.resolve(""),
+      ]);
+      result[item.id] = { name: existing.name || name, description: existing.description || description };
+    }));
+    setTranslations(result);
+    setTranslating(false);
+  }
+
+  async function saveTranslations() {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    setSavingTranslations(true);
+    await Promise.all(items.map(async item => {
+      const t = translations[item.id];
+      if (!t) return;
+      const existing = item.translations || {};
+      const updated = { ...existing, [translateLang]: t };
+      await supabase.from("menu_items").update({ translations: updated }).eq("id", item.id);
+      setItems(p => p.map(i => i.id === item.id ? { ...i, translations: updated } : i));
+    }));
+    setSavingTranslations(false);
+    store.pushNotif(`✅ Traductions ${translateLang.toUpperCase()} sauvegardées`, "success");
+  }
   const [savingOrder, setSavingOrder] = useState(false);
   const dragCat = useRef(null);
   const [expandedCats, setExpandedCats] = useState({}); // cat → bool (show dishes in disposition)
@@ -3640,10 +3692,62 @@ function MenuTabDash({ restaurant }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
         <div style={{ display: "flex", gap: 8 }}>
-          <Btn variant="ghost" size="sm" onClick={() => setShowOrder(o => !o)}>📋 Disposition</Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { setShowOrder(false); setShowTranslate(o => !o); if (!showTranslate) { setTranslations({}); } }}>🌍 Traduction</Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { setShowTranslate(false); setShowOrder(o => !o); }}>📋 Disposition</Btn>
           <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
         </div>
       </div>
+
+      {/* Translation panel */}
+      {showTranslate && (
+        <Surface style={{ padding: 20, marginBottom: 20, border: `1.5px solid ${C.accentBlue}30` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>🌍 Traduction de la carte</div>
+              <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Traduisez automatiquement vos plats. Les clients verront ces traductions quand ils changent de langue.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select value={translateLang} onChange={e => { setTranslateLang(e.target.value); setTranslations({}); }}
+                style={{ padding: "6px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 13, background: C.white, cursor: "pointer" }}>
+                {TRANSLATE_LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+              </select>
+              <Btn variant="ghost" size="sm" disabled={translating} onClick={autoTranslate}>{translating ? "⏳ Traduction…" : "✨ Traduire automatiquement"}</Btn>
+              {Object.keys(translations).length > 0 && (
+                <Btn variant="primary" size="sm" disabled={savingTranslations} onClick={saveTranslations}>{savingTranslations ? "..." : "💾 Sauvegarder"}</Btn>
+              )}
+              <Btn variant="ghost" size="sm" onClick={() => setShowTranslate(false)}>✕</Btn>
+            </div>
+          </div>
+          {Object.keys(translations).length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 500, overflowY: "auto" }}>
+              {items.map(item => {
+                const t = translations[item.id];
+                if (!t) return null;
+                return (
+                  <div key={item.id} style={{ background: C.bg, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 18 }}>{item.emoji}</span>
+                      <span style={{ fontSize: 12, color: C.textTertiary, flex: 1 }}>{item.name}</span>
+                    </div>
+                    <input value={t.name} onChange={e => setTranslations(p => ({ ...p, [item.id]: { ...p[item.id], name: e.target.value } }))}
+                      placeholder="Nom traduit"
+                      style={{ padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 13, width: "100%", boxSizing: "border-box", fontFamily: "inherit" }} />
+                    {item.description && (
+                      <textarea value={t.description} onChange={e => setTranslations(p => ({ ...p, [item.id]: { ...p[item.id], description: e.target.value } }))}
+                        placeholder="Description traduite" rows={2}
+                        style={{ padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 12, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "24px 0", color: C.textTertiary, fontSize: 13 }}>
+              {translating ? "Traduction en cours…" : "Choisissez une langue et cliquez sur \"✨ Traduire automatiquement\""}
+            </div>
+          )}
+        </Surface>
+      )}
 
       {/* Category order panel */}
       {showOrder && (
@@ -6621,6 +6725,9 @@ function CustomerPage({ slug, tableNum }) {
   }, [lang, menuItems]);
 
   function tItem(item) {
+    // Prefer stored translations (set by admin) over live API cache
+    const stored = item.translations?.[lang];
+    if (stored?.name) return { ...item, name: stored.name, description: stored.description || item.description };
     const t = translCache[`${lang}:${item.id}`];
     return t ? { ...item, name: t.name || item.name, description: t.description || item.description } : item;
   }
