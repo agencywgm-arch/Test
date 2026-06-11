@@ -5074,11 +5074,16 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
           { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
             body: JSON.stringify({ amount: total, restaurant_id: rid }) }
         );
-        const { client_secret, publishable_key, error: fnErr } = await res.json();
+        const raw = await res.text();
+        let parsed = {};
+        try { parsed = JSON.parse(raw); } catch { throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200)}`); }
+        const { client_secret, publishable_key, error: fnErr } = parsed;
         if (cancelled) return;
         const pubKey = ENV_STRIPE_KEY || publishable_key;
-        if (fnErr === "stripe_not_configured" || !pubKey) { setConfigured(false); setReady(true); return; }
-        if (fnErr || !client_secret) throw new Error(fnErr || "Pas de client_secret");
+        if (fnErr === "stripe_not_configured") { setConfigured(false); setReady(true); return; }
+        if (fnErr) throw new Error(`Fonction: ${fnErr}`);
+        if (!pubKey) throw new Error("Clé publique Stripe absente (publishable_key vide)");
+        if (!client_secret) throw new Error("client_secret absent");
         const stripe = window.Stripe(pubKey);
         stripeRef.current = stripe;
         const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
@@ -5088,7 +5093,7 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
         setReady(true);
       } catch (e) {
         if (cancelled) return;
-        setError("Impossible de charger le module de paiement. Vérifiez votre connexion.");
+        setError("Erreur paiement — " + (e?.message || String(e)));
         setReady(true);
       }
     };
