@@ -5090,10 +5090,8 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
         const stripe = window.Stripe(pubKey);
         stripeRef.current = stripe;
         const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
-        const payEl = elements.create("payment");
-        if (containerRef.current) payEl.mount(containerRef.current);
         elementsRef.current = elements;
-        setReady(true);
+        setReady(true); // mounting happens in the effect below, once the container is rendered
       } catch (e) {
         if (cancelled) return;
         setError("Erreur paiement — " + (e?.message || String(e)));
@@ -5106,6 +5104,17 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
     }
     return () => { cancelled = true; if (check) clearInterval(check); };
   }, [total, restaurant?.id]);
+
+  // Mount the Payment Element only after the container div is actually rendered
+  // (while !ready the component shows a spinner and containerRef is null)
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (ready && elementsRef.current && containerRef.current && !mountedRef.current) {
+      const payEl = elementsRef.current.create("payment");
+      payEl.mount(containerRef.current);
+      mountedRef.current = true;
+    }
+  }, [ready]);
 
   async function pay() {
     if (!stripeRef.current || !elementsRef.current || paying) return;
