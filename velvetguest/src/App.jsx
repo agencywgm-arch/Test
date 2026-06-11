@@ -2325,9 +2325,9 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
       <StockAlerts restaurantId={restaurant.id} />
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
         <KPICard label="Actives" value={ds ? ds.orders_today : active.length} sub="en cours" />
-        <KPICard label="CA today" value={`${rev.toFixed(0)}€`} sub="clôturées" />
+        <KPICard label="CA today" value={`${rev.toFixed(2)}€`} sub="clôturées" />
         <KPICard label="Servies" value={ds ? ds.orders_today : store.doneOrders.length} sub="aujourd'hui" />
-        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="moy." />
+        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(2)}€` : "—"} sub="moy." />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
         <Surface onClick={onCuisine} style={{ padding: isMobile ? "12px 14px" : "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }} className="hover-lift">
@@ -4707,10 +4707,10 @@ function CaisseTab({ store, restaurant }) {
       </Surface>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
-        <KPICard label="CA du jour" value={`${revenue.toFixed(0)}€`} sub="clôturées" />
+        <KPICard label="CA du jour" value={`${revenue.toFixed(2)}€`} sub="clôturées" />
         <KPICard label="Commandes" value={orders.length} sub="servies" />
-        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(0)}€` : "—"} sub="" />
-        <KPICard label="Espèces" value={`${(byMethod.cash || 0).toFixed(0)}€`} sub="à encaisser" />
+        <KPICard label="Ticket moy." value={avgTicket > 0 ? `${avgTicket.toFixed(2)}€` : "—"} sub="" />
+        <KPICard label="Espèces" value={`${(byMethod.cash || 0).toFixed(2)}€`} sub="à encaisser" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
@@ -6392,7 +6392,7 @@ function CRMTab({ restaurant, store }) {
           { label: "Clients", value: customers.length, color: C.dark },
           { label: "Actifs 30j", value: activeCount, color: C.accentGreen },
           { label: "À relancer", value: inactiveCount, color: C.accentOrange },
-          { label: "Panier moy.", value: `${avgTicket.toFixed(0)}€`, color: C.accentPurple },
+          { label: "Panier moy.", value: `${avgTicket.toFixed(2)}€`, color: C.accentPurple },
         ].map(k => (
           <Surface key={k.label} style={{ padding: isMobile ? "10px 12px" : "16px 18px" }}>
             <p style={{ fontSize: isMobile ? 10 : 12, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>{k.label}</p>
@@ -6463,7 +6463,7 @@ function CRMTab({ restaurant, store }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                 {[
                   { label: "Commandes", value: c.order_count },
-                  { label: "Total", value: `${(c.total_spent || 0).toFixed(0)}€` },
+                  { label: "Total", value: `${(c.total_spent || 0).toFixed(2)}€` },
                   { label: "Dernier", value: c.days < 1 ? "Aujourd'hui" : `J-${c.days}` },
                 ].map(stat => (
                   <div key={stat.label} style={{ background: C.bg, borderRadius: 8, padding: "6px 8px", textAlign: "center" }}>
@@ -7666,7 +7666,7 @@ function useContainerWidth(ref, fallback = 560) {
 function fmtVal(v, unit) {
   if (unit === "€") {
     if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1).replace(".0", "")}k €`;
-    return `${v.toFixed(0)} €`;
+    return `${v.toFixed(2)} €`;
   }
   if (unit === "%") return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
   if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1).replace(".0", "")}k`;
@@ -8387,8 +8387,8 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
               {/* KPI grid */}
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
                 <KPICard label="Établissements" value={restaurants.length} sub="dans le réseau" />
-                <KPICard label="CA aujourd'hui" value={`${totalCaToday.toFixed(0)} €`} sub="toutes enseignes" delta={5} />
-                <KPICard label="CA 7 jours" value={`${totalCa7j.toFixed(0)} €`} sub="réseau" delta={8} />
+                <KPICard label="CA aujourd'hui" value={`${totalCaToday.toFixed(2)} €`} sub="toutes enseignes" delta={5} />
+                <KPICard label="CA 7 jours" value={`${totalCa7j.toFixed(2)} €`} sub="réseau" delta={8} />
                 <KPICard label="Commandes aujourd'hui" value={totalOrdersToday} sub="total réseau" />
                 <KPICard label="Panier moyen réseau" value={`${avgBasket.toFixed(2)} €`} sub="sur 7 jours" />
                 <KPICard label="Alertes actives" value={alerts.length} sub={alerts.length > 0 ? "⚠️ Baisse détectée" : "Tout est nominal"} />
@@ -8407,7 +8407,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                       <div style={{ flex: 1 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                           <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{r.name}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(0)} €</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(2)} €</span>
                         </div>
                         <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
                           <div style={{ height: "100%", width: `${pct}%`, background: i === 0 ? C.accentGreen : i === 1 ? C.accentBlue : C.accentOrange, borderRadius: 3, transition: "width 0.5s ease" }} />
@@ -8505,7 +8505,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                                 </div>
                               </div>
                             </td>
-                            <td style={{ padding: "12px 16px", fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(0)} €</td>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: C.dark }}>{s.ca_7j.toFixed(2)} €</td>
                             <td style={{ padding: "12px 16px", color: C.text }}>{s.orders_7j}</td>
                             <td style={{ padding: "12px 16px", color: C.text }}>{s.avg_basket.toFixed(2)} €</td>
                             <td style={{ padding: "12px 16px" }}>
@@ -8697,7 +8697,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                       )}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                         <div style={{ textAlign: "center", padding: "8px 0", background: C.bg, borderRadius: 8 }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{s.ca_today.toFixed(0)} €</div>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{s.ca_today.toFixed(2)} €</div>
                           <div style={{ fontSize: 11, color: C.textTertiary }}>CA aujourd'hui</div>
                         </div>
                         <div style={{ textAlign: "center", padding: "8px 0", background: C.bg, borderRadius: 8 }}>
@@ -8761,7 +8761,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
             const ca30Total = chartData30.reduce((s, d) => s + d.value, 0);
             const orders30Total = chartOrders30.reduce((s, d) => s + d.value, 0);
             const avgBasket = ca30Total / Math.max(orders30Total, 1);
-            const fmt3 = n => n >= 1000 ? `${(n/1000).toFixed(1).replace(".0","")} k €` : `${n.toFixed(0)} €`;
+            const fmt3 = n => n >= 1000 ? `${(n/1000).toFixed(2)} k €` : `${n.toFixed(2)} €`;
 
             function ExpandBtn({ onClick }) {
               return (
@@ -8983,7 +8983,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                               <span style={{ color: C.textSecondary, fontSize: 12, marginLeft: 8 }}>{restoInRegion.length} étab.</span>
                               <span style={{ color: C.textSecondary, fontSize: 12, marginLeft: 8 }}>· {regionOrders} cmd/7j</span>
                             </div>
-                            <span style={{ fontWeight: 800, fontSize: 14, color: C.dark }}>{regionCa.toFixed(0)} €</span>
+                            <span style={{ fontWeight: 800, fontSize: 14, color: C.dark }}>{regionCa.toFixed(2)} €</span>
                           </div>
                           <div style={{ height: 6, borderRadius: 3, background: C.bg, overflow: "hidden" }}>
                             <div style={{ height: "100%", width: `${totalCaAll ? (regionCa / totalCaAll) * 100 : 0}%`, background: C.accentBlue, borderRadius: 3 }} />
