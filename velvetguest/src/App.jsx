@@ -301,6 +301,7 @@ function fmtOrder(o) {
     note: o.note || "",
     total: Number(o.total || 0),
     payment_method: o.payment_method || "cash",
+    order_type: o.order_type || "dine_in",
     paid: o.paid === true,
     status: fmtStatus(o.status),
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
@@ -930,6 +931,7 @@ function DemoKitchenPage({ onBack, onSignup }) {
                       <div>
                         <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
                         <p style={{ fontSize: 13, color: C.white, fontWeight: 700 }}>{order.customerName || order.id.slice(0,6)}</p>
+                        {order.order_type === "takeaway" && <p style={{ fontSize: 10, fontWeight: 700, color: "#FF9F0A", margin: 0 }}>🥡 À emporter</p>}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -2572,8 +2574,11 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
             <div key={o.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(0)}€</p>
-                <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.items.map(i => i.name).join(", ")}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, margin: 0 }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(0)}€</p>
+                  {o.order_type === "takeaway" && <span style={{ fontSize: 10, fontWeight: 700, background: "#FF9F0A22", color: "#FF9F0A", borderRadius: 6, padding: "2px 6px" }}>🥡 À emporter</span>}
+                </div>
+                <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{o.items.map(i => i.name).join(", ")}</p>
               </div>
               {!isMobile && <p style={{ fontSize: 13, color: C.textSecondary, flexShrink: 0 }}>{Math.round(o.elapsed)} min</p>}
               {/* Cash payment status */}
@@ -6594,6 +6599,10 @@ const CT = {
     addCart: "🛒 Ajouter au panier", next: "Suivant →", prev: "← Étape précédente",
     extrasTitle: "Suppléments", extrasDesc: "Optionnel · Ajoutez des suppléments",
     table: "Table",
+    orderTypeTitle: "Comment souhaitez-vous consommer ?",
+    dineIn: "Sur place", dineInSub: "Je mange ici",
+    takeaway: "À emporter", takeawaySub: "Je repars avec ma commande",
+    orderTypeConfirm: "Continuer →",
   },
   en: {
     all: "All", cart: "Cart", add: "Add", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Combo",
@@ -6610,6 +6619,10 @@ const CT = {
     addCart: "🛒 Add to cart", next: "Next →", prev: "← Previous step",
     extrasTitle: "Extras", extrasDesc: "Optional · Add extras",
     table: "Table",
+    orderTypeTitle: "How would you like your order?",
+    dineIn: "Dine in", dineInSub: "I'm eating here",
+    takeaway: "Takeaway", takeawaySub: "I'll take it with me",
+    orderTypeConfirm: "Continue →",
   },
   ar: {
     all: "الكل", cart: "السلة", add: "إضافة", addMore: "+", popular: "⭐ الأكثر طلبًا", menuBadge: "🍽️+🥤 طبق+شراب",
@@ -6626,6 +6639,10 @@ const CT = {
     addCart: "🛒 إضافة إلى السلة", next: "التالي ←", prev: "← الخطوة السابقة",
     extrasTitle: "إضافات", extrasDesc: "اختياري · أضف إضافات",
     table: "طاولة",
+    orderTypeTitle: "كيف تريد تناول طلبك؟",
+    dineIn: "في المكان", dineInSub: "سآكل هنا",
+    takeaway: "للأخذ", takeawaySub: "سآخذه معي",
+    orderTypeConfirm: "متابعة ←",
   },
   es: {
     all: "Todo", cart: "Cesta", add: "Añadir", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Menú",
@@ -6662,7 +6679,8 @@ const CT = {
 };
 
 function CustomerPage({ slug, tableNum }) {
-  const [step, setStep] = useState("loading"); // loading | menu | cart | payment | done | error
+  const [step, setStep] = useState("loading"); // loading | ordertype | menu | cart | payment | done | error
+  const [orderType, setOrderType] = useState(null); // "dine_in" | "takeaway"
   const [restaurant, setRestaurant] = useState(null);
   const [tableId, setTableId] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
@@ -6750,7 +6768,7 @@ function CustomerPage({ slug, tableNum }) {
           setRestaurant(DEMO_RESTAURANT);
           setMenuItems(DEMO_MENU);
           setTableId(`demo-t${tableNum}`);
-          setStep("menu");
+          setStep("ordertype");
           return;
         }
         // slug may be a UUID (durable QR) or a slug string (legacy)
@@ -6787,7 +6805,7 @@ function CustomerPage({ slug, tableNum }) {
           const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
           if (tk) setTicketInfo(tk);
         } catch {}
-        setStep("menu");
+        setStep("ordertype");
       } catch {
         setStep("error");
       }
@@ -6859,7 +6877,7 @@ function CustomerPage({ slug, tableNum }) {
       }
 
       let { data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash" })
+        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
         .select().single();
 
       // Fallback 0: without paid column (not migrated yet)
@@ -6991,6 +7009,35 @@ function CustomerPage({ slug, tableNum }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 16 }}>
           <Logo size={20} />
           <div style={{ width: 20, height: 20, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+        </div>
+      )}
+
+      {step === "ordertype" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24 }}>
+          {restaurant?.logo_url && <img src={restaurant.logo_url} alt="logo" style={{ width: 80, height: 80, borderRadius: 20, objectFit: "cover", marginBottom: 8 }} />}
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 6 }}>{restaurant?.name || "Bienvenue"}</div>
+            <div style={{ fontSize: 15, color: C.textSecondary }}>{L.orderTypeTitle}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", maxWidth: 340 }}>
+            {[
+              { key: "dine_in", icon: "🍽️", label: L.dineIn, sub: L.dineInSub },
+              { key: "takeaway", icon: "🥡", label: L.takeaway, sub: L.takeawaySub },
+            ].map(opt => (
+              <button key={opt.key} onClick={() => setOrderType(opt.key)}
+                style={{ display: "flex", alignItems: "center", gap: 16, padding: "20px 22px", background: orderType === opt.key ? C.dark : C.white, border: `2px solid ${orderType === opt.key ? C.dark : C.border}`, borderRadius: 18, cursor: "pointer", textAlign: "left", transition: "all 0.15s", ...FF }}>
+                <span style={{ fontSize: 32 }}>{opt.icon}</span>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: orderType === opt.key ? C.white : C.dark }}>{opt.label}</div>
+                  <div style={{ fontSize: 13, color: orderType === opt.key ? "rgba(255,255,255,0.7)" : C.textSecondary, marginTop: 2 }}>{opt.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => { if (orderType) setStep("menu"); }} disabled={!orderType}
+            style={{ width: "100%", maxWidth: 340, padding: 16, background: orderType ? C.dark : C.border, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: orderType ? "pointer" : "not-allowed", ...FF, transition: "background 0.2s" }}>
+            {L.orderTypeConfirm}
+          </button>
         </div>
       )}
 
