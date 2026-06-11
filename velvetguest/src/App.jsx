@@ -5068,18 +5068,30 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
     let cancelled = false;
     const init = async () => {
       try {
-        // Edge function resolves restaurant Stripe keys server-side
-        // (RLS blocks anonymous customers from reading restaurant_settings directly)
+        const rid = restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null;
+
+        // Read publishable key from the public view (anon-accessible, no RLS block)
+        let pubKey = ENV_STRIPE_KEY;
+        if (!pubKey && rid) {
+          const { data: pkRow } = await supabase
+            .from("restaurant_stripe_public")
+            .select("publishable_key")
+            .eq("restaurant_id", rid)
+            .maybeSingle();
+          pubKey = pkRow?.publishable_key || null;
+        }
+        if (!pubKey) { setConfigured(false); setReady(true); return; }
+
+        // Get client_secret from edge function (uses STRIPE_SECRET_KEY secret)
         const res = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
           { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-            body: JSON.stringify({ amount: total, restaurant_id: restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null }) }
+            body: JSON.stringify({ amount: total }) }
         );
-        const { client_secret, publishable_key, error: fnErr } = await res.json();
+        const { client_secret, error: fnErr } = await res.json();
         if (cancelled) return;
-        const pubKey = ENV_STRIPE_KEY || publishable_key;
-        if (fnErr === "stripe_not_configured" || !pubKey) { setConfigured(false); setReady(true); return; }
         if (fnErr || !client_secret) throw new Error(fnErr || "Pas de client_secret");
+
         const stripe = window.Stripe(pubKey);
         stripeRef.current = stripe;
         const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
