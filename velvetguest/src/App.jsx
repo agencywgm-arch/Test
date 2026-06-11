@@ -2575,7 +2575,7 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
               <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, margin: 0 }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(0)}€</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, margin: 0 }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(2)}€</p>
                   {o.order_type === "takeaway" && <span style={{ fontSize: 10, fontWeight: 700, background: "#FF9F0A22", color: "#FF9F0A", borderRadius: 6, padding: "2px 6px" }}>🥡 À emporter</span>}
                 </div>
                 <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{o.items.map(i => i.name).join(", ")}</p>
