@@ -5070,11 +5070,15 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
       try {
         const rid = restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null;
         // Use the configured supabase client (same one that loads the menu) to
-        // avoid CORS/preflight quirks with raw fetch
-        const { data: parsed, error: invokeErr } = await supabase.functions.invoke(
-          "create-payment-intent",
-          { body: { amount: total, restaurant_id: rid } }
-        );
+        // avoid CORS/preflight quirks with raw fetch.
+        // NB: the deployed function slug has a trailing dash ("create-payment-intent-"),
+        // so try it first, then fall back to the canonical name.
+        let parsed = null, invokeErr = null;
+        for (const fnName of ["create-payment-intent-", "create-payment-intent"]) {
+          const r = await supabase.functions.invoke(fnName, { body: { amount: total, restaurant_id: rid } });
+          if (!r.error && r.data) { parsed = r.data; invokeErr = null; break; }
+          invokeErr = r.error;
+        }
         if (invokeErr) throw new Error(`Appel fonction: ${invokeErr.message || invokeErr}`);
         const { client_secret, publishable_key, error: fnErr } = parsed || {};
         if (cancelled) return;
