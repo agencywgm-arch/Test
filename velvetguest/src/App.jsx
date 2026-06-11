@@ -5069,15 +5069,14 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
     const init = async () => {
       try {
         const rid = restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null;
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
-          { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-            body: JSON.stringify({ amount: total, restaurant_id: rid }) }
+        // Use the configured supabase client (same one that loads the menu) to
+        // avoid CORS/preflight quirks with raw fetch
+        const { data: parsed, error: invokeErr } = await supabase.functions.invoke(
+          "create-payment-intent",
+          { body: { amount: total, restaurant_id: rid } }
         );
-        const raw = await res.text();
-        let parsed = {};
-        try { parsed = JSON.parse(raw); } catch { throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200)}`); }
-        const { client_secret, publishable_key, error: fnErr } = parsed;
+        if (invokeErr) throw new Error(`Appel fonction: ${invokeErr.message || invokeErr}`);
+        const { client_secret, publishable_key, error: fnErr } = parsed || {};
         if (cancelled) return;
         const pubKey = ENV_STRIPE_KEY || publishable_key;
         if (fnErr === "stripe_not_configured") { setConfigured(false); setReady(true); return; }
