@@ -4964,7 +4964,7 @@ function useLiveOrders(restaurantId, pushNotif) {
   return { orders, served, loading, advanceOrder, toggleItem };
 }
 
-function CuisineView({ restaurant, onBack }) {
+function CuisineView({ restaurant, onBack, onLogout }) {
   const store = useContext(StoreCtx);
   const { orders, served, loading, advanceOrder, toggleItem } = useLiveOrders(restaurant.id, store.pushNotif);
   const [clock, setClock] = useState(new Date());
@@ -5010,7 +5010,10 @@ function CuisineView({ restaurant, onBack }) {
       <Toasts notifs={store.notifications} />
       <header style={{ background: C.dark, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: "7px 14px", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, fontWeight: 500, ...FF }}>← Dashboard</button>
+          {onBack
+            ? <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: "7px 14px", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, fontWeight: 500, ...FF }}>← Dashboard</button>
+            : onLogout && <button onClick={onLogout} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: "7px 14px", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, fontWeight: 500, ...FF }}>Déconnexion</button>
+          }
           <Logo size={16} dark={false} />
           <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>{restaurant.emoji} {restaurant.name}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(52,199,89,0.2)", border: "1px solid rgba(52,199,89,0.3)", padding: "4px 10px", borderRadius: 20 }}>
@@ -9101,6 +9104,7 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
                 <option value="manager">Manager</option>
                 <option value="staff">Staff</option>
                 <option value="cashier">Caisse</option>
+                <option value="cuisine">Cuisine (vue cuisine uniquement)</option>
               </select>
               <Btn variant="primary" type="submit" disabled={staffAdding || !staffEmail.trim()}>
                 {staffAdding ? "..." : "+ Ajouter"}
@@ -9349,13 +9353,15 @@ function Dashboard() {
               }
             }).catch(() => {});
 
-          // 2. Check if user is a restaurant staff member → direct to their dashboard
+          // 2. Check if user is a restaurant staff member → direct to their view based on role
           try {
             const staffRes = await supabase.from("restaurant_staff").select("*, restaurants(*)").eq("email", u.email).single();
             if (staffRes?.data?.restaurants) {
               const r = staffRes.data.restaurants;
+              const staffRole = staffRes.data.role;
               setRestaurant({ id: r.id, name: r.name, address: r.address, tables: r.tables_count, status: "active", emoji: r.logo_emoji || "🍽️", logo_emoji: r.logo_emoji || "🍽️", logo_url: r.logo_url || null, scans: 0, rating: null, orders: 0 });
-              setPage("dashboard");
+              // Kitchen staff only see the cuisine view, not the full dashboard
+              setPage(staffRole === "cuisine" ? "cuisine" : "dashboard");
               return;
             }
           } catch {}
@@ -9420,7 +9426,7 @@ function Dashboard() {
         setPage("dashboard");
       }} />}
       {page === "dashboard" && restaurant && <DashboardPage user={user} restaurant={restaurant} franchiseGroup={franchiseGroup} onRestaurantUpdate={r => setRestaurant(prev => ({ ...prev, ...r }))} onBack={() => { if (fromFranchise) { setFromFranchise(false); setPage("franchise"); } else if (user && user.id !== "demo") { setPage("restaurants"); } else { setPage("landing"); } }} onLogout={handleLogout} onCuisine={() => setPage("cuisine")} onClient={() => setPage("client")} onFranchise={() => setPage("franchise")} onHome={() => { if (!user || user.id === "demo") setPage("landing"); else if (franchiseGroup) setPage("franchise"); else setPage("restaurants"); }} />}
-      {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
+      {page === "cuisine" && restaurant && <CuisineView restaurant={restaurant} onBack={user ? () => setPage("dashboard") : null} onLogout={user ? handleLogout : null} />}
       {page === "client" && restaurant && <ClientView restaurant={restaurant} onBack={() => setPage("dashboard")} />}
     </StoreCtx.Provider>
     </LangCtx.Provider>
