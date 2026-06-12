@@ -1802,6 +1802,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
   const [logoUrl, setLogoUrl] = useState(restaurant.logo_url || "");
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [menuBgUrl, setMenuBgUrl] = useState("");
+  const [uploadingBg, setUploadingBg] = useState(false);
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1833,12 +1835,40 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     store.pushNotif("Logo supprimé", "success");
   }
 
+  async function uploadMenuBg(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploadingBg(true);
+    if (restaurant.id === "demo") {
+      setMenuBgUrl(URL.createObjectURL(file));
+      setUploadingBg(false);
+      return;
+    }
+    const ext = file.name.split(".").pop();
+    const path = `menu-backgrounds/${restaurant.id}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
+    if (upErr) { store.pushNotif("Erreur upload : " + upErr.message, "warning"); setUploadingBg(false); return; }
+    const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
+    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, menu_background_url: publicUrl, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    setMenuBgUrl(publicUrl);
+    store.pushNotif("✅ Image de fond mise à jour", "success");
+    setUploadingBg(false);
+  }
+
+  async function removeMenuBg() {
+    if (restaurant.id === "demo") { setMenuBgUrl(""); return; }
+    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, menu_background_url: null, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    setMenuBgUrl("");
+    store.pushNotif("Image de fond supprimée", "success");
+  }
+
   useEffect(() => {
     if (restaurant.id === "demo") return;
     supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurant.id).single()
       .then(({ data, error }) => {
-        if (data) setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
-        else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
+        if (data) {
+          setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
+          setMenuBgUrl(data.menu_background_url || "");
+        } else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
 
@@ -1899,6 +1929,28 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
             {logoUrl && (
               <button onClick={removeLogo} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 14px", fontSize: 13, color: C.textSecondary, cursor: "pointer", ...FF }}>
                 🗑 Supprimer le logo
+              </button>
+            )}
+          </div>
+        </div>
+      </Surface>
+
+      {/* Menu background */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🖼 Image de fond du menu client</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Photo affichée en arrière-plan sur la page menu de vos clients (optionnel).</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ width: 80, height: 80, borderRadius: 18, background: C.bg, border: `2px dashed ${C.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>
+            {menuBgUrl ? <img src={menuBgUrl} alt="bg" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🏞️"}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.dark, color: C.white, borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              {uploadingBg ? "Envoi…" : "📷 Choisir une image"}
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadMenuBg} disabled={uploadingBg} />
+            </label>
+            {menuBgUrl && (
+              <button onClick={removeMenuBg} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 14px", fontSize: 13, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                🗑 Supprimer l'image
               </button>
             )}
           </div>
@@ -2614,6 +2666,8 @@ function QRTab({ restaurant }) {
   const [bg, setBg] = useState("#FFFFFF");
   const [customBase, setCustomBase] = useState("");
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState(null); // table id being renamed
+  const [renameVal, setRenameVal] = useState("");
   const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const origin = customBase || window.location.origin;
@@ -2674,6 +2728,20 @@ function QRTab({ restaurant }) {
     await supabase.from("restaurants").update({ tables_count: Math.max(0, tables.length - 1) }).eq("id", restaurant.id);
   }
 
+  async function saveRename(t) {
+    const label = renameVal.trim() || null;
+    setRenaming(null);
+    setRenameVal("");
+    if (isDemo) {
+      setTables(prev => prev.map(x => x.id === t.id ? { ...x, label } : x));
+      if (sel?.id === t.id) setSel(prev => ({ ...prev, label }));
+      return;
+    }
+    await supabase.from("tables").update({ label }).eq("id", t.id);
+    setTables(prev => prev.map(x => x.id === t.id ? { ...x, label } : x));
+    if (sel?.id === t.id) setSel(prev => ({ ...prev, label }));
+  }
+
   const download = () => {
     const canvas = document.querySelector("#qr-dl canvas");
     if (!canvas) return;
@@ -2717,13 +2785,31 @@ function QRTab({ restaurant }) {
               + Ajouter une table
             </button>
           </div>
-          <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 8 }}>
+          <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))", gap: 8 }}>
             {tables.map(t => (
               <div key={t.id} style={{ position: "relative" }}>
-                <div onClick={() => setSel(t)} style={{ padding: "12px 8px", borderRadius: 12, border: `1.5px solid ${sel?.id === t.id ? C.dark : C.border}`, background: sel?.id === t.id ? C.dark : C.surface, textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
-                  <p style={{ fontSize: 10, color: sel?.id === t.id ? "rgba(255,255,255,0.5)" : C.textTertiary, marginBottom: 4 }}>TABLE</p>
-                  <p style={{ fontSize: 20, fontWeight: 800, color: sel?.id === t.id ? C.white : C.dark }}>{t.number}</p>
-                </div>
+                {renaming === t.id ? (
+                  <div style={{ padding: "8px", borderRadius: 12, border: `1.5px solid ${C.dark}`, background: C.surface, textAlign: "center" }}>
+                    <p style={{ fontSize: 9, color: C.textTertiary, marginBottom: 4 }}>RENOMMER</p>
+                    <input
+                      autoFocus
+                      value={renameVal}
+                      onChange={e => setRenameVal(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveRename(t); if (e.key === "Escape") { setRenaming(null); setRenameVal(""); } }}
+                      placeholder={`Table ${t.number}`}
+                      style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 6, padding: "4px 6px", fontSize: 11, textAlign: "center", outline: "none", ...FF }}
+                    />
+                    <button onClick={() => saveRename(t)} style={{ marginTop: 4, width: "100%", background: C.dark, color: C.white, border: "none", borderRadius: 6, padding: "4px", fontSize: 10, cursor: "pointer", ...FF }}>OK</button>
+                  </div>
+                ) : (
+                  <div onClick={() => setSel(t)} style={{ padding: "10px 8px", borderRadius: 12, border: `1.5px solid ${sel?.id === t.id ? C.dark : C.border}`, background: sel?.id === t.id ? C.dark : C.surface, textAlign: "center", cursor: "pointer", transition: "all 0.15s" }}>
+                    <p style={{ fontSize: 9, color: sel?.id === t.id ? "rgba(255,255,255,0.5)" : C.textTertiary, marginBottom: 2 }}>TABLE</p>
+                    <p style={{ fontSize: t.label ? 11 : 20, fontWeight: 800, color: sel?.id === t.id ? C.white : C.dark, wordBreak: "break-word", lineHeight: 1.2 }}>{t.label || t.number}</p>
+                    {t.label && <p style={{ fontSize: 9, color: sel?.id === t.id ? "rgba(255,255,255,0.4)" : C.textTertiary }}>#{t.number}</p>}
+                    <button onClick={e => { e.stopPropagation(); setRenaming(t.id); setRenameVal(t.label || ""); }}
+                      style={{ marginTop: 4, background: "none", border: "none", fontSize: 9, color: sel?.id === t.id ? "rgba(255,255,255,0.6)" : C.textTertiary, cursor: "pointer", ...FF }}>✏️ Renommer</button>
+                  </div>
+                )}
                 <button onClick={e => { e.stopPropagation(); deleteTable(t); }} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: C.accent, border: "2px solid #fff", color: "#fff", fontSize: 10, fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, ...FF }}>×</button>
               </div>
             ))}
@@ -2747,7 +2833,7 @@ function QRTab({ restaurant }) {
         </Surface>
         {sel && (
           <Surface id="qr-dl" style={{ padding: "18px 20px", textAlign: "center" }}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>Table {selNum}</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 2 }}>{sel?.label || `Table ${selNum}`}</p>
             <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>{restaurant.name}</p>
             <div style={{ display: "inline-block", padding: 14, background: bg, borderRadius: 16, boxShadow: "0 4px 24px rgba(0,0,0,0.1)" }}>
               <QRCanvas text={url} size={160} fg={fg} bg={bg} />
@@ -6707,6 +6793,7 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [menuBgUrl, setMenuBgUrl] = useState(null);
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
   const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
@@ -6798,10 +6885,11 @@ function CustomerPage({ slug, tableNum }) {
         } catch {}
         // Google review settings + category order
         try {
-          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key").eq("restaurant_id", resto.id).maybeSingle();
+          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url").eq("restaurant_id", resto.id).maybeSingle();
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
           if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
           if (sett?.stripe_publishable_key) setStripeEnabled(true);
+          if (sett?.menu_background_url) setMenuBgUrl(sett.menu_background_url);
         } catch {}
         // Ticket customization (separate query — columns may not exist yet)
         try {
@@ -7016,7 +7104,7 @@ function CustomerPage({ slug, tableNum }) {
       )}
 
       {step === "ordertype" && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24, ...(menuBgUrl ? { backgroundImage: `url(${menuBgUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
           {restaurant?.logo_url && <img src={restaurant.logo_url} alt="logo" style={{ width: 80, height: 80, borderRadius: 20, objectFit: "cover", marginBottom: 8 }} />}
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 6 }}>{restaurant?.name || "Bienvenue"}</div>
@@ -7056,7 +7144,7 @@ function CustomerPage({ slug, tableNum }) {
 
       {step === "menu" && (
         <>
-          <div style={{ background: C.dark, padding: "52px 20px 16px" }}>
+          <div style={{ background: menuBgUrl ? "transparent" : C.dark, padding: "52px 20px 16px", ...(menuBgUrl ? { backgroundImage: `url(${menuBgUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
