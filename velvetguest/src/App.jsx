@@ -6772,6 +6772,7 @@ function CustomerPage({ slug, tableNum }) {
   const [orderType, setOrderType] = useState(null); // "dine_in" | "takeaway"
   const [restaurant, setRestaurant] = useState(null);
   const [tableId, setTableId] = useState(null);
+  const [tableLabel, setTableLabel] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [cart, setCart] = useState([]);
   const [activeCat, setActiveCat] = useState("Tous");
@@ -6867,10 +6868,11 @@ function CustomerPage({ slug, tableNum }) {
         if (restoErr || !resto) { setStep("error"); return; }
         setRestaurant(resto);
         const [tblRes, itemsRes] = await Promise.all([
-          supabase.from("tables").select("id").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
+          supabase.from("tables").select("id,label").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
           supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name"),
         ]);
         setTableId(tblRes.data?.id ?? null);
+        setTableLabel(tblRes.data?.label ?? null);
         // deduplicate by id in case DB has duplicate rows
         const raw = itemsRes.data ?? [];
         const seen = new Set();
@@ -6921,6 +6923,7 @@ function CustomerPage({ slug, tableNum }) {
     return () => clearInterval(t);
   }, [step, orderId]);
 
+  const tableDisplay = tableLabel || `${L.table} ${tableNum}`;
   const rawCats = Array.from(new Set(menuItems.map(i => i.category)));
   const sortedCats = catOrderCustomer.length
     ? [...catOrderCustomer.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrderCustomer.includes(c))]
@@ -7153,7 +7156,7 @@ function CustomerPage({ slug, tableNum }) {
                     : <span style={{ fontSize: 22 }}>{restaurant.emoji || restaurant.logo_emoji}</span>}
                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{restaurant.name}</p>
                 </div>
-                <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>{L.table} {tableNum}</p>
+                <p style={{ fontSize: 26, fontWeight: 800, color: C.white, letterSpacing: "-0.03em" }}>{tableDisplay}</p>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {/* Language picker */}
@@ -7333,7 +7336,7 @@ function CustomerPage({ slug, tableNum }) {
             <>
               <button onClick={() => payMode ? setPayMode(null) : setStep("cart")} style={{ background: "none", border: "none", color: C.accent, fontWeight: 600, fontSize: 15, cursor: "pointer", padding: 0, marginBottom: 20, ...FF }}>← Retour</button>
               <p style={{ fontSize: 28, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em", marginBottom: 6 }}>{L.payTitle}</p>
-              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: restaurant?.id === "demo" ? 12 : 24 }}>{L.table} {tableNum} · {restaurant?.name}</p>
+              <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: restaurant?.id === "demo" ? 12 : 24 }}>{tableDisplay} · {restaurant?.name}</p>
               {restaurant?.id === "demo" && (
                 <div style={{ background: "#FFF9E6", border: "1.5px solid #F5C542", borderRadius: 12, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 18 }}>🎭</span>
@@ -7424,7 +7427,7 @@ ${statusHtml}
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.accentGreen + "20", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 30 }}>✅</div>
               <p style={{ fontSize: 24, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>Commande envoyée !</p>
-              <p style={{ color: C.textSecondary, fontSize: 14 }}>Votre commande est en cuisine · Table {tableNum}</p>
+              <p style={{ color: C.textSecondary, fontSize: 14 }}>Votre commande est en cuisine · {tableDisplay}</p>
             </div>
 
             {/* ETA banner */}
@@ -7474,7 +7477,7 @@ ${statusHtml}
                 {ticketInfo?.ticket_address && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 1px" }}>{ticketInfo.ticket_address}</p>}
                 {ticketInfo?.ticket_phone && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 1px" }}>Tél : {ticketInfo.ticket_phone}</p>}
                 {ticketInfo?.ticket_tax_id && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "0 0 4px" }}>{ticketInfo.ticket_tax_id}</p>}
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Table {tableNum} · {orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{tableDisplay} · {orderDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {orderDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
               </div>
 
               <div style={{ padding: "16px 20px" }}>
