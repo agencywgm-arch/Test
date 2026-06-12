@@ -4427,12 +4427,13 @@ function PromosTab({ restaurant, store }) {
 
       {/* Sub-tab switcher */}
       <div style={{ display: "inline-flex", background: C.bg, borderRadius: 12, padding: 4, marginBottom: 24, gap: 2 }}>
-        {[{ id: "promos", label: "🎁 Promos" }, { id: "calendar", label: "📅 Calendrier" }].map(t => (
+        {[{ id: "promos", label: "🎁 Promos auto" }, { id: "codes", label: "🏷️ Codes promo" }, { id: "calendar", label: "📅 Calendrier" }].map(t => (
           <button key={t.id} onClick={() => setSubTab(t.id)}
             style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: subTab === t.id ? C.white : "transparent", color: subTab === t.id ? C.dark : C.textSecondary, fontWeight: subTab === t.id ? 700 : 500, fontSize: 13, cursor: "pointer", boxShadow: subTab === t.id ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all 0.15s", ...FF }}>{t.label}</button>
         ))}
       </div>
 
+      {subTab === "codes" && <PromoCodesTab restaurant={restaurant} />}
       {subTab === "calendar" && <EventCalendar promos={promos} />}
 
       {subTab === "promos" && (promos.length === 0 ? (
@@ -6773,6 +6774,218 @@ function GmailOAuthCallback() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROMO CODES TAB (inside dashboard PromoTab)
+// ─────────────────────────────────────────────────────────────────────────────
+function PromoCodesTab({ restaurant }) {
+  const isDemo = restaurant.id === "demo";
+  const store = useContext(StoreCtx);
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null); // null | "new" | "edit"
+  const [editing, setEditing] = useState(null);
+  const EMPTY = { code: "", label: "", discount_percent: 10, max_uses: "", expires_at: "", active: true };
+  const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const fv = k => e => setForm(p => ({ ...p, [k]: e.target?.value ?? e }));
+
+  useEffect(() => {
+    if (isDemo) { setCodes([]); setLoading(false); return; }
+    supabase.from("promo_codes").select("*").eq("restaurant_id", restaurant.id).order("created_at", { ascending: false })
+      .then(({ data }) => { setCodes(data ?? []); setLoading(false); });
+  }, [restaurant.id]);
+
+  async function save() {
+    if (!form.code.trim() || !form.discount_percent) return;
+    setSaving(true);
+    const payload = {
+      code: form.code.trim().toUpperCase(),
+      label: form.label.trim(),
+      discount_percent: parseInt(form.discount_percent) || 0,
+      max_uses: form.max_uses ? parseInt(form.max_uses) : null,
+      expires_at: form.expires_at || null,
+      active: form.active,
+    };
+    if (isDemo) {
+      if (modal === "new") setCodes(p => [{ ...payload, id: "demo_" + Date.now(), restaurant_id: "demo", use_count: 0, created_at: new Date().toISOString() }, ...p]);
+      else setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+      setSaving(false); setModal(null); return;
+    }
+    if (modal === "new") {
+      const { data, error } = await supabase.from("promo_codes").insert({ ...payload, restaurant_id: restaurant.id }).select().single();
+      if (error) { store.pushNotif("Erreur : " + error.message, "warning"); setSaving(false); return; }
+      if (data) setCodes(p => [data, ...p]);
+    } else {
+      const { error } = await supabase.from("promo_codes").update(payload).eq("id", editing.id);
+      if (error) { store.pushNotif("Erreur : " + error.message, "warning"); setSaving(false); return; }
+      setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+    }
+    setSaving(false); setModal(null);
+    store.pushNotif("✅ Code promo enregistré", "success");
+  }
+
+  async function toggleActive(c) {
+    const next = !c.active;
+    setCodes(p => p.map(x => x.id === c.id ? { ...x, active: next } : x));
+    if (!isDemo) await supabase.from("promo_codes").update({ active: next }).eq("id", c.id);
+  }
+
+  async function del(c) {
+    if (!confirm(`Supprimer le code "${c.code}" ?`)) return;
+    setCodes(p => p.filter(x => x.id !== c.id));
+    if (!isDemo) await supabase.from("promo_codes").delete().eq("id", c.id);
+  }
+
+  function openNew() { setForm(EMPTY); setEditing(null); setModal("new"); }
+  function openEdit(c) {
+    setForm({ code: c.code, label: c.label || "", discount_percent: c.discount_percent, max_uses: c.max_uses || "", expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "", active: c.active });
+    setEditing(c); setModal("edit");
+  }
+
+  const totalUses = codes.reduce((s, c) => s + (c.use_count || 0), 0);
+  const activeCodes = codes.filter(c => c.active);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <p style={{ fontSize: 14, color: C.textSecondary }}>{activeCodes.length} code{activeCodes.length !== 1 ? "s" : ""} actif{activeCodes.length !== 1 ? "s" : ""} · {totalUses} utilisation{totalUses !== 1 ? "s" : ""} totale{totalUses !== 1 ? "s" : ""}</p>
+        </div>
+        <Btn variant="primary" onClick={openNew}>+ Nouveau code</Btn>
+      </div>
+
+      {/* Stats row */}
+      {codes.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+          {[
+            ["Codes créés", codes.length],
+            ["Codes actifs", activeCodes.length],
+            ["Utilisations totales", totalUses],
+          ].map(([l, v]) => (
+            <Surface key={l} style={{ padding: "14px 18px" }}>
+              <p style={{ fontSize: 11, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>{l}</p>
+              <p style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>{v}</p>
+            </Surface>
+          ))}
+        </div>
+      )}
+
+      {loading && <p style={{ color: C.textSecondary, fontSize: 14 }}>Chargement…</p>}
+
+      {!loading && codes.length === 0 && (
+        <Surface style={{ padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🏷️</div>
+          <p style={{ fontWeight: 700, fontSize: 16, color: C.dark, marginBottom: 6 }}>Aucun code promo</p>
+          <p style={{ color: C.textSecondary, fontSize: 14, marginBottom: 20 }}>Créez des codes que vos clients saisissent au moment de commander.</p>
+          <Btn variant="primary" onClick={openNew}>+ Créer un code</Btn>
+        </Surface>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+        {codes.map(c => {
+          const expired = c.expires_at && new Date(c.expires_at) < new Date();
+          const maxed = c.max_uses && c.use_count >= c.max_uses;
+          const statusOk = c.active && !expired && !maxed;
+          return (
+            <Surface key={c.id} style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${statusOk ? C.accentGreen : C.border}`, opacity: statusOk ? 1 : 0.75 }}>
+              <div style={{ padding: "16px 18px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: "monospace", fontWeight: 900, fontSize: 18, color: C.dark, letterSpacing: "0.05em", background: C.bg, padding: "3px 10px", borderRadius: 8 }}>{c.code}</span>
+                    </div>
+                    {c.label && <p style={{ fontSize: 13, color: C.textSecondary }}>{c.label}</p>}
+                  </div>
+                  <button onClick={() => toggleActive(c)}
+                    style={{ width: 36, height: 20, borderRadius: 10, border: "none", background: c.active ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                    <span style={{ position: "absolute", top: 2, left: c.active ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                  <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>−{c.discount_percent}%</span>
+                  {statusOk && <span style={{ background: C.accentGreen + "15", color: C.accentGreen, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ Actif</span>}
+                  {expired && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Expiré</span>}
+                  {maxed && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Épuisé</span>}
+                </div>
+                <div style={{ display: "flex", gap: 12, fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>
+                  <span>🔢 {c.use_count || 0}{c.max_uses ? ` / ${c.max_uses}` : ""} utilisation{c.use_count !== 1 ? "s" : ""}</span>
+                  {c.expires_at && <span>📅 {new Date(c.expires_at).toLocaleDateString("fr-FR")}</span>}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn variant="ghost" size="xs" full onClick={() => openEdit(c)}>Modifier</Btn>
+                  <button onClick={() => del(c)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: C.accent, fontSize: 12, ...FF }}>✕</button>
+                </div>
+              </div>
+            </Surface>
+          );
+        })}
+      </div>
+
+      {/* Modal */}
+      {(modal === "new" || modal === "edit") && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <Surface style={{ width: "100%", maxWidth: 420, padding: 28, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <p style={{ fontWeight: 800, fontSize: 18, color: C.dark }}>{modal === "new" ? "Nouveau code promo" : "Modifier le code"}</p>
+              <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.textTertiary }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Code * <span style={{ fontWeight: 400 }}>(majuscules, sans espace)</span></label>
+                <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase().replace(/\s/g, "") }))}
+                  placeholder="EX: BIENVENUE10" style={{ width: "100%", padding: "12px 14px", border: `1.5px solid ${C.border}`, borderRadius: 12, fontSize: 16, fontFamily: "monospace", fontWeight: 700, outline: "none", letterSpacing: "0.05em", boxSizing: "border-box", ...FF }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Libellé (visible par le client)</label>
+                <input value={form.label} onChange={fv("label")} placeholder="Ex: Bienvenue !" style={{ width: "100%", padding: "12px 14px", border: `1.5px solid ${C.border}`, borderRadius: 12, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Réduction *</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[5, 10, 15, 20, 25, 30].map(p => (
+                    <button key={p} onClick={() => setForm(f => ({ ...f, discount_percent: p }))}
+                      style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${form.discount_percent === p ? C.dark : C.border}`, background: form.discount_percent === p ? C.dark : C.white, color: form.discount_percent === p ? C.white : C.dark, fontWeight: 700, fontSize: 13, cursor: "pointer", ...FF }}>
+                      −{p}%
+                    </button>
+                  ))}
+                </div>
+                <input type="number" value={form.discount_percent} onChange={fv("discount_percent")} min={1} max={100}
+                  style={{ marginTop: 8, width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }}
+                  placeholder="Ou entrez une valeur personnalisée…" />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Nb. utilisations max</label>
+                  <input type="number" value={form.max_uses} onChange={fv("max_uses")} placeholder="Illimité" min={1}
+                    style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Date d'expiration</label>
+                  <input type="date" value={form.expires_at} onChange={fv("expires_at")}
+                    style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.bg, borderRadius: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Code actif</span>
+                <div onClick={() => setForm(p => ({ ...p, active: !p.active }))}
+                  style={{ width: 44, height: 26, borderRadius: 13, background: form.active ? C.accentGreen : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+                  <div style={{ position: "absolute", top: 3, left: form.active ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+              <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
+              <Btn variant="primary" full onClick={save} disabled={saving || !form.code.trim()}>
+                {saving ? "Enregistrement…" : modal === "new" ? "Créer le code" : "Enregistrer"}
+              </Btn>
+            </div>
+          </Surface>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CUSTOMER PAGE — public, no auth, opened by scanning QR code
 // ─────────────────────────────────────────────────────────────────────────────
 const CUSTOMER_LANGS = [
@@ -6904,6 +7117,10 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState(null); // { code, discount_percent, label, id }
+  const [promoError, setPromoError] = useState("");
+  const [checkingPromo, setCheckingPromo] = useState(false);
   const [menuWelcomeBg, setMenuWelcomeBg] = useState(null);
   const [menuHeaderBg, setMenuHeaderBg] = useState(null);
   const [menuBodyBg, setMenuBodyBg] = useState(null);
@@ -7057,8 +7274,25 @@ function CustomerPage({ slug, tableNum }) {
     const translated = tItem(item);
     return bestDiscount > 0 ? { ...translated, _originalPrice: translated.price, price: +(translated.price * (1 - bestDiscount / 100)).toFixed(2) } : translated;
   });
-  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const rawTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const promoDiscount = appliedPromo ? +(rawTotal * appliedPromo.discount_percent / 100).toFixed(2) : 0;
+  const total = +(rawTotal - promoDiscount).toFixed(2);
   const count = cart.reduce((s, i) => s + i.qty, 0);
+
+  async function applyPromoCode() {
+    const code = promoCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setCheckingPromo(true); setPromoError("");
+    if (restaurant.id === "demo") { setPromoError("Codes promo indisponibles en mode démo"); setCheckingPromo(false); return; }
+    const { data, error } = await supabase.from("promo_codes")
+      .select("*").eq("restaurant_id", restaurant.id).eq("code", code).eq("active", true).maybeSingle();
+    if (error || !data) { setPromoError("Code invalide ou inactif"); setCheckingPromo(false); return; }
+    if (data.expires_at && new Date(data.expires_at) < new Date()) { setPromoError("Ce code a expiré"); setCheckingPromo(false); return; }
+    if (data.max_uses && data.use_count >= data.max_uses) { setPromoError("Ce code a atteint son nombre maximum d'utilisations"); setCheckingPromo(false); return; }
+    setAppliedPromo({ id: data.id, code: data.code, discount_percent: data.discount_percent, label: data.label });
+    setPromoCodeInput("");
+    setCheckingPromo(false);
+  }
 
   const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
@@ -7115,6 +7349,11 @@ function CustomerPage({ slug, tableNum }) {
         return { order_id: order.id, menu_item_id: i.id, quantity: i.qty, detail: parts.join(" · ") };
       });
       await supabase.from("order_items").insert(orderItems);
+
+      // Increment promo code use count
+      if (appliedPromo?.id) {
+        try { await supabase.rpc("increment_promo_use", { promo_id: appliedPromo.id }); } catch {}
+      }
 
       for (const item of cart) {
         if (item.stock != null && item.stock > 0) {
@@ -7396,9 +7635,55 @@ function CustomerPage({ slug, tableNum }) {
             <label style={{ color: C.textSecondary, fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>{L.note}</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} placeholder={L.notePlaceholder} rows={3} style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 14, padding: "12px 14px", fontSize: 14, color: C.dark, resize: "none", outline: "none", ...FF }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0" }}>
-            <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>{L.total}</span>
-            <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
+          {/* Promo code */}
+          <div style={{ marginTop: 16, background: C.bg, borderRadius: 16, padding: "16px 18px" }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 10 }}>🏷️ Code promo</p>
+            {appliedPromo ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.accentGreen + "12", border: `1.5px solid ${C.accentGreen}30`, borderRadius: 12, padding: "12px 14px" }}>
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: 15, color: C.accentGreen }}>−{appliedPromo.discount_percent}% appliqué ✓</p>
+                  {appliedPromo.label && <p style={{ fontSize: 12, color: C.accentGreen, opacity: 0.8 }}>{appliedPromo.label}</p>}
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Code : <strong>{appliedPromo.code}</strong> · Économie : {promoDiscount.toFixed(2)}€</p>
+                </div>
+                <button onClick={() => { setAppliedPromo(null); setPromoCodeInput(""); }} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.textTertiary, lineHeight: 1 }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={promoCodeInput}
+                    onChange={e => { setPromoCodeInput(e.target.value.toUpperCase()); setPromoError(""); }}
+                    onKeyDown={e => e.key === "Enter" && applyPromoCode()}
+                    placeholder="VOTRECODE"
+                    style={{ flex: 1, padding: "11px 14px", border: `1.5px solid ${promoError ? C.accent : C.border}`, borderRadius: 12, fontSize: 14, fontFamily: "monospace", fontWeight: 600, letterSpacing: "0.05em", outline: "none", ...FF }}
+                  />
+                  <button onClick={applyPromoCode} disabled={checkingPromo || !promoCodeInput.trim()}
+                    style={{ padding: "11px 18px", background: promoCodeInput.trim() ? C.dark : C.border, color: C.white, border: "none", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: promoCodeInput.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", ...FF }}>
+                    {checkingPromo ? "…" : "Appliquer"}
+                  </button>
+                </div>
+                {promoError && <p style={{ fontSize: 12, color: C.accent, marginTop: 6, fontWeight: 600 }}>⚠ {promoError}</p>}
+              </>
+            )}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "16px 0" }}>
+            {appliedPromo && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, color: C.textSecondary }}>Sous-total</span>
+                <span style={{ fontSize: 14, color: C.textSecondary }}>{rawTotal.toFixed(2)}€</span>
+              </div>
+            )}
+            {appliedPromo && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, color: C.accentGreen, fontWeight: 600 }}>Réduction ({appliedPromo.discount_percent}%)</span>
+                <span style={{ fontSize: 14, color: C.accentGreen, fontWeight: 700 }}>−{promoDiscount.toFixed(2)}€</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: appliedPromo ? `1px solid ${C.border}` : "none", paddingTop: appliedPromo ? 10 : 0 }}>
+              <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>{L.total}</span>
+              <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
+            </div>
           </div>
           <button onClick={() => setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>{L.payment}</button>
         </div>
