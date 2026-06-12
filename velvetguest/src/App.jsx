@@ -5225,6 +5225,14 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                         {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
                       </div>
                     </div>
+                    {order.payment_method === "cash" && (
+                      <div style={{ background: order.paid ? "#E8F5E9" : "#FFF3E0", borderBottom: `1px solid ${order.paid ? "#A5D6A7" : "#FFCC80"}`, padding: "6px 16px", display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14 }}>{order.paid ? "✅" : "💵"}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: order.paid ? "#2E7D32" : "#E65100" }}>
+                          {order.paid ? "Espèces encaissées" : "Espèces — non encaissé"}
+                        </span>
+                      </div>
+                    )}
                     {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
                     <div style={{ padding: "10px 12px" }}>
                       {order.items.map(item => (
