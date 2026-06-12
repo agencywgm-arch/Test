@@ -1804,8 +1804,10 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [show, setShow] = useState({ resend_api_key: false, stripe_secret_key: false });
   const [logoUrl, setLogoUrl] = useState(restaurant.logo_url || "");
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [menuBgUrl, setMenuBgUrl] = useState("");
-  const [uploadingBg, setUploadingBg] = useState(false);
+  const [menuWelcomeBg, setMenuWelcomeBg] = useState("");
+  const [menuHeaderBg, setMenuHeaderBg] = useState("");
+  const [menuBodyBg, setMenuBodyBg] = useState("");
+  const [uploadingBg, setUploadingBg] = useState(null); // "welcome"|"header"|"body"|null
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1837,30 +1839,36 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     store.pushNotif("Logo supprimé", "success");
   }
 
-  async function uploadMenuBg(e) {
+  const MENU_BG_ZONES = [
+    { key: "welcome", label: "Écran d'accueil", hint: "Fond de l'écran Sur place / À emporter", col: "menu_background_url", state: menuWelcomeBg, set: setMenuWelcomeBg, icon: "🏠" },
+    { key: "header",  label: "Bandeau supérieur", hint: "La barre sombre avec le nom du restaurant et le numéro de table", col: "menu_header_bg_url", state: menuHeaderBg, set: setMenuHeaderBg, icon: "🔝" },
+    { key: "body",    label: "Zone du menu", hint: "Le fond blanc où s'affichent les plats", col: "menu_body_bg_url", state: menuBodyBg, set: setMenuBodyBg, icon: "📋" },
+  ];
+
+  async function uploadMenuZoneBg(zone, e) {
     const file = e.target.files?.[0]; if (!file) return;
-    setUploadingBg(true);
+    setUploadingBg(zone.key);
     if (restaurant.id === "demo") {
-      setMenuBgUrl(URL.createObjectURL(file));
-      setUploadingBg(false);
+      zone.set(URL.createObjectURL(file));
+      setUploadingBg(null);
       return;
     }
     const ext = file.name.split(".").pop();
-    const path = `menu-backgrounds/${restaurant.id}.${ext}`;
+    const path = `menu-backgrounds/${restaurant.id}-${zone.key}.${ext}`;
     const { error: upErr } = await supabase.storage.from("assets").upload(path, file, { upsert: true });
-    if (upErr) { store.pushNotif("Erreur upload : " + upErr.message, "warning"); setUploadingBg(false); return; }
+    if (upErr) { store.pushNotif("Erreur upload : " + upErr.message, "warning"); setUploadingBg(null); return; }
     const { data: { publicUrl } } = supabase.storage.from("assets").getPublicUrl(path);
-    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, menu_background_url: publicUrl, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
-    setMenuBgUrl(publicUrl);
-    store.pushNotif("✅ Image de fond mise à jour", "success");
-    setUploadingBg(false);
+    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, [zone.col]: publicUrl, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    zone.set(publicUrl);
+    store.pushNotif("✅ Image mise à jour", "success");
+    setUploadingBg(null);
   }
 
-  async function removeMenuBg() {
-    if (restaurant.id === "demo") { setMenuBgUrl(""); return; }
-    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, menu_background_url: null, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
-    setMenuBgUrl("");
-    store.pushNotif("Image de fond supprimée", "success");
+  async function removeMenuZoneBg(zone) {
+    if (restaurant.id === "demo") { zone.set(""); return; }
+    await supabase.from("restaurant_settings").upsert({ restaurant_id: restaurant.id, [zone.col]: null, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
+    zone.set("");
+    store.pushNotif("Image supprimée", "success");
   }
 
   useEffect(() => {
@@ -1869,7 +1877,9 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       .then(({ data, error }) => {
         if (data) {
           setSettings({ resend_api_key: data.resend_api_key || "", resend_from: data.resend_from || "", stripe_publishable_key: data.stripe_publishable_key || "", stripe_secret_key: data.stripe_secret_key || "", google_review_url: data.google_review_url || "", google_review_enabled: !!data.google_review_enabled });
-          setMenuBgUrl(data.menu_background_url || "");
+          setMenuWelcomeBg(data.menu_background_url || "");
+          setMenuHeaderBg(data.menu_header_bg_url || "");
+          setMenuBodyBg(data.menu_body_bg_url || "");
         } else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
@@ -1937,25 +1947,52 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
         </div>
       </Surface>
 
-      {/* Menu background */}
+      {/* Menu customization */}
       <Surface style={{ padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🖼 Image de fond du menu client</h3>
-        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Photo affichée en arrière-plan sur la page menu de vos clients (optionnel).</p>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div style={{ width: 80, height: 80, borderRadius: 18, background: C.bg, border: `2px dashed ${C.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>
-            {menuBgUrl ? <img src={menuBgUrl} alt="bg" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🏞️"}
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🎨 Personnalisation du menu client</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>Personnalisez chaque zone de la page menu de vos clients. Laissez vide pour garder l'apparence par défaut.</p>
+        {/* Phone mockup preview */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+          <div style={{ width: 160, borderRadius: 24, border: "3px solid #1D1D1F", overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", background: C.white }}>
+            {/* welcome zone preview */}
+            <div style={{ height: 48, background: menuWelcomeBg ? `url(${menuWelcomeBg}) center/cover` : "#f0f0f5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: menuWelcomeBg ? "#fff" : C.textTertiary, fontWeight: 600, textShadow: menuWelcomeBg ? "0 1px 3px rgba(0,0,0,0.6)" : "none", position: "relative" }}>
+              {!menuWelcomeBg && "🏠 Accueil"}
+              {menuWelcomeBg && <span style={{ background: "rgba(0,0,0,0.4)", padding: "2px 6px", borderRadius: 4 }}>🏠 Accueil</span>}
+            </div>
+            {/* header zone preview */}
+            <div style={{ height: 44, background: menuHeaderBg ? `url(${menuHeaderBg}) center/cover` : "#1D1D1F", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: menuHeaderBg ? "#fff" : "rgba(255,255,255,0.5)", fontWeight: 600, textShadow: menuHeaderBg ? "0 1px 3px rgba(0,0,0,0.6)" : "none" }}>
+              {menuHeaderBg ? <span style={{ background: "rgba(0,0,0,0.4)", padding: "2px 6px", borderRadius: 4 }}>🔝 Bandeau</span> : "🔝 Bandeau"}
+            </div>
+            {/* body zone preview */}
+            <div style={{ height: 72, background: menuBodyBg ? `url(${menuBodyBg}) center/cover` : C.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: menuBodyBg ? "#fff" : C.textTertiary, fontWeight: 600, textShadow: menuBodyBg ? "0 1px 3px rgba(0,0,0,0.6)" : "none", borderTop: `1px solid ${C.border}` }}>
+              {menuBodyBg ? <span style={{ background: "rgba(0,0,0,0.4)", padding: "2px 6px", borderRadius: 4 }}>📋 Menu</span> : "📋 Zone menu"}
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.dark, color: C.white, borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              {uploadingBg ? "Envoi…" : "📷 Choisir une image"}
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadMenuBg} disabled={uploadingBg} />
-            </label>
-            {menuBgUrl && (
-              <button onClick={removeMenuBg} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 14px", fontSize: 13, color: C.textSecondary, cursor: "pointer", ...FF }}>
-                🗑 Supprimer l'image
-              </button>
-            )}
-          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {MENU_BG_ZONES.map(zone => (
+            <div key={zone.key} style={{ background: C.bg, borderRadius: 16, padding: "16px 18px", display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ width: 64, height: 64, borderRadius: 14, overflow: "hidden", flexShrink: 0, border: `2px dashed ${zone.state ? "transparent" : C.border}`, background: zone.state ? `url(${zone.state}) center/cover` : C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+                {!zone.state && zone.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: C.dark, marginBottom: 2 }}>{zone.label}</p>
+                <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 10 }}>{zone.hint}</p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.dark, color: C.white, borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {uploadingBg === zone.key ? "Envoi…" : "📷 Photo"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => uploadMenuZoneBg(zone, e)} disabled={!!uploadingBg} />
+                  </label>
+                  {zone.state && (
+                    <button onClick={() => removeMenuZoneBg(zone)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 12, color: C.textSecondary, cursor: "pointer", ...FF }}>
+                      🗑 Supprimer
+                    </button>
+                  )}
+                  {zone.state && <span style={{ alignSelf: "center", fontSize: 11, color: C.accentGreen, fontWeight: 600 }}>✓ Photo active</span>}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </Surface>
 
@@ -6867,7 +6904,9 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
-  const [menuBgUrl, setMenuBgUrl] = useState(null);
+  const [menuWelcomeBg, setMenuWelcomeBg] = useState(null);
+  const [menuHeaderBg, setMenuHeaderBg] = useState(null);
+  const [menuBodyBg, setMenuBodyBg] = useState(null);
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
   const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
@@ -6960,11 +6999,13 @@ function CustomerPage({ slug, tableNum }) {
         } catch {}
         // Google review settings + category order
         try {
-          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url").eq("restaurant_id", resto.id).maybeSingle();
+          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url,menu_header_bg_url,menu_body_bg_url").eq("restaurant_id", resto.id).maybeSingle();
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
           if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
           if (sett?.stripe_publishable_key) setStripeEnabled(true);
-          if (sett?.menu_background_url) setMenuBgUrl(sett.menu_background_url);
+          if (sett?.menu_background_url) setMenuWelcomeBg(sett.menu_background_url);
+          if (sett?.menu_header_bg_url) setMenuHeaderBg(sett.menu_header_bg_url);
+          if (sett?.menu_body_bg_url) setMenuBodyBg(sett.menu_body_bg_url);
         } catch {}
         // Ticket customization (separate query — columns may not exist yet)
         try {
@@ -7180,7 +7221,7 @@ function CustomerPage({ slug, tableNum }) {
       )}
 
       {step === "ordertype" && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24, ...(menuBgUrl ? { backgroundImage: `url(${menuBgUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24, ...(menuWelcomeBg ? { backgroundImage: `url(${menuWelcomeBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
           {restaurant?.logo_url && <img src={restaurant.logo_url} alt="logo" style={{ width: 80, height: 80, borderRadius: 20, objectFit: "cover", marginBottom: 8 }} />}
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 6 }}>{restaurant?.name || "Bienvenue"}</div>
@@ -7220,7 +7261,7 @@ function CustomerPage({ slug, tableNum }) {
 
       {step === "menu" && (
         <>
-          <div style={{ background: menuBgUrl ? "transparent" : C.dark, padding: "52px 20px 16px", ...(menuBgUrl ? { backgroundImage: `url(${menuBgUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+          <div style={{ padding: "52px 20px 16px", background: menuHeaderBg ? "transparent" : C.dark, ...(menuHeaderBg ? { backgroundImage: `url(${menuHeaderBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -7270,11 +7311,11 @@ function CustomerPage({ slug, tableNum }) {
               ))}
             </div>
           )}
-          <div>
+          <div style={menuBodyBg ? { backgroundImage: `url(${menuBodyBg})`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "local" } : {}}>
             {filteredWithPromo.map(item => {
               const inCart = cart.find(i => i.id === item.id);
               return (
-                <div key={item.id} style={{ display: "flex", gap: 12, padding: "16px", borderBottom: `1px solid ${C.border}` }}>
+                <div key={item.id} style={{ display: "flex", gap: 12, padding: "16px", borderBottom: `1px solid ${C.border}`, background: menuBodyBg ? "rgba(255,255,255,0.82)" : "transparent" }}>
                   <div style={{ width: 60, height: 60, borderRadius: 14, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0, overflow: "hidden" }}>
                     {item.photo_url ? <img src={item.photo_url} alt={item.name} style={{ width: 60, height: 60, objectFit: "cover" }} /> : item.emoji}
                   </div>
