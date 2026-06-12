@@ -7685,7 +7685,9 @@ function CustomerPage({ slug, tableNum }) {
               <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
             </div>
           </div>
-          <button onClick={() => setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>{L.payment}</button>
+          <button onClick={() => total === 0 ? confirm("free") : setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>
+            {total === 0 ? "✓ Commander gratuitement" : L.payment}
+          </button>
         </div>
       )}
 
@@ -7710,12 +7712,12 @@ function CustomerPage({ slug, tableNum }) {
             <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="06 XX XX XX XX" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
           </div>
           <button
-            onClick={() => { if (!customerEmail.trim()) return; setStep("payment"); }}
+            onClick={() => { if (!customerEmail.trim()) return; total === 0 ? confirm("free") : setStep("payment"); }}
             disabled={!customerEmail.trim()}
             style={{ width: "100%", padding: "16px", background: customerEmail.trim() ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: customerEmail.trim() ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
-            Continuer vers le paiement →
+            {total === 0 ? "✓ Confirmer la commande gratuite" : "Continuer vers le paiement →"}
           </button>
-          <button onClick={() => { setProfileSkipped(true); setStep("payment"); }} style={{ width: "100%", padding: "12px", background: "none", color: C.textTertiary, border: "none", fontSize: 14, cursor: "pointer", ...FF }}>
+          <button onClick={() => { setProfileSkipped(true); total === 0 ? confirm("free") : setStep("payment"); }} style={{ width: "100%", padding: "12px", background: "none", color: C.textTertiary, border: "none", fontSize: 14, cursor: "pointer", ...FF }}>
             Passer cette étape
           </button>
           <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
@@ -7723,6 +7725,8 @@ function CustomerPage({ slug, tableNum }) {
           </p>
         </div>
       )}
+
+      {step === "payment" && total === 0 && !confirming && (() => { confirm("free"); return null; })()}
 
       {step === "payment" && (
         <div style={{ padding: "40px 20px 24px" }}>
