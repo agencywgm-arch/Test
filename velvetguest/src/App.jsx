@@ -507,6 +507,8 @@ const css = `
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
   @keyframes ring { 0%,100% { transform:scale(1); } 50% { transform:scale(1.06); } }
   @keyframes typingDot { 0%,80%,100% { transform:scale(0.6); opacity:0.4; } 40% { transform:scale(1); opacity:1; } }
+  @keyframes popIn { from { opacity:0; transform:scale(0.7); } to { opacity:1; transform:scale(1); } }
+  @keyframes bellShake { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-20deg)} 40%{transform:rotate(20deg)} 60%{transform:rotate(-15deg)} 80%{transform:rotate(15deg)} }
   .btn-press:active { transform: scale(0.97); opacity: 0.9; }
   .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
   .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
@@ -5054,8 +5056,41 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   const store = useContext(StoreCtx);
   const { orders, served, loading, advanceOrder, toggleItem } = useLiveOrders(restaurant.id, store.pushNotif);
   const [clock, setClock] = useState(new Date());
-  const [etaMap, setEtaMap] = useState({}); // orderId -> ISO string
+  const [etaMap, setEtaMap] = useState({});
+  const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, table, order_type, items }
+  const seenOrderIds = useRef(new Set());
+  const audioCtxRef = useRef(null);
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  // Detect new orders and trigger alert
+  useEffect(() => {
+    if (loading) return;
+    const newOrders = orders.filter(o => o.status === "new" && !seenOrderIds.current.has(o.id));
+    newOrders.forEach(o => seenOrderIds.current.add(o.id));
+    if (newOrders.length > 0) {
+      setNewOrderAlert(newOrders[0]);
+      playAlarm();
+    }
+  }, [orders, loading]);
+
+  function playAlarm() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtxRef.current = ctx;
+      const beep = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "square";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.3, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+        osc.start(start); osc.stop(start + dur);
+      };
+      const t = ctx.currentTime;
+      beep(880, t, 0.12); beep(1100, t + 0.15, 0.12); beep(880, t + 0.3, 0.12); beep(1100, t + 0.45, 0.18);
+    } catch {}
+  }
 
   // Load existing ETAs on mount
   useEffect(() => {
@@ -5094,6 +5129,32 @@ function CuisineView({ restaurant, onBack, onLogout }) {
     <div style={{ background: "#F5F5F7", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "'Figtree', -apple-system, sans-serif" }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
+
+      {/* New order alert overlay */}
+      {newOrderAlert && (
+        <div onClick={() => setNewOrderAlert(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "fadeIn 0.2s ease" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.white, borderRadius: 28, padding: "36px 48px", textAlign: "center", maxWidth: 380, width: "90%", boxShadow: "0 32px 80px rgba(0,0,0,0.4)", animation: "popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
+            <div style={{ fontSize: 64, marginBottom: 12, animation: "bellShake 0.6s ease infinite" }}>🔔</div>
+            <p style={{ fontSize: 13, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>NOUVELLE COMMANDE</p>
+            <p style={{ fontSize: 48, fontWeight: 900, color: C.dark, lineHeight: 1, marginBottom: 8 }}>Table {newOrderAlert.table}</p>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: newOrderAlert.order_type === "takeaway" ? "#FFF3E0" : "#E8F5E9", borderRadius: 20, padding: "8px 18px", marginBottom: 20 }}>
+              <span style={{ fontSize: 20 }}>{newOrderAlert.order_type === "takeaway" ? "🥡" : "🍽️"}</span>
+              <span style={{ fontWeight: 700, fontSize: 15, color: newOrderAlert.order_type === "takeaway" ? "#E65100" : "#2E7D32" }}>{newOrderAlert.order_type === "takeaway" ? "À emporter" : "Sur place"}</span>
+            </div>
+            <div style={{ background: C.bg, borderRadius: 14, padding: "12px 16px", marginBottom: 24, textAlign: "left" }}>
+              {newOrderAlert.items?.slice(0, 4).map((item, i) => (
+                <p key={i} style={{ fontSize: 14, color: C.dark, fontWeight: 600, padding: "3px 0" }}>×{item.qty} {item.emoji} {item.name}</p>
+              ))}
+              {(newOrderAlert.items?.length > 4) && <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>+{newOrderAlert.items.length - 4} autre(s)…</p>}
+            </div>
+            <button onClick={() => setNewOrderAlert(null)} style={{ width: "100%", padding: "16px 0", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: "pointer", ...FF }}>
+              ✓ Vu — Fermer
+            </button>
+            <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 10 }}>Cliquez n'importe où pour fermer</p>
+          </div>
+        </div>
+      )}
+
       <header style={{ background: C.dark, height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {onBack
@@ -5153,6 +5214,10 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                             ? <p style={{ fontSize: 13, color: C.white, fontWeight: 700, letterSpacing: "-0.01em" }}>{order.customerName}</p>
                             : <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p>
                           }
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: order.order_type === "takeaway" ? "rgba(255,160,0,0.25)" : "rgba(255,255,255,0.15)", borderRadius: 10, padding: "2px 8px", marginTop: 3 }}>
+                            <span style={{ fontSize: 11 }}>{order.order_type === "takeaway" ? "🥡" : "🍽️"}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: order.order_type === "takeaway" ? "#FFD600" : "rgba(255,255,255,0.85)" }}>{order.order_type === "takeaway" ? "Emporter" : "Sur place"}</span>
+                          </span>
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
