@@ -2705,8 +2705,12 @@ function QRTab({ restaurant }) {
   const [bg, setBg] = useState("#FFFFFF");
   const [customBase, setCustomBase] = useState("");
   const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState(null); // table id being renamed
+  const [renaming, setRenaming] = useState(null);
   const [renameVal, setRenameVal] = useState("");
+  const [embedColor, setEmbedColor] = useState("#1D1D1F");
+  const [embedLabel, setEmbedLabel] = useState("🛒 Commander");
+  const [embedTable, setEmbedTable] = useState("0");
+  const [embedCopied, setEmbedCopied] = useState(false);
   const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const origin = customBase || window.location.origin;
@@ -2886,6 +2890,81 @@ function QRTab({ restaurant }) {
         )}
       </div>
     </div>
+
+    {/* Embed integration panel */}
+    {(() => {
+      const embedOrigin = customBase || window.location.origin;
+      const basePath = (typeof BASE_PATH !== "undefined" ? BASE_PATH : "");
+      const scriptUrl = `${embedOrigin}${basePath}/embed.js`;
+      const rid = isDemo ? "RESTAURANT_ID" : restaurant.id;
+      const snippet = `<script src="${scriptUrl}"><\/script>\n<div data-wegemo="${rid}" data-table="${embedTable}" data-label="${embedLabel}" data-color="${embedColor}" data-name="${restaurant.name}"></div>`;
+
+      function copySnippet() {
+        navigator.clipboard.writeText(snippet).then(() => {
+          setEmbedCopied(true);
+          setTimeout(() => setEmbedCopied(false), 2000);
+        });
+      }
+
+      return (
+        <Surface style={{ marginTop: 20, padding: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 20 }}>🔗</span>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Intégration site web</p>
+          </div>
+          <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 20 }}>
+            Ajoutez un bouton "Commander" sur n'importe quel site vitrine. Collez 2 lignes de code, c'est tout.
+          </p>
+
+          {/* Options */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Texte du bouton</p>
+              <input value={embedLabel} onChange={e => setEmbedLabel(e.target.value)}
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 13, outline: "none", boxSizing: "border-box", ...FF }} />
+            </div>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Couleur du bouton</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="color" value={embedColor} onChange={e => setEmbedColor(e.target.value)}
+                  style={{ width: 38, height: 38, borderRadius: 8, border: "none", cursor: "pointer", padding: 2 }} />
+                <span style={{ fontSize: 12, color: C.textTertiary, fontFamily: "monospace" }}>{embedColor}</span>
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Table par défaut <span style={{ fontWeight: 400 }}>(0 = sans table)</span></p>
+              <select value={embedTable} onChange={e => setEmbedTable(e.target.value)}
+                style={{ width: "100%", padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 13, outline: "none", boxSizing: "border-box", background: C.white, ...FF }}>
+                <option value="0">0 — Sans table (commande générale)</option>
+                {tables.map(t => <option key={t.id} value={t.number}>{t.label || `Table ${t.number}`}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div style={{ background: C.bg, borderRadius: 14, padding: "18px 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 16 }}>
+            <span style={{ fontSize: 12, color: C.textTertiary, fontWeight: 600, whiteSpace: "nowrap" }}>Aperçu :</span>
+            <button style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 22px", border: "none", borderRadius: 50, fontSize: 15, fontWeight: 700, background: embedColor, color: "#fff", cursor: "default", boxShadow: "0 4px 16px rgba(0,0,0,0.15)", fontFamily: "inherit" }}>
+              {embedLabel}
+            </button>
+          </div>
+
+          {/* Snippet */}
+          <p style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, marginBottom: 8 }}>Code à coller sur votre site :</p>
+          <div style={{ position: "relative" }}>
+            <pre style={{ background: "#1D1D1F", color: "#A8FF60", borderRadius: 14, padding: "16px 18px", fontSize: 12, overflowX: "auto", lineHeight: 1.7, margin: 0, fontFamily: "monospace" }}>
+              {snippet}
+            </pre>
+            <button onClick={copySnippet} style={{ position: "absolute", top: 10, right: 10, background: embedCopied ? C.accentGreen : "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "background 0.2s", ...FF }}>
+              {embedCopied ? "✓ Copié !" : "📋 Copier"}
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 12, lineHeight: 1.6 }}>
+            💡 Collez ce code dans le HTML de votre site vitrine, juste avant <code style={{ background: C.bg, padding: "1px 5px", borderRadius: 4 }}>&lt;/body&gt;</code>. Le bouton ouvre un menu plein écran dans une fenêtre modale.
+          </p>
+        </Surface>
+      );
+    })()}
     </div>
   );
 }
