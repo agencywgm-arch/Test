@@ -7539,7 +7539,23 @@ function CustomerPage({ slug, tableNum }) {
       )}
 
       {step === "ordertype" && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24, ...(menuWelcomeBg ? { backgroundImage: `url(${menuWelcomeBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24, position: "relative", ...(menuWelcomeBg ? { backgroundImage: `url(${menuWelcomeBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+          <div style={{ position: "absolute", top: 16, right: 16, zIndex: 50 }}>
+            <button onClick={() => setShowLangPicker(p => !p)}
+              style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 20, padding: "7px 12px", color: C.dark, fontSize: 16, cursor: "pointer", lineHeight: 1 }}>
+              {CUSTOMER_LANGS.find(l => l.code === lang)?.flag || "🌐"}
+            </button>
+            {showLangPicker && (
+              <div style={{ position: "absolute", right: 0, top: 40, background: C.white, borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,0.18)", padding: 6, zIndex: 200, minWidth: 140 }}>
+                {CUSTOMER_LANGS.map(l => (
+                  <button key={l.code} onClick={() => changeLang(l.code)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: l.code === lang ? C.bg : "transparent", border: "none", borderRadius: 10, fontSize: 14, cursor: "pointer", color: C.dark, fontWeight: l.code === lang ? 700 : 400, ...FF }}>
+                    <span>{l.flag}</span><span>{l.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {restaurant?.logo_url && <img src={restaurant.logo_url} alt="logo" style={{ width: 80, height: 80, borderRadius: 20, objectFit: "cover", marginBottom: 8 }} />}
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 6 }}>{restaurant?.name || "Bienvenue"}</div>
