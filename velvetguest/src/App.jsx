@@ -545,7 +545,7 @@ function useStore(restaurantId) {
       });
     };
     reconcile();
-    const poll = setInterval(reconcile, 8000);
+    const poll = setInterval(reconcile, 3000);
 
     return () => { supabase.removeChannel(ch); clearInterval(tick); clearInterval(poll); };
   }, [restaurantId]);
@@ -5235,7 +5235,7 @@ function useLiveOrders(restaurantId, pushNotif) {
         fresh.forEach(o => pushNotif(`Commande #${o.id.slice(0,6).toUpperCase()} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new"));
         return [...fresh, ...prev];
       });
-    }, 8000);
+    }, 3000);
 
     return () => { supabase.removeChannel(channel); clearInterval(tick); clearInterval(poll); };
   }, [restaurantId]);
