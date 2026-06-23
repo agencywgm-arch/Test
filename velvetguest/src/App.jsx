@@ -339,18 +339,40 @@ function playOrderAlarm() {
     if (!__orderAudioCtx) __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = __orderAudioCtx;
     if (ctx.state === "suspended") ctx.resume();
+    // Master gain → compressor → destination, for a much louder, clearer alarm
+    // without distortion clipping at peaks.
+    const master = ctx.createGain();
+    master.gain.value = 1.0;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -10;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.1;
+    master.connect(comp); comp.connect(ctx.destination);
     const beep = (freq, start, dur) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = "square";
-      osc.frequency.setValueAtTime(freq, start);
-      gain.gain.setValueAtTime(0.3, start);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-      osc.start(start); osc.stop(start + dur);
+      // Stack three oscillators (square + saw + sine octave above) for a rich,
+      // piercing siren tone — much more attention-grabbing than a single square.
+      const types = [["square", freq, 0.6], ["sawtooth", freq, 0.4], ["sine", freq * 2, 0.3]];
+      types.forEach(([type, f, vol]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(master);
+        osc.type = type;
+        osc.frequency.setValueAtTime(f, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(vol, start + 0.01);
+        gain.gain.setValueAtTime(vol, start + dur - 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+        osc.start(start); osc.stop(start + dur + 0.02);
+      });
     };
     const t = ctx.currentTime;
-    beep(880, t, 0.12); beep(1100, t + 0.15, 0.12); beep(880, t + 0.3, 0.12); beep(1100, t + 0.45, 0.18);
+    // Longer, louder siren-like pattern (≈1.1s) — two rising sweeps
+    beep(880,  t,        0.18);
+    beep(1320, t + 0.20, 0.18);
+    beep(880,  t + 0.42, 0.18);
+    beep(1320, t + 0.62, 0.18);
+    beep(1760, t + 0.84, 0.28);
   } catch {}
 }
 
