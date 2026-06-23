@@ -324,6 +324,25 @@ const ORDER_QUERY = "*, tables(number), order_items(id, quantity, menu_items(nam
 // view, so every screen open in the restaurant rings the same way regardless
 // of payment method (cash or card).
 // ─────────────────────────────────────────────────────────────────────────────
+// Set of order IDs the user has clicked/acknowledged — they stop the
+// repeating alarm even if the order is still in "new" status.
+const __silencedOrderIds = new Set();
+const __silenceListeners = new Set();
+function silenceOrder(id) {
+  if (!id || __silencedOrderIds.has(id)) return;
+  __silencedOrderIds.add(id);
+  __silenceListeners.forEach(fn => { try { fn(); } catch {} });
+}
+function useSilencedOrders() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const fn = () => force(v => v + 1);
+    __silenceListeners.add(fn);
+    return () => { __silenceListeners.delete(fn); };
+  }, []);
+  return __silencedOrderIds;
+}
+
 let __orderAudioCtx = null;
 function unlockOrderAudio() {
   if (!__orderAudioCtx) {
@@ -339,40 +358,49 @@ function playOrderAlarm() {
     if (!__orderAudioCtx) __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = __orderAudioCtx;
     if (ctx.state === "suspended") ctx.resume();
-    // Master gain → compressor → destination, for a much louder, clearer alarm
-    // without distortion clipping at peaks.
+    // Hard limiter pushed to the max + makeup gain → maximum perceived loudness
+    // possible from Web Audio without clipping artifacts.
     const master = ctx.createGain();
-    master.gain.value = 1.0;
+    master.gain.value = 3.0; // pre-limiter drive
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -10;
-    comp.ratio.value = 8;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.1;
-    master.connect(comp); comp.connect(ctx.destination);
+    comp.threshold.value = -1;   // hard ceiling
+    comp.knee.value = 0;          // brick-wall limiter
+    comp.ratio.value = 20;
+    comp.attack.value = 0.001;
+    comp.release.value = 0.05;
+    const makeup = ctx.createGain();
+    makeup.gain.value = 2.0;      // post-limiter loudness boost
+    master.connect(comp); comp.connect(makeup); makeup.connect(ctx.destination);
     const beep = (freq, start, dur) => {
-      // Stack three oscillators (square + saw + sine octave above) for a rich,
-      // piercing siren tone — much more attention-grabbing than a single square.
-      const types = [["square", freq, 0.6], ["sawtooth", freq, 0.4], ["sine", freq * 2, 0.3]];
-      types.forEach(([type, f, vol]) => {
+      // 5 stacked oscillators per beep — square + saw + 2 detuned squares
+      // (chorus effect = thicker tone) + sine octave above = piercing siren.
+      const layers = [
+        ["square",   freq,        1.0],
+        ["sawtooth", freq,        0.8],
+        ["square",   freq * 1.01, 0.6], // slight detune up
+        ["square",   freq * 0.99, 0.6], // slight detune down
+        ["sine",     freq * 2,    0.5],
+      ];
+      layers.forEach(([type, f, vol]) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain); gain.connect(master);
         osc.type = type;
         osc.frequency.setValueAtTime(f, start);
         gain.gain.setValueAtTime(0, start);
-        gain.gain.linearRampToValueAtTime(vol, start + 0.01);
+        gain.gain.linearRampToValueAtTime(vol, start + 0.005);
         gain.gain.setValueAtTime(vol, start + dur - 0.02);
         gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
         osc.start(start); osc.stop(start + dur + 0.02);
       });
     };
     const t = ctx.currentTime;
-    // Longer, louder siren-like pattern (≈1.1s) — two rising sweeps
+    // Rising siren sweep, ~1.2 s, deliberately impossible to ignore.
     beep(880,  t,        0.18);
     beep(1320, t + 0.20, 0.18);
     beep(880,  t + 0.42, 0.18);
     beep(1320, t + 0.62, 0.18);
-    beep(1760, t + 0.84, 0.28);
+    beep(1760, t + 0.84, 0.30);
   } catch {}
 }
 
@@ -573,9 +601,10 @@ function useStore(restaurantId) {
   }, [restaurantId]);
 
   // Keep ringing in the Dashboard too, every few seconds, as long as at least
-  // one order is still waiting to be accepted ("new" / PENDING) — same logic
-  // as the Kitchen view, so the alarm is heard wherever the SaaS is open.
-  const pendingOrderCount = orders.filter(o => o.status === "new").length;
+  // one order is still waiting to be accepted ("new" / PENDING) AND hasn't
+  // been silenced by a user click — same logic as the Kitchen view.
+  const silenced = useSilencedOrders();
+  const pendingOrderCount = orders.filter(o => o.status === "new" && !silenced.has(o.id)).length;
   useEffect(() => {
     if (!restaurantId || pendingOrderCount === 0) return;
     const id = setInterval(() => playOrderAlarm(), 4000);
@@ -2765,7 +2794,7 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
           const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen, served: C.textTertiary }[o.status];
           const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "Cuisine", ready: "Prête", served: "Servie" }[o.status];
           return (
-            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
+            <div key={o.id} onClick={() => silenceOrder(o.id)} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none", cursor: o.status === "new" ? "pointer" : "default" }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -5320,9 +5349,10 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   }, [orders, loading]);
 
   // Keep ringing every few seconds as long as at least one order is still
-  // waiting to be accepted (status "new" / PENDING) — stops as soon as it's
-  // accepted (moved to "cooking") or there are no pending orders left.
-  const pendingCount = orders.filter(o => o.status === "new").length;
+  // waiting to be accepted (status "new" / PENDING) and hasn't been silenced
+  // by a user click — stops as soon as it's accepted, silenced, or empty.
+  const silenced = useSilencedOrders();
+  const pendingCount = orders.filter(o => o.status === "new" && !silenced.has(o.id)).length;
   useEffect(() => {
     if (pendingCount === 0) return;
     const id = setInterval(() => playOrderAlarm(), 4000);
@@ -5369,7 +5399,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
 
       {/* New order alert overlay */}
       {newOrderAlert && (
-        <div onClick={() => setNewOrderAlert(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "fadeIn 0.2s ease" }}>
+        <div onClick={() => { if (newOrderAlert) silenceOrder(newOrderAlert.id); setNewOrderAlert(null); }} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "fadeIn 0.2s ease" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.white, borderRadius: 28, padding: "36px 48px", textAlign: "center", maxWidth: 380, width: "90%", boxShadow: "0 32px 80px rgba(0,0,0,0.4)", animation: "popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
             <div style={{ fontSize: 64, marginBottom: 12, animation: "bellShake 0.6s ease infinite" }}>🔔</div>
             <p style={{ fontSize: 13, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>NOUVELLE COMMANDE</p>
@@ -5384,7 +5414,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
               ))}
               {(newOrderAlert.items?.length > 4) && <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>+{newOrderAlert.items.length - 4} autre(s)…</p>}
             </div>
-            <button onClick={() => setNewOrderAlert(null)} style={{ width: "100%", padding: "16px 0", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: "pointer", ...FF }}>
+            <button onClick={() => { if (newOrderAlert) silenceOrder(newOrderAlert.id); setNewOrderAlert(null); }} style={{ width: "100%", padding: "16px 0", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: "pointer", ...FF }}>
               ✓ Vu — Fermer
             </button>
             <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 10 }}>Cliquez n'importe où pour fermer</p>
@@ -5441,7 +5471,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                 const isLate = order.elapsed >= 20 && order.status !== "ready";
                 const canAdvance = order.status !== "cooking" || allDone;
                 return (
-                  <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
+                  <div key={order.id} onClick={() => silenceOrder(order.id)} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none", cursor: order.status === "new" ? "pointer" : "default" }}>
                     <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
