@@ -512,7 +512,42 @@ function useStore(restaurantId) {
       setOrders(prev => prev.map(o => ({ ...o, elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000)) })));
     }, 60000);
 
-    return () => { supabase.removeChannel(ch); clearInterval(tick); };
+    // Polling fallback (every 8s): Supabase Realtime websockets can drop
+    // silently (sleeping tablet, flaky wifi, background tab) — we reconcile
+    // by re-fetching active orders and emitting the alarm for any new ones
+    // the realtime channel may have missed. This guarantees no order is ever
+    // received without the sound.
+    const knownIds = new Set();
+    let seeded = false;
+    const reconcile = async () => {
+      const { data } = await supabase.from("orders").select(ORDER_QUERY)
+        .eq("restaurant_id", restaurantId).neq("status", "DONE")
+        .order("created_at", { ascending: true });
+      if (!data) return;
+      const fmtd = data.map(fmtOrder);
+      if (!seeded) {
+        fmtd.forEach(o => knownIds.add(o.id));
+        seeded = true;
+        return;
+      }
+      const fresh = fmtd.filter(o => !knownIds.has(o.id));
+      fresh.forEach(o => knownIds.add(o.id));
+      if (fresh.length === 0) return;
+      setOrders(prev => {
+        const existing = new Set(prev.map(o => o.id));
+        const newcomers = fresh.filter(o => !existing.has(o.id));
+        if (newcomers.length === 0) return prev;
+        newcomers.forEach(o => {
+          pushNotif(`Commande #${o.shortId} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new");
+        });
+        playOrderAlarm();
+        return [...newcomers, ...prev];
+      });
+    };
+    reconcile();
+    const poll = setInterval(reconcile, 8000);
+
+    return () => { supabase.removeChannel(ch); clearInterval(tick); clearInterval(poll); };
   }, [restaurantId]);
 
   // Keep ringing in the Dashboard too, every few seconds, as long as at least
@@ -5183,7 +5218,26 @@ function useLiveOrders(restaurantId, pushNotif) {
       setOrders(prev => prev.map(o => ({ ...o, elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000)) })));
     }, 60000);
 
-    return () => { supabase.removeChannel(channel); clearInterval(tick); };
+    // Polling fallback every 8s in case Realtime dropped silently — re-fetches
+    // active orders and merges any the websocket missed.
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from("orders")
+        .select("*, tables(number), order_items(*, menu_items(name, emoji, category))")
+        .eq("restaurant_id", restaurantId).neq("status", "DONE")
+        .order("created_at", { ascending: true });
+      if (!data) return;
+      setOrders(prev => {
+        const known = new Set(prev.map(o => o.id));
+        const incoming = data.map(fmt);
+        const fresh = incoming.filter(o => !known.has(o.id));
+        if (fresh.length === 0) return prev;
+        fresh.forEach(o => pushNotif(`Commande #${o.id.slice(0,6).toUpperCase()} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new"));
+        return [...fresh, ...prev];
+      });
+    }, 8000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(tick); clearInterval(poll); };
   }, [restaurantId]);
 
   const advanceOrder = useCallback(async (id) => {
