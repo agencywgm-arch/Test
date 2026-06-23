@@ -5176,12 +5176,40 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   const [etaMap, setEtaMap] = useState({});
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, table, order_type, items }
   const seenOrderIds = useRef(new Set());
+  const seededRef = useRef(false);
   const audioCtxRef = useRef(null);
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+
+  // Unlock audio on the very first user interaction with the page (browsers block
+  // unprompted AudioContext playback — without this, the very first order received
+  // after opening the kitchen tab can stay silent).
+  useEffect(() => {
+    function unlock() {
+      if (!audioCtxRef.current) {
+        try { audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+      }
+      if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
+    }
+    window.addEventListener("click", unlock);
+    window.addEventListener("touchstart", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("click", unlock);
+      window.removeEventListener("touchstart", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
 
   // Detect new orders and trigger alert
   useEffect(() => {
     if (loading) return;
+    // First time orders are loaded: mark already-existing orders as seen
+    // without ringing (only genuinely NEW arrivals should trigger the alarm).
+    if (!seededRef.current) {
+      seededRef.current = true;
+      orders.forEach(o => seenOrderIds.current.add(o.id));
+      return;
+    }
     const newOrders = orders.filter(o => o.status === "new" && !seenOrderIds.current.has(o.id));
     newOrders.forEach(o => seenOrderIds.current.add(o.id));
     if (newOrders.length > 0) {
@@ -5190,10 +5218,21 @@ function CuisineView({ restaurant, onBack, onLogout }) {
     }
   }, [orders, loading]);
 
+  // Keep ringing every few seconds as long as at least one order is still
+  // waiting to be accepted (status "new" / PENDING) — stops as soon as it's
+  // accepted (moved to "cooking") or there are no pending orders left.
+  const pendingCount = orders.filter(o => o.status === "new").length;
+  useEffect(() => {
+    if (pendingCount === 0) return;
+    const id = setInterval(() => playAlarm(), 4000);
+    return () => clearInterval(id);
+  }, [pendingCount]);
+
   function playAlarm() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      audioCtxRef.current = ctx;
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
       const beep = (freq, start, dur) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
