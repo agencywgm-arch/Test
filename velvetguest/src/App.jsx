@@ -7327,7 +7327,7 @@ function CustomerPage({ slug, tableNum }) {
   const [tableLabel, setTableLabel] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [cart, setCart] = useState([]);
-  const [activeCat, setActiveCat] = useState("Tous");
+  const [activeCat, setActiveCat] = useState("__ALL__");
   const [note, setNote] = useState("");
   const [rating, setRating] = useState(0);
   const [orderId, setOrderId] = useState(null);
@@ -7364,7 +7364,7 @@ function CustomerPage({ slug, tableNum }) {
 
   const [translCache, setTranslCache] = useState({}); // `${lang}:${id}` → {name, description}
 
-  function changeLang(code) { setLang(code); localStorage.setItem("vg_customer_lang", code); setShowLangPicker(false); setActiveCat(CT[code]?.all || "Tous"); }
+  function changeLang(code) { setLang(code); localStorage.setItem("vg_customer_lang", code); setShowLangPicker(false); }
 
   // Translate menu items when language changes (unofficial Google Translate, no key needed)
   useEffect(() => {
@@ -7488,9 +7488,10 @@ function CustomerPage({ slug, tableNum }) {
   const sortedCats = catOrderCustomer.length
     ? [...catOrderCustomer.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrderCustomer.includes(c))]
     : rawCats;
-  const cats = [L.all, ...sortedCats];
-  const filtered = activeCat === L.all || activeCat === "Tous" ? menuItems : menuItems.filter(i => i.category === activeCat);
-  const filteredSorted = activeCat === "Tous"
+  const cats = ["__ALL__", ...sortedCats];
+  const isAll = activeCat === "__ALL__";
+  const filtered = isAll ? menuItems : menuItems.filter(i => i.category === activeCat);
+  const filteredSorted = isAll
     ? [...filtered].sort((a, b) => {
         const ai = sortedCats.indexOf(a.category);
         const bi = sortedCats.indexOf(b.category);
@@ -7779,7 +7780,7 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
-            {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c}</button>)}
+            {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c === "__ALL__" ? L.all : c}</button>)}
           </div>
           {activePromos.length > 0 && (
             <div style={{ padding: "8px 16px", display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
