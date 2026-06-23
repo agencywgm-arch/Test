@@ -319,6 +319,41 @@ function fmtOrder(o) {
 
 const ORDER_QUERY = "*, tables(number), order_items(id, quantity, menu_items(name, emoji, price, category))";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared "new order" audio alarm — used by both the Dashboard and the Kitchen
+// view, so every screen open in the restaurant rings the same way regardless
+// of payment method (cash or card).
+// ─────────────────────────────────────────────────────────────────────────────
+let __orderAudioCtx = null;
+function unlockOrderAudio() {
+  if (!__orderAudioCtx) {
+    try { __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+  }
+  if (__orderAudioCtx.state === "suspended") __orderAudioCtx.resume();
+}
+if (typeof window !== "undefined") {
+  ["click", "touchstart", "keydown"].forEach(evt => window.addEventListener(evt, unlockOrderAudio));
+}
+function playOrderAlarm() {
+  try {
+    if (!__orderAudioCtx) __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = __orderAudioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const beep = (freq, start, dur) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.3, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+      osc.start(start); osc.stop(start + dur);
+    };
+    const t = ctx.currentTime;
+    beep(880, t, 0.12); beep(1100, t + 0.15, 0.12); beep(880, t + 0.3, 0.12); beep(1100, t + 0.45, 0.18);
+  } catch {}
+}
+
 function useStore(restaurantId) {
   const [orders, setOrders] = useState([]);
   const [doneOrders, setDoneOrders] = useState([]);
@@ -445,6 +480,7 @@ function useStore(restaurantId) {
           const o = fmtOrder(data);
           setOrders(prev => [o, ...prev]);
           pushNotif(`Commande #${o.shortId} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new");
+          playOrderAlarm();
         }
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
@@ -478,6 +514,16 @@ function useStore(restaurantId) {
 
     return () => { supabase.removeChannel(ch); clearInterval(tick); };
   }, [restaurantId]);
+
+  // Keep ringing in the Dashboard too, every few seconds, as long as at least
+  // one order is still waiting to be accepted ("new" / PENDING) — same logic
+  // as the Kitchen view, so the alarm is heard wherever the SaaS is open.
+  const pendingOrderCount = orders.filter(o => o.status === "new").length;
+  useEffect(() => {
+    if (!restaurantId || pendingOrderCount === 0) return;
+    const id = setInterval(() => playOrderAlarm(), 4000);
+    return () => clearInterval(id);
+  }, [restaurantId, pendingOrderCount]);
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
   const clearNotifHistory = useCallback(() => setNotifHistory([]), []);
@@ -5177,28 +5223,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, table, order_type, items }
   const seenOrderIds = useRef(new Set());
   const seededRef = useRef(false);
-  const audioCtxRef = useRef(null);
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
-
-  // Unlock audio on the very first user interaction with the page (browsers block
-  // unprompted AudioContext playback — without this, the very first order received
-  // after opening the kitchen tab can stay silent).
-  useEffect(() => {
-    function unlock() {
-      if (!audioCtxRef.current) {
-        try { audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-      }
-      if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-    }
-    window.addEventListener("click", unlock);
-    window.addEventListener("touchstart", unlock);
-    window.addEventListener("keydown", unlock);
-    return () => {
-      window.removeEventListener("click", unlock);
-      window.removeEventListener("touchstart", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
 
   // Detect new orders and trigger alert
   useEffect(() => {
@@ -5214,7 +5239,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
     newOrders.forEach(o => seenOrderIds.current.add(o.id));
     if (newOrders.length > 0) {
       setNewOrderAlert(newOrders[0]);
-      playAlarm();
+      playOrderAlarm();
     }
   }, [orders, loading]);
 
@@ -5224,29 +5249,9 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   const pendingCount = orders.filter(o => o.status === "new").length;
   useEffect(() => {
     if (pendingCount === 0) return;
-    const id = setInterval(() => playAlarm(), 4000);
+    const id = setInterval(() => playOrderAlarm(), 4000);
     return () => clearInterval(id);
   }, [pendingCount]);
-
-  function playAlarm() {
-    try {
-      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
-      const beep = (freq, start, dur) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type = "square";
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.3, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-        osc.start(start); osc.stop(start + dur);
-      };
-      const t = ctx.currentTime;
-      beep(880, t, 0.12); beep(1100, t + 0.15, 0.12); beep(880, t + 0.3, 0.12); beep(1100, t + 0.45, 0.18);
-    } catch {}
-  }
 
   // Load existing ETAs on mount
   useEffect(() => {
