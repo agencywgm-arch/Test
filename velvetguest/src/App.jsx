@@ -7601,9 +7601,11 @@ function CustomerPage({ slug, tableNum }) {
   // alerted on their own phone screen — stops as soon as they tap the banner.
   const prevOrderStatusRef = useRef(null);
   const silencedCustomerOrders = useSilencedOrders();
+  const customerAudioUnlocked = useOrderAudioUnlocked();
   useEffect(() => {
     if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
       playOrderAlarm();
+      if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300, 150, 300]); } catch {} }
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
           new Notification("✅ Votre commande est prête !", {
@@ -7617,7 +7619,10 @@ function CustomerPage({ slug, tableNum }) {
   }, [orderStatus, orderId, restaurant]);
   useEffect(() => {
     if (orderStatus !== "READY" || !orderId || silencedCustomerOrders.has(orderId)) return;
-    const id = setInterval(() => playOrderAlarm(), 5000);
+    const id = setInterval(() => {
+      playOrderAlarm();
+      if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300]); } catch {} }
+    }, 5000);
     return () => clearInterval(id);
   }, [orderStatus, orderId, silencedCustomerOrders]);
 
@@ -8210,6 +8215,16 @@ ${statusHtml}
         }
         return (
           <div style={{ padding: "40px 20px 60px", background: "#f8f8f8", minHeight: "100vh" }}>
+            {/* Sound for the "order ready" alert also needs an explicit tap to
+                unlock per browser autoplay rules — show until confirmed, and
+                also ask for notification permission on the same tap (Safari/iOS
+                require notification permission requests to come from a gesture). */}
+            {orderStatus !== "READY" && !customerAudioUnlocked && (
+              <div onClick={() => { unlockOrderAudio(); if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {}); }}
+                style={{ background: "#FF3B30", color: "#fff", textAlign: "center", padding: "14px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", borderRadius: 14, marginBottom: 20 }}>
+                🔔 Cliquez ici pour être alerté(e) quand votre commande est prête
+              </div>
+            )}
             {/* Success banner */}
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.accentGreen + "20", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 30 }}>✅</div>
