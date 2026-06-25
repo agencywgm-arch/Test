@@ -343,12 +343,38 @@ function useSilencedOrders() {
   return __silencedOrderIds;
 }
 
+// Browsers only allow AudioContext.resume() to actually take effect when it
+// runs inside a real user-gesture call stack (click/touch/key). A generic
+// "click anywhere" listener can fire too late or be swallowed by an
+// onClick higher up that calls stopPropagation, so a tablet left idle on
+// the kitchen screen can stay silently suspended forever. We track unlock
+// state reactively so the UI can show an explicit "tap to enable sound"
+// banner until it's confirmed unlocked.
+let __orderAudioUnlocked = false;
+const __orderAudioUnlockListeners = new Set();
+function markOrderAudioUnlocked() {
+  if (__orderAudioUnlocked) return;
+  __orderAudioUnlocked = true;
+  __orderAudioUnlockListeners.forEach(fn => { try { fn(); } catch {} });
+}
+function useOrderAudioUnlocked() {
+  const [v, setV] = useState(__orderAudioUnlocked);
+  useEffect(() => {
+    const fn = () => setV(true);
+    __orderAudioUnlockListeners.add(fn);
+    return () => { __orderAudioUnlockListeners.delete(fn); };
+  }, []);
+  return v;
+}
 let __orderAudioCtx = null;
 function unlockOrderAudio() {
   if (!__orderAudioCtx) {
     try { __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
   }
-  if (__orderAudioCtx.state === "suspended") __orderAudioCtx.resume();
+  if (__orderAudioCtx.state === "running") { markOrderAudioUnlocked(); return; }
+  if (__orderAudioCtx.state === "suspended") {
+    __orderAudioCtx.resume().then(() => { if (__orderAudioCtx.state === "running") markOrderAudioUnlocked(); }).catch(() => {});
+  }
 }
 if (typeof window !== "undefined") {
   ["click", "touchstart", "keydown"].forEach(evt => window.addEventListener(evt, unlockOrderAudio));
@@ -2768,8 +2794,15 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
     }
   }
 
+  const audioUnlocked = useOrderAudioUnlocked();
+
   return (
     <div className="fade-in">
+      {!audioUnlocked && (
+        <div onClick={unlockOrderAudio} style={{ position: "sticky", top: 0, zIndex: 10000, background: "#FF3B30", color: "#fff", textAlign: "center", padding: "12px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", borderRadius: 12, marginBottom: 14 }}>
+          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes
+        </div>
+      )}
       {editOrder && (
         <EditOrderModal
           order={editOrder}
@@ -5391,11 +5424,20 @@ function CuisineView({ restaurant, onBack, onLogout }) {
     { key: "ready", label: "Prêtes ✓", color: "#34C759", orders: orders.filter(o => o.status === "ready") },
   ];
   const btn = { new: "Accepter →", cooking: "Prête ✓", ready: "Servie ✓" };
+  const audioUnlocked = useOrderAudioUnlocked();
 
   return (
     <div style={{ background: "#F5F5F7", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "'Figtree', -apple-system, sans-serif" }}>
       <style>{css}</style>
       <Toasts notifs={store.notifications} />
+
+      {/* Sound must be enabled by an explicit tap (browser autoplay rules) —
+          show until confirmed unlocked, so the alarm can never silently fail. */}
+      {!audioUnlocked && (
+        <div onClick={unlockOrderAudio} style={{ position: "sticky", top: 0, zIndex: 10000, background: "#FF3B30", color: "#fff", textAlign: "center", padding: "12px 16px", fontWeight: 800, fontSize: 15, cursor: "pointer", ...FF }}>
+          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes
+        </div>
+      )}
 
       {/* New order alert overlay */}
       {newOrderAlert && (
@@ -7479,9 +7521,25 @@ function CustomerPage({ slug, tableNum }) {
         }).catch(() => {});
     }
     poll();
-    const t = setInterval(poll, 10000);
+    const t = setInterval(poll, 4000);
     return () => clearInterval(t);
   }, [step, orderId]);
+
+  // Ring + keep ringing once the order flips to READY, so the customer is
+  // alerted on their own phone screen — stops as soon as they tap the banner.
+  const prevOrderStatusRef = useRef(null);
+  const silencedCustomerOrders = useSilencedOrders();
+  useEffect(() => {
+    if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
+      playOrderAlarm();
+    }
+    prevOrderStatusRef.current = orderStatus;
+  }, [orderStatus]);
+  useEffect(() => {
+    if (orderStatus !== "READY" || !orderId || silencedCustomerOrders.has(orderId)) return;
+    const id = setInterval(() => playOrderAlarm(), 5000);
+    return () => clearInterval(id);
+  }, [orderStatus, orderId, silencedCustomerOrders]);
 
   const tableDisplay = tableLabel || `${L.table} ${tableNum}`;
   const rawCats = Array.from(new Set(menuItems.map(i => i.category)));
@@ -8083,7 +8141,7 @@ ${statusHtml}
             {(() => {
               if (orderStatus === "READY" || orderStatus === "ready") {
                 return (
-                  <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                  <div onClick={() => orderId && silenceOrder(orderId)} style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center", cursor: "pointer" }}>
                     <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
                     <p style={{ fontSize: 18, fontWeight: 800, color: C.accentGreen, marginBottom: 2 }}>Votre commande est prête !</p>
                     <p style={{ fontSize: 13, color: C.textSecondary }}>Le serveur arrive à votre table.</p>
