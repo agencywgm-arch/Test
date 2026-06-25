@@ -368,13 +368,44 @@ function useOrderAudioUnlocked() {
 }
 let __orderAudioCtx = null;
 function unlockOrderAudio() {
+  const wasUnlocked = __orderAudioUnlocked;
   if (!__orderAudioCtx) {
     try { __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
   }
-  if (__orderAudioCtx.state === "running") { markOrderAudioUnlocked(); return; }
-  if (__orderAudioCtx.state === "suspended") {
-    __orderAudioCtx.resume().then(() => { if (__orderAudioCtx.state === "running") markOrderAudioUnlocked(); }).catch(() => {});
+  if (__orderAudioCtx.state === "running") {
+    markOrderAudioUnlocked();
+    if (!wasUnlocked) playOrderConfirmBeep();
+    return;
   }
+  if (__orderAudioCtx.state === "suspended") {
+    __orderAudioCtx.resume().then(() => {
+      if (__orderAudioCtx.state === "running") {
+        markOrderAudioUnlocked();
+        if (!wasUnlocked) playOrderConfirmBeep();
+      }
+    }).catch(() => {});
+  }
+}
+// Short, distinct double-beep played once when sound gets unlocked (and on
+// demand via the "Tester le son" button) — gives the cashier/cook audible
+// proof it's working, instead of having to guess and wait for a real order.
+function playOrderConfirmBeep() {
+  try {
+    const ctx = __orderAudioCtx;
+    if (!ctx || ctx.state !== "running") return;
+    const t = ctx.currentTime;
+    [[t, 660], [t + 0.14, 880]].forEach(([start, freq]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.5, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
+      osc.start(start); osc.stop(start + 0.14);
+    });
+  } catch {}
 }
 if (typeof window !== "undefined") {
   ["click", "touchstart", "keydown"].forEach(evt => window.addEventListener(evt, unlockOrderAudio));
@@ -2810,7 +2841,14 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
     <div className="fade-in">
       {!audioUnlocked && (
         <div onClick={unlockOrderAudio} style={{ position: "sticky", top: 0, zIndex: 10000, background: "#FF3B30", color: "#fff", textAlign: "center", padding: "12px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", borderRadius: 12, marginBottom: 14 }}>
-          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes
+          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes — vous entendrez un petit bip de confirmation
+        </div>
+      )}
+      {audioUnlocked && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button onClick={playOrderAlarm} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.textSecondary, ...FF }}>
+            🔊 Tester la sonnerie
+          </button>
         </div>
       )}
       {editOrder && (
@@ -5450,7 +5488,14 @@ function CuisineView({ restaurant, onBack, onLogout }) {
           show until confirmed unlocked, so the alarm can never silently fail. */}
       {!audioUnlocked && (
         <div onClick={unlockOrderAudio} style={{ position: "sticky", top: 0, zIndex: 10000, background: "#FF3B30", color: "#fff", textAlign: "center", padding: "12px 16px", fontWeight: 800, fontSize: 15, cursor: "pointer", ...FF }}>
-          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes
+          🔔 Cliquez ici pour activer la sonnerie des nouvelles commandes — vous entendrez un petit bip de confirmation
+        </div>
+      )}
+      {audioUnlocked && (
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 20px 0" }}>
+          <button onClick={playOrderAlarm} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.textSecondary, ...FF }}>
+            🔊 Tester la sonnerie
+          </button>
         </div>
       )}
 
