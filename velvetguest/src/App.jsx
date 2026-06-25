@@ -6601,7 +6601,7 @@ function AgentChat({ restaurant, store }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const CHAT_SUGGESTIONS = ["Plats sans gluten ?", "Végétarien / vegan ?", "Allergènes courants ?", "Ingrédients du burger ?"];
 
-function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loading, lift }) {
+function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loading }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -6615,24 +6615,24 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
 
   return (
     <>
-      {/* Floating pill button */}
+      {/* Floating icon button — fixed under the header, out of the way of any bottom price/cart/payment bar */}
       {!open && (
         <button
           onClick={onOpen}
           className="btn-press"
+          aria-label="Aide & allergènes"
           style={{
-            position: "fixed", bottom: lift ? "max(92px, calc(env(safe-area-inset-bottom, 0px) + 92px))" : "max(24px, env(safe-area-inset-bottom, 24px))", right: 16,
-            zIndex: 200, display: "flex", alignItems: "center", gap: 8,
-            background: C.dark, border: "none", borderRadius: 28,
-            padding: "12px 18px 12px 14px",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.28)",
+            position: "fixed", top: "50%", right: 12, transform: "translateY(-50%)",
+            zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center",
+            width: 44, height: 44,
+            background: C.dark, border: "none", borderRadius: "50%",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.28)",
             cursor: "pointer", ...FF,
           }}
         >
-          <span style={{ fontSize: 20 }}>💬</span>
-          <span style={{ color: C.white, fontWeight: 700, fontSize: 14 }}>Aide & allergènes</span>
+          <span style={{ fontSize: 19 }}>💬</span>
           {msgs.length === 1 && (
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.accentGreen, flexShrink: 0, boxShadow: "0 0 0 2px rgba(52,199,89,0.3)" }} />
+            <span style={{ position: "absolute", top: 2, right: 2, width: 9, height: 9, borderRadius: "50%", background: C.accentGreen, boxShadow: "0 0 0 2px " + C.dark }} />
           )}
         </button>
       )}
@@ -8492,7 +8492,6 @@ ${statusHtml}
           input={chatInput}
           onInput={e => setChatInput(e.target.value)}
           loading={chatLoading}
-          lift={step === "cart" || step === "payment" || step === "profile"}
         />
       )}
 
