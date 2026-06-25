@@ -5,6 +5,44 @@ import QRCode from "qrcode";
 // Base path for QR URL generation — injected at build time, empty on Vercel
 const BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+// Public VAPID key for Web Push ("order ready" notifications that reach the
+// customer even with their screen locked). Safe to keep in client code —
+// it's the public half of the keypair, the private half lives only in the
+// Supabase Edge Function secrets.
+const VAPID_PUBLIC_KEY = "BKMc2k5d8Y6UwsSuX1HqYUCG6f4YVs219OYoXGxeyP4zwRrGhcBKB0dy6wDsvayv8EzmV9vBDR6L2LIdIOLwY3c";
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+// Registers the Service Worker (if not already) and subscribes this browser
+// to Web Push, then saves the subscription tied to this order_id so the
+// Edge Function knows where to deliver the "order ready" push later.
+async function subscribeToOrderReadyPush(orderId) {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !orderId) return;
+    const reg = await navigator.serviceWorker.register(`${BASE_PATH}/sw.js`);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    const json = sub.toJSON();
+    await supabase.from("push_subscriptions").upsert({
+      order_id: orderId,
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    }, { onConflict: "order_id,endpoint" });
+  } catch {
+    // Push isn't supported on this browser, or the table/permission isn't
+    // set up yet — the rest of the alert system (sound + vibration) still
+    // works regardless, so we fail silently here.
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNATIONALISATION — admin dashboard UI strings
@@ -5420,7 +5458,14 @@ function useLiveOrders(restaurantId, pushNotif) {
     setOrders(prev => {
       const o = prev.find(x => x.id === id);
       if (!o || !nextDB[o.status]) return prev;
-      supabase.from("orders").update({ status: nextDB[o.status] }).eq("id", id).then(() => {});
+      const newDbStatus = nextDB[o.status];
+      supabase.from("orders").update({ status: newDbStatus }).eq("id", id).then(() => {});
+      // Fire the customer's "order ready" push notification — silently
+      // does nothing if they never subscribed (no edge function deployed
+      // yet, or they declined notification permission).
+      if (newDbStatus === "READY") {
+        supabase.functions.invoke("send-ready-push", { body: { order_id: id } }).catch(() => {});
+      }
       return prev; // realtime update will handle the state change
     });
   }, [restaurantId]);
@@ -7618,12 +7663,18 @@ function CustomerPage({ slug, tableNum }) {
 
   // Ask for OS-level notification permission as soon as the customer lands
   // on the tracking screen — that way "Votre commande est prête" can reach
-  // them even if they've switched apps or locked their phone.
+  // them even if they've switched apps or locked their phone. Chrome allows
+  // this without a click; Safari/iOS need the explicit banner tap below.
   useEffect(() => {
-    if (step === "done" && typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
+    if (step !== "done" || !orderId || typeof Notification === "undefined") return;
+    if (Notification.permission === "granted") {
+      subscribeToOrderReadyPush(orderId);
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") subscribeToOrderReadyPush(orderId);
+      }).catch(() => {});
     }
-  }, [step]);
+  }, [step, orderId]);
 
   // Ring + keep ringing once the order flips to READY, so the customer is
   // alerted on their own phone screen — stops as soon as they tap the banner.
@@ -8251,7 +8302,14 @@ ${statusHtml}
                 also ask for notification permission on the same tap (Safari/iOS
                 require notification permission requests to come from a gesture). */}
             {orderStatus !== "READY" && !customerAudioUnlocked && (
-              <div onClick={() => { unlockOrderAudio(); if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {}); }}
+              <div onClick={() => {
+                  unlockOrderAudio();
+                  if (typeof Notification === "undefined") return;
+                  if (Notification.permission === "granted") { subscribeToOrderReadyPush(orderId); return; }
+                  if (Notification.permission === "default") {
+                    Notification.requestPermission().then(perm => { if (perm === "granted") subscribeToOrderReadyPush(orderId); }).catch(() => {});
+                  }
+                }}
                 style={{ background: "#FF3B30", color: "#fff", textAlign: "center", padding: "14px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", borderRadius: 14, marginBottom: 20 }}>
                 🔔 Cliquez ici pour être alerté(e) quand votre commande est prête
               </div>
