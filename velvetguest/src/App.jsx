@@ -461,6 +461,34 @@ function playOrderAlarm() {
   } catch {}
 }
 
+// Gentle "your order is ready" chime for customers — a soft two-note bell,
+// nothing like the staff siren above (that one's deliberately aggressive,
+// this one should feel pleasant since the customer didn't ask to be alarmed).
+function playCustomerReadyChime() {
+  try {
+    if (!__orderAudioCtx) __orderAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = __orderAudioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const master = ctx.createGain();
+    master.gain.value = 0.55;
+    master.connect(ctx.destination);
+    const note = (freq, start, dur) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(master);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(1, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+      osc.start(start); osc.stop(start + dur + 0.05);
+    };
+    const t = ctx.currentTime;
+    note(987.77, t,        0.5);  // B5
+    note(1318.5, t + 0.18, 0.6);  // E6
+  } catch {}
+}
+
 function useStore(restaurantId) {
   const [orders, setOrders] = useState([]);
   const [doneOrders, setDoneOrders] = useState([]);
@@ -7604,7 +7632,10 @@ function CustomerPage({ slug, tableNum }) {
   const customerAudioUnlocked = useOrderAudioUnlocked();
   useEffect(() => {
     if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
-      playOrderAlarm();
+      playCustomerReadyChime();
+      // Vibration doesn't depend on the ringer/silent switch the way audio
+      // does, so it fires regardless — the one channel guaranteed to work
+      // for someone who keeps their phone on vibrate.
       if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300, 150, 300]); } catch {} }
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
@@ -7620,7 +7651,7 @@ function CustomerPage({ slug, tableNum }) {
   useEffect(() => {
     if (orderStatus !== "READY" || !orderId || silencedCustomerOrders.has(orderId)) return;
     const id = setInterval(() => {
-      playOrderAlarm();
+      playCustomerReadyChime();
       if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300]); } catch {} }
     }, 5000);
     return () => clearInterval(id);
