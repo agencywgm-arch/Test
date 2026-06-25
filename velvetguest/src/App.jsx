@@ -633,7 +633,7 @@ function useStore(restaurantId) {
   const pendingOrderCount = orders.filter(o => o.status === "new" && !silenced.has(o.id)).length;
   useEffect(() => {
     if (!restaurantId || pendingOrderCount === 0) return;
-    const id = setInterval(() => playOrderAlarm(), 4000);
+    const id = setInterval(() => playOrderAlarm(), 2500);
     return () => clearInterval(id);
   }, [restaurantId, pendingOrderCount]);
 
@@ -2758,6 +2758,16 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
     setEditOrder(null);
   }
 
+  // Cashier accepts a new order from the dashboard — this is the only action
+  // (besides accepting in the kitchen view) that stops the repeating alarm.
+  async function acceptOrder(o) {
+    silenceOrder(o.id);
+    if (storeCtx?.setOrders) storeCtx.setOrders(prev => prev.map(x => x.id === o.id ? { ...x, status: "cooking" } : x));
+    if (resolvedRestaurant.id !== "demo") {
+      await supabase.from("orders").update({ status: "PREPARING" }).eq("id", o.id);
+    }
+  }
+
   // Cashier validates a cash payment → mark paid + send PAYÉ receipt email
   async function markPaid(o) {
     if (payingIds[o.id]) return;
@@ -2827,7 +2837,7 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
           const sc = { new: C.accentBlue, accepted: C.accentOrange, cooking: C.accentOrange, ready: C.accentGreen, served: C.textTertiary }[o.status];
           const sl = { new: "Nouvelle", accepted: "Acceptée", cooking: "Cuisine", ready: "Prête", served: "Servie" }[o.status];
           return (
-            <div key={o.id} onClick={() => silenceOrder(o.id)} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none", cursor: o.status === "new" ? "pointer" : "default" }}>
+            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, padding: isMobile ? "10px 14px" : "14px 22px", borderBottom: i < all.length - 1 ? `1px solid ${C.border}` : "none" }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: C.dark, flexShrink: 0 }}>T{o.table}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -2851,6 +2861,11 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
                 <Tag color={C.accentGreen}>✓ Payé</Tag>
               ) : null}
               <Tag color={sc}>{sl}</Tag>
+              {o.status === "new" && (
+                <button onClick={() => acceptOrder(o)} style={{ background: C.dark, border: "none", borderRadius: 8, padding: isMobile ? "6px 10px" : "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0, ...FF }} title="Accepter la commande — arrête la sonnerie">
+                  ✓ Accepter
+                </button>
+              )}
               {o.status !== "served" && (
                 <button onClick={() => setEditOrder(o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, color: C.textSecondary, flexShrink: 0, ...FF }} title="Modifier la commande">✏️</button>
               )}
@@ -5388,7 +5403,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
   const pendingCount = orders.filter(o => o.status === "new" && !silenced.has(o.id)).length;
   useEffect(() => {
     if (pendingCount === 0) return;
-    const id = setInterval(() => playOrderAlarm(), 4000);
+    const id = setInterval(() => playOrderAlarm(), 2500);
     return () => clearInterval(id);
   }, [pendingCount]);
 
@@ -5439,9 +5454,10 @@ function CuisineView({ restaurant, onBack, onLogout }) {
         </div>
       )}
 
-      {/* New order alert overlay */}
+      {/* New order alert overlay — closing it does NOT stop the alarm, only
+          actually accepting the order does (per explicit requirement). */}
       {newOrderAlert && (
-        <div onClick={() => { if (newOrderAlert) silenceOrder(newOrderAlert.id); setNewOrderAlert(null); }} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "fadeIn 0.2s ease" }}>
+        <div onClick={() => setNewOrderAlert(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "fadeIn 0.2s ease" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.white, borderRadius: 28, padding: "36px 48px", textAlign: "center", maxWidth: 380, width: "90%", boxShadow: "0 32px 80px rgba(0,0,0,0.4)", animation: "popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
             <div style={{ fontSize: 64, marginBottom: 12, animation: "bellShake 0.6s ease infinite" }}>🔔</div>
             <p style={{ fontSize: 13, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>NOUVELLE COMMANDE</p>
@@ -5456,10 +5472,12 @@ function CuisineView({ restaurant, onBack, onLogout }) {
               ))}
               {(newOrderAlert.items?.length > 4) && <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>+{newOrderAlert.items.length - 4} autre(s)…</p>}
             </div>
-            <button onClick={() => { if (newOrderAlert) silenceOrder(newOrderAlert.id); setNewOrderAlert(null); }} style={{ width: "100%", padding: "16px 0", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: "pointer", ...FF }}>
-              ✓ Vu — Fermer
+            <button onClick={() => { if (newOrderAlert) { advanceOrder(newOrderAlert.id); silenceOrder(newOrderAlert.id); } setNewOrderAlert(null); }} style={{ width: "100%", padding: "16px 0", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: "pointer", ...FF }}>
+              ✓ Accepter la commande
             </button>
-            <p style={{ fontSize: 11, color: C.textTertiary, marginTop: 10 }}>Cliquez n'importe où pour fermer</p>
+            <button onClick={() => setNewOrderAlert(null)} style={{ width: "100%", padding: "12px 0", background: "none", border: "none", color: C.textSecondary, fontSize: 13, fontWeight: 600, cursor: "pointer", marginTop: 8, ...FF }}>
+              Fermer (la sonnerie continue)
+            </button>
           </div>
         </div>
       )}
@@ -5513,7 +5531,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                 const isLate = order.elapsed >= 20 && order.status !== "ready";
                 const canAdvance = order.status !== "cooking" || allDone;
                 return (
-                  <div key={order.id} onClick={() => silenceOrder(order.id)} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none", cursor: order.status === "new" ? "pointer" : "default" }}>
+                  <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
                     <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
@@ -5605,7 +5623,7 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                       );
                     })()}
                     <div style={{ padding: "6px 12px 12px" }}>
-                      <button onClick={() => canAdvance && advanceOrder(order.id)} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
+                      <button onClick={() => { if (canAdvance) { advanceOrder(order.id); silenceOrder(order.id); } }} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
                         {!canAdvance ? `${order.items.length - doneCount} élément${order.items.length - doneCount > 1 ? "s" : ""} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
                       </button>
                     </div>
@@ -7525,6 +7543,15 @@ function CustomerPage({ slug, tableNum }) {
     return () => clearInterval(t);
   }, [step, orderId]);
 
+  // Ask for OS-level notification permission as soon as the customer lands
+  // on the tracking screen — that way "Votre commande est prête" can reach
+  // them even if they've switched apps or locked their phone.
+  useEffect(() => {
+    if (step === "done" && typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [step]);
+
   // Ring + keep ringing once the order flips to READY, so the customer is
   // alerted on their own phone screen — stops as soon as they tap the banner.
   const prevOrderStatusRef = useRef(null);
@@ -7532,9 +7559,17 @@ function CustomerPage({ slug, tableNum }) {
   useEffect(() => {
     if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
       playOrderAlarm();
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          new Notification("✅ Votre commande est prête !", {
+            body: `${restaurant?.name || "Le restaurant"} — vous pouvez venir la récupérer.`,
+            tag: orderId || "order-ready",
+          });
+        } catch {}
+      }
     }
     prevOrderStatusRef.current = orderStatus;
-  }, [orderStatus]);
+  }, [orderStatus, orderId, restaurant]);
   useEffect(() => {
     if (orderStatus !== "READY" || !orderId || silencedCustomerOrders.has(orderId)) return;
     const id = setInterval(() => playOrderAlarm(), 5000);
