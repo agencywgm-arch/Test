@@ -6601,7 +6601,7 @@ function AgentChat({ restaurant, store }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const CHAT_SUGGESTIONS = ["Plats sans gluten ?", "Végétarien / vegan ?", "Allergènes courants ?", "Ingrédients du burger ?"];
 
-function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loading }) {
+function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loading, lift }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -6621,7 +6621,7 @@ function CustomerChat({ open, onOpen, onClose, msgs, onSend, input, onInput, loa
           onClick={onOpen}
           className="btn-press"
           style={{
-            position: "fixed", bottom: "max(24px, env(safe-area-inset-bottom, 24px))", right: 16,
+            position: "fixed", bottom: lift ? "max(92px, calc(env(safe-area-inset-bottom, 0px) + 92px))" : "max(24px, env(safe-area-inset-bottom, 24px))", right: 16,
             zIndex: 200, display: "flex", alignItems: "center", gap: 8,
             background: C.dark, border: "none", borderRadius: 28,
             padding: "12px 18px 12px 14px",
@@ -8492,6 +8492,7 @@ ${statusHtml}
           input={chatInput}
           onInput={e => setChatInput(e.target.value)}
           loading={chatLoading}
+          lift={step === "cart" || step === "payment" || step === "profile"}
         />
       )}
 
