@@ -7532,7 +7532,15 @@ function CustomerPage({ slug, tableNum }) {
   const [menuHeaderBg, setMenuHeaderBg] = useState(null);
   const [menuBodyBg, setMenuBodyBg] = useState(null);
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
+  const [orderCreatedAt, setOrderCreatedAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
+  const [, setNowTick] = useState(0);
+
+  const PENDING_STORAGE_KEY = `vg_pending_${slug}_t${tableNum}`;
+
+  function clearPendingOrder() {
+    try { localStorage.removeItem(PENDING_STORAGE_KEY); } catch {}
+  }
   const [composeModal, setComposeModal] = useState(null); // null | { item, step, choices: {[groupName]: [{name,price}]} }
   const [lang, setLang] = useState(() => localStorage.getItem("vg_customer_lang") || "fr");
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -7636,6 +7644,41 @@ function CustomerPage({ slug, tableNum }) {
           const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
           if (tk) setTicketInfo(tk);
         } catch {}
+        // If the customer had a live order in progress (just refreshed the page),
+        // restore them straight onto the tracking screen instead of the menu.
+        try {
+          const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+          if (raw) {
+            const saved = JSON.parse(raw);
+            const ageMs = Date.now() - (saved.savedAt || 0);
+            if (saved.orderId && ageMs < 4 * 60 * 60 * 1000) {
+              const { data: orderRow } = await supabase
+                .from("orders")
+                .select("status,estimated_ready_at,created_at")
+                .eq("id", saved.orderId)
+                .maybeSingle();
+              const stillOpen = orderRow && !["DONE", "CANCELED", "REFUNDED"].includes(orderRow.status);
+              if (stillOpen) {
+                setOrderId(saved.orderId);
+                if (Array.isArray(saved.cart)) setCart(saved.cart);
+                setCustomerName(saved.customerName || "");
+                setCustomerEmail(saved.customerEmail || "");
+                setCustomerPhone(saved.customerPhone || "");
+                if (saved.note) setNote(saved.note);
+                if (saved.payMode) setPayMode(saved.payMode);
+                if (saved.orderType) setOrderType(saved.orderType);
+                setOrderStatus(orderRow.status || "PENDING");
+                setEstimatedReadyAt(orderRow.estimated_ready_at || saved.estimatedReadyAt || null);
+                setOrderCreatedAt(orderRow.created_at || saved.createdAt || null);
+                setStep("done");
+                return;
+              }
+              clearPendingOrder();
+            } else {
+              clearPendingOrder();
+            }
+          }
+        } catch {}
         setStep("ordertype");
       } catch {
         setStep("error");
@@ -7644,15 +7687,24 @@ function CustomerPage({ slug, tableNum }) {
     load();
   }, [slug, tableNum]);
 
+  // Re-render once a second on the "done" step so the countdown + progress bar update live
+  useEffect(() => {
+    if (step !== "done") return;
+    const t = setInterval(() => setNowTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [step]);
+
   // Poll order status + estimated time every 10s when on "done" step
   useEffect(() => {
     if (step !== "done" || !orderId || orderId.startsWith("demo-")) return;
     function poll() {
-      supabase.from("orders").select("status,estimated_ready_at").eq("id", orderId).single()
+      supabase.from("orders").select("status,estimated_ready_at,created_at").eq("id", orderId).single()
         .then(({ data }) => {
           if (data) {
             setOrderStatus(data.status);
             if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
+            if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
+            if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
           }
         }).catch(() => {});
     }
@@ -7835,12 +7887,29 @@ function CustomerPage({ slug, tableNum }) {
         }
       } catch {}
       setOrderId(order.id);
+      const createdAtIso = new Date().toISOString();
+      setOrderCreatedAt(createdAtIso);
       // Set default estimated ready time (15 min from now)
+      const etaIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      setEstimatedReadyAt(etaIso);
       try {
-        const eta = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-        await supabase.from("orders").update({ estimated_ready_at: eta }).eq("id", order.id);
+        await supabase.from("orders").update({ estimated_ready_at: etaIso }).eq("id", order.id);
       } catch {}
       setStep("done");
+      // Persist so a page refresh keeps the customer on the tracking screen instead of dumping them back to the menu
+      try {
+        localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify({
+          orderId: order.id,
+          cart,
+          customerName, customerEmail, customerPhone,
+          note, total,
+          payMode: paymentMethod === "cash" ? null : paymentMethod,
+          orderType,
+          createdAt: createdAtIso,
+          estimatedReadyAt: etaIso,
+          savedAt: Date.now(),
+        }));
+      } catch {}
       // Upsert customer profile + send receipt email
       try {
         if (customerEmail.trim()) {
@@ -8335,22 +8404,38 @@ ${statusHtml}
               if (!estimatedReadyAt) return null;
               const eta = new Date(estimatedReadyAt);
               const now = new Date();
+              const created = orderCreatedAt ? new Date(orderCreatedAt) : new Date(eta.getTime() - 15 * 60 * 1000);
               const diffMs = eta - now;
-              const diffMin = Math.max(0, Math.round(diffMs / 60000));
-              const etaStr = eta.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+              const totalMs = Math.max(60 * 1000, eta - created);
+              const elapsedMs = Math.max(0, now - created);
+              const progressPct = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
               const isLate = diffMs < 0;
+              const remainMin = Math.floor(Math.max(0, diffMs) / 60000);
+              const remainSec = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
+              const etaStr = eta.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
               return (
-                <div style={{ background: isLate ? C.accent + "12" : "#FFF8E7", border: `1.5px solid ${isLate ? C.accent + "40" : "#FFD60A40"}`, borderRadius: 16, padding: "16px 20px", marginBottom: 20 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ fontSize: 32 }}>{isLate ? "⏰" : "🕐"}</div>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 2 }}>Temps d'attente estimé</p>
-                      {isLate
-                        ? <p style={{ fontSize: 16, fontWeight: 800, color: C.accent }}>Préparation en cours…</p>
-                        : <p style={{ fontSize: 22, fontWeight: 900, color: "#7A5C00", lineHeight: 1.1 }}>≈ {diffMin} min <span style={{ fontSize: 13, fontWeight: 500, color: C.textSecondary }}>(vers {etaStr})</span></p>
-                      }
+                <div style={{ background: isLate ? C.accent + "12" : "#FFF8E7", border: `1.5px solid ${isLate ? C.accent + "40" : "#FFD60A40"}`, borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ fontSize: 26 }}>{isLate ? "⏰" : "🍳"}</div>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: C.textSecondary }}>{isLate ? "Bientôt prête…" : "Préparation en cours"}</p>
                     </div>
+                    {!isLate && (
+                      <p style={{ fontSize: 22, fontWeight: 900, color: "#7A5C00", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                        {String(remainMin).padStart(2, "0")}:{String(remainSec).padStart(2, "0")}
+                      </p>
+                    )}
                   </div>
+                  <div style={{ height: 10, background: "rgba(0,0,0,0.06)", borderRadius: 999, overflow: "hidden", marginBottom: 8 }}>
+                    <div style={{
+                      width: `${progressPct}%`, height: "100%",
+                      background: isLate ? C.accent : "linear-gradient(90deg, #FFD60A, #FF9F0A)",
+                      borderRadius: 999, transition: "width 0.6s linear",
+                    }} />
+                  </div>
+                  <p style={{ fontSize: 12, color: C.textSecondary, textAlign: "right" }}>
+                    {isLate ? "Le restaurant finalise votre commande" : `Prête vers ${etaStr}`}
+                  </p>
                 </div>
               );
             })()}
@@ -8476,7 +8561,7 @@ ${statusHtml}
               </div>
             )}
 
-            <button onClick={() => { setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
+            <button onClick={() => { clearPendingOrder(); setOrderId(null); setOrderCreatedAt(null); setEstimatedReadyAt(null); setOrderStatus("PENDING"); setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
           </div>
         );
       })()}
