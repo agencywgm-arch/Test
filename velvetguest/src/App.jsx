@@ -7694,23 +7694,44 @@ function CustomerPage({ slug, tableNum }) {
     return () => clearInterval(t);
   }, [step]);
 
-  // Poll order status + estimated time every 10s when on "done" step
+  // Poll order status + estimated time every 4s when on "done" step,
+  // plus a Supabase realtime subscription so "Prête" lands instantly,
+  // plus an immediate poll when the tab regains focus/visibility.
   useEffect(() => {
     if (step !== "done" || !orderId || orderId.startsWith("demo-")) return;
+    let cancelled = false;
     function poll() {
       supabase.from("orders").select("status,estimated_ready_at,created_at").eq("id", orderId).single()
         .then(({ data }) => {
-          if (data) {
-            setOrderStatus(data.status);
-            if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
-            if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
-            if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
-          }
+          if (cancelled || !data) return;
+          setOrderStatus(data.status);
+          if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
+          if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
+          if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
         }).catch(() => {});
     }
     poll();
     const t = setInterval(poll, 4000);
-    return () => clearInterval(t);
+    const onVis = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", poll);
+    const channel = supabase
+      .channel(`order-${orderId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${orderId}` },
+        ({ new: row }) => {
+          if (!row) return;
+          setOrderStatus(row.status);
+          if (row.estimated_ready_at) setEstimatedReadyAt(row.estimated_ready_at);
+          if (["DONE", "CANCELED", "REFUNDED"].includes(row.status)) clearPendingOrder();
+        })
+      .subscribe();
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", poll);
+      supabase.removeChannel(channel);
+    };
   }, [step, orderId]);
 
   // Ask for OS-level notification permission as soon as the customer lands
