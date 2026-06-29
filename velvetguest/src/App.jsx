@@ -8413,6 +8413,15 @@ ${statusHtml}
 
             {/* ETA banner */}
             {(() => {
+              if (["DONE", "done", "served", "CANCELED", "REFUNDED"].includes(orderStatus)) {
+                return (
+                  <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>🙏</div>
+                    <p style={{ fontSize: 18, fontWeight: 800, color: C.accentGreen, marginBottom: 2 }}>Merci pour votre commande !</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary }}>Bon appétit.</p>
+                  </div>
+                );
+              }
               if (orderStatus === "READY" || orderStatus === "ready") {
                 return (
                   <div onClick={() => orderId && silenceOrder(orderId)} style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center", cursor: "pointer" }}>
