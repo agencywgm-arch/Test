@@ -366,9 +366,31 @@ const ORDER_QUERY = "*, tables(number), order_items(id, quantity, menu_items(nam
 // repeating alarm even if the order is still in "new" status.
 const __silencedOrderIds = new Set();
 const __silenceListeners = new Set();
+// Any gain node currently routing a scheduled beep is tracked here so
+// silenceOrder() can rip the sound to zero mid-siren instead of letting
+// the last-scheduled 1.2s siren finish playing after the user has already
+// accepted the order.
+const __activeAlarmMasters = new Set();
+function registerAlarmMaster(master, autoRemoveAfterMs) {
+  if (!master) return;
+  __activeAlarmMasters.add(master);
+  setTimeout(() => __activeAlarmMasters.delete(master), autoRemoveAfterMs);
+}
+function stopAllOrderAudio() {
+  __activeAlarmMasters.forEach(m => {
+    try {
+      const now = m.context.currentTime;
+      m.gain.cancelScheduledValues(now);
+      m.gain.setValueAtTime(m.gain.value, now);
+      m.gain.linearRampToValueAtTime(0, now + 0.03);
+    } catch {}
+  });
+  __activeAlarmMasters.clear();
+}
 function silenceOrder(id) {
   if (!id || __silencedOrderIds.has(id)) return;
   __silencedOrderIds.add(id);
+  stopAllOrderAudio();
   __silenceListeners.forEach(fn => { try { fn(); } catch {} });
 }
 function useSilencedOrders() {
@@ -466,6 +488,7 @@ function playOrderAlarm() {
     const makeup = ctx.createGain();
     makeup.gain.value = 2.0;      // post-limiter loudness boost
     master.connect(comp); comp.connect(makeup); makeup.connect(ctx.destination);
+    registerAlarmMaster(master, 2000);
     const beep = (freq, start, dur) => {
       // 5 stacked oscillators per beep — square + saw + 2 detuned squares
       // (chorus effect = thicker tone) + sine octave above = piercing siren.
@@ -510,6 +533,7 @@ function playCustomerReadyChime() {
     const master = ctx.createGain();
     master.gain.value = 0.55;
     master.connect(ctx.destination);
+    registerAlarmMaster(master, 1500);
     const note = (freq, start, dur) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -7755,6 +7779,13 @@ function CustomerPage({ slug, tableNum }) {
   const silencedCustomerOrders = useSilencedOrders();
   const customerAudioUnlocked = useOrderAudioUnlocked();
   useEffect(() => {
+    // Order left the READY state (staff clicked "Servi" / DONE, or it was canceled)
+    // → immediately kill any in-flight chime and mark the order silenced so the
+    // 5s repeat loop can't fire again before its guard re-evaluates.
+    if (prevOrderStatusRef.current === "READY" && orderStatus !== "READY") {
+      if (orderId) silenceOrder(orderId);
+      stopAllOrderAudio();
+    }
     if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
       playCustomerReadyChime();
       // Vibration doesn't depend on the ringer/silent switch the way audio
