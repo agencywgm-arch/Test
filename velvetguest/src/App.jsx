@@ -2905,6 +2905,13 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
       if (storeCtx?.setOrders) storeCtx.setOrders(prev => prev.map(x => x.id === o.id ? { ...x, paid: true } : x));
       storeCtx?.pushNotif?.(`💶 Table ${o.table} encaissée — ${o.total.toFixed(2)} €`, "success");
 
+      // Portuguese fiscal invoice: emit the certified receipt via Vendus API
+      // now that the cash payment is confirmed. No-op if the restaurant hasn't
+      // enabled Vendus, or if the invoice already exists (Edge Function is idempotent).
+      if (resolvedRestaurant.id !== "demo") {
+        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: o.id } }).catch(() => {});
+      }
+
       // Send the PAYÉ receipt by email if the customer left one
       if (resolvedRestaurant.id !== "demo" && o.customerEmail) {
         let tk = null;
@@ -7558,6 +7565,7 @@ function CustomerPage({ slug, tableNum }) {
   const [estimatedReadyAt, setEstimatedReadyAt] = useState(null);
   const [orderCreatedAt, setOrderCreatedAt] = useState(null);
   const [orderStatus, setOrderStatus] = useState("PENDING");
+  const [vendusInvoice, setVendusInvoice] = useState(null); // { url, number }
   const [, setNowTick] = useState(0);
 
   const PENDING_STORAGE_KEY = `vg_pending_${slug}_t${tableNum}`;
@@ -7725,12 +7733,13 @@ function CustomerPage({ slug, tableNum }) {
     if (step !== "done" || !orderId || orderId.startsWith("demo-")) return;
     let cancelled = false;
     function poll() {
-      supabase.from("orders").select("status,estimated_ready_at,created_at").eq("id", orderId).single()
+      supabase.from("orders").select("status,estimated_ready_at,created_at,vendus_invoice_url,vendus_invoice_number").eq("id", orderId).single()
         .then(({ data }) => {
           if (cancelled || !data) return;
           setOrderStatus(data.status);
           if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
           if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
+          if (data.vendus_invoice_url) setVendusInvoice({ url: data.vendus_invoice_url, number: data.vendus_invoice_number });
           if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
         }).catch(() => {});
     }
@@ -7948,6 +7957,12 @@ function CustomerPage({ slug, tableNum }) {
         await supabase.from("orders").update({ estimated_ready_at: etaIso }).eq("id", order.id);
       } catch {}
       setStep("done");
+      // If the order is already paid (card / Stripe / Apple Pay), fire the
+      // Portuguese fiscal invoice via the Vendus API right away. Cash orders
+      // trigger this later when the cashier marks them as paid at the counter.
+      if (paymentMethod !== "cash") {
+        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: order.id } }).catch(() => {});
+      }
       // Persist so a page refresh keeps the customer on the tracking screen instead of dumping them back to the menu
       try {
         localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify({
@@ -8441,6 +8456,21 @@ ${statusHtml}
               <p style={{ fontSize: 24, fontWeight: 900, color: C.dark, letterSpacing: "-0.03em", marginBottom: 6 }}>Commande envoyée !</p>
               <p style={{ color: C.textSecondary, fontSize: 14 }}>Votre commande est en cuisine · {tableDisplay}</p>
             </div>
+
+            {/* Portuguese fiscal receipt (Vendus) — shown as soon as the invoice has been emitted */}
+            {vendusInvoice?.url && (
+              <a href={vendusInvoice.url} target="_blank" rel="noreferrer"
+                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#F0F7FF", border: `1.5px solid #007AFF40`, borderRadius: 14, marginBottom: 20, textDecoration: "none", color: C.dark }}>
+                <div style={{ fontSize: 24 }}>🧾</div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 800, color: "#007AFF", marginBottom: 2 }}>Reçu fiscal disponible</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary }}>
+                    {vendusInvoice.number ? `Nº ${vendusInvoice.number} · ` : ""}Cliquez pour télécharger
+                  </p>
+                </div>
+                <span style={{ fontSize: 18, color: "#007AFF" }}>↗</span>
+              </a>
+            )}
 
             {/* ETA banner */}
             {(() => {
