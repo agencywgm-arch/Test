@@ -4286,7 +4286,29 @@ function exportMenuPdf(restaurant, items, catOrder) {
   const catSections = cats.map(cat => {
     const inCat = available.filter(i => (i.category || "Autres") === cat).sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
     if (!inCat.length) return "";
-    const rows = inCat.map(i => `
+    const rows = inCat.map(i => {
+      // Composition sub-groups (gratinage / viandes / sauces…) + extras, same
+      // structured data the customer sees in the compose tunnel.
+      const groups = Array.isArray(i.supplements) ? i.supplements.filter(g => g.groupName && g.options?.length) : [];
+      const extras = Array.isArray(i.extras) ? i.extras.filter(e => e.name?.trim()) : [];
+      let composeHtml = "";
+      if (groups.length || extras.length) {
+        const groupHtml = groups.map(g => {
+          const cnt = g.maxChoices || 1;
+          const label = `${esc(g.groupName)} · ${cnt === 1 ? "1 au choix" : cnt + " au choix"}${g.required ? "" : " · optionnel"}`;
+          const pills = g.options.map(o => {
+            const priceStr = o.price ? ` +${Number(o.price).toFixed(2)}€` : "";
+            return `<span class="pill">${esc(o.name)}${priceStr}</span>`;
+          }).join("");
+          return `<div class="opt-group"><p class="opt-label">${label}</p><div class="pills">${pills}</div></div>`;
+        }).join("");
+        const extraHtml = extras.length ? `<div class="opt-group"><p class="opt-label">Extras · optionnel</p><div class="pills">${extras.map(e => {
+          const priceStr = e.price ? ` +${Number(e.price).toFixed(2)}€` : "";
+          return `<span class="pill">${esc(e.name)}${priceStr}</span>`;
+        }).join("")}</div></div>` : "";
+        composeHtml = `<div class="compose">${groupHtml}${extraHtml}</div>`;
+      }
+      return `
       <div class="dish">
         <div class="dish-head">
           <span class="dish-name">${i.emoji ? esc(i.emoji) + " " : ""}${esc(i.name)}</span>
@@ -4294,8 +4316,10 @@ function exportMenuPdf(restaurant, items, catOrder) {
           <span class="dish-price">${Number(i.price).toFixed(2)} €</span>
         </div>
         ${i.description ? `<p class="dish-desc">${esc(i.description)}</p>` : ""}
+        ${composeHtml}
       </div>
-    `).join("");
+    `;
+    }).join("");
     return `<section class="cat"><h2>${esc(cat)}</h2>${rows}</section>`;
   }).join("");
 
@@ -4316,6 +4340,12 @@ function exportMenuPdf(restaurant, items, catOrder) {
   .dots { flex: 1; border-bottom: 1px dotted #bbb; margin: 0 8px; transform: translateY(-4px); }
   .dish-price { font-weight: 700; white-space: nowrap; }
   .dish-desc { margin: 3px 0 0; font-size: 12.5px; color: #666; font-style: italic; line-height: 1.4; padding-right: 60px; }
+  .compose { margin: 6px 0 0; background: #f7f7f9; border-radius: 8px; padding: 8px 10px; }
+  .opt-group { margin-bottom: 6px; }
+  .opt-group:last-child { margin-bottom: 0; }
+  .opt-label { margin: 0 0 4px; font-size: 9.5px; font-weight: 700; color: #8e8e93; letter-spacing: 0.05em; text-transform: uppercase; font-family: -apple-system, 'Helvetica Neue', sans-serif; }
+  .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pill { display: inline-block; background: #fff; border: 1px solid #e0e0e2; border-radius: 999px; padding: 2px 9px; font-size: 10.5px; color: #1d1d1f; font-family: -apple-system, 'Helvetica Neue', sans-serif; }
   .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #ddd; text-align: center; font-size: 10px; color: #999; letter-spacing: 0.08em; text-transform: uppercase; }
   @media print { .noprint { display: none; } }
   .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-family: -apple-system, sans-serif; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
