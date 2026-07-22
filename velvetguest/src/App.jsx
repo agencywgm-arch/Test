@@ -3993,10 +3993,13 @@ const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desse
 // on iOS Safari once the DOM is tall enough to exceed the platform canvas-area
 // limit. Here we control the canvas size ourselves and auto-split into several
 // images when a menu is too long to fit iOS's ~16.7M-pixel ceiling.
-async function exportMenuImage(restaurant, items, catOrder, onStatus) {
+async function exportMenuImage(restaurant, items, catOrder, onStatus, markup = 0) {
   onStatus?.("Préparation…");
   const available = (items || []).filter(i => i.available !== false);
   if (!available.length) { onStatus?.(""); alert("Aucun plat disponible à exporter."); return; }
+
+  // Export-only price markup: never mutates the real menu, only what's rendered.
+  const mk = (p) => Number(p || 0) * (1 + (Number(markup) || 0) / 100);
 
   const rawCats = Array.from(new Set(available.map(i => i.category || "Autres")));
   const cats = catOrder?.length
@@ -4098,7 +4101,7 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
     for (const i of inCat) {
       const cardTop = y; let cy = cardTop + 16;
       ops.push({ t: "text", x: contentX, y: cy + 13, str: i.name, font: `700 15px ${FONT}`, color: "#1d1d1f" });
-      ops.push({ t: "text", x: W - 20, y: cy + 13, str: Number(i.price).toFixed(2) + "€", font: `800 16px ${FONT}`, color: "#1d1d1f", align: "right" });
+      ops.push({ t: "text", x: W - 20, y: cy + 13, str: mk(i.price).toFixed(2) + "€", font: `800 16px ${FONT}`, color: "#1d1d1f", align: "right" });
       cy += 20;
       const badges = [];
       if (i.is_menu) badges.push({ txt: "Menu", bg: "#E6F0FB", fg: "#0071E3" });
@@ -4123,8 +4126,8 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
       const extras = Array.isArray(i.extras) ? i.extras.filter(e => e.name?.trim()) : [];
       if (groups.length || extras.length) {
         const innerX = contentX + 12, innerW = contentW - 24;
-        const groupLayouts = groups.map(g => ({ g, pl: layoutPills(g.options, PILL_FONT, innerW) }));
-        const extraLayout = extras.length ? layoutPills(extras.map(e => ({ name: e.name, price: e.price })), PILL_FONT, innerW) : null;
+        const groupLayouts = groups.map(g => ({ g, pl: layoutPills(g.options.map(o => ({ name: o.name, price: o.price ? mk(o.price) : 0 })), PILL_FONT, innerW) }));
+        const extraLayout = extras.length ? layoutPills(extras.map(e => ({ name: e.name, price: e.price ? mk(e.price) : 0 })), PILL_FONT, innerW) : null;
         let ph = 10;
         for (const { pl } of groupLayouts) ph += 14 + pl.height + 8;
         if (extraLayout) ph += 14 + extraLayout.height + 8;
@@ -4276,13 +4279,14 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
 // Open a print-ready HTML page for the restaurant's full menu.
 // Uses window.print() so the user can either print physically or "Save as PDF"
 // via the browser dialog — no extra libraries or dependencies needed.
-function exportMenuPdf(restaurant, items, catOrder) {
+function exportMenuPdf(restaurant, items, catOrder, markup = 0) {
   const available = (items || []).filter(i => i.available !== false);
   const rawCats = Array.from(new Set(available.map(i => i.category || "Autres")));
   const cats = catOrder?.length
     ? [...catOrder.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrder.includes(c))]
     : rawCats;
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const mk = (p) => Number(p || 0) * (1 + (Number(markup) || 0) / 100);
   const catSections = cats.map(cat => {
     const inCat = available.filter(i => (i.category || "Autres") === cat).sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
     if (!inCat.length) return "";
@@ -4297,13 +4301,13 @@ function exportMenuPdf(restaurant, items, catOrder) {
           const cnt = g.maxChoices || 1;
           const label = `${esc(g.groupName)} · ${cnt === 1 ? "1 au choix" : cnt + " au choix"}${g.required ? "" : " · optionnel"}`;
           const pills = g.options.map(o => {
-            const priceStr = o.price ? ` +${Number(o.price).toFixed(2)}€` : "";
+            const priceStr = o.price ? ` +${mk(o.price).toFixed(2)}€` : "";
             return `<span class="pill">${esc(o.name)}${priceStr}</span>`;
           }).join("");
           return `<div class="opt-group"><p class="opt-label">${label}</p><div class="pills">${pills}</div></div>`;
         }).join("");
         const extraHtml = extras.length ? `<div class="opt-group"><p class="opt-label">Extras · optionnel</p><div class="pills">${extras.map(e => {
-          const priceStr = e.price ? ` +${Number(e.price).toFixed(2)}€` : "";
+          const priceStr = e.price ? ` +${mk(e.price).toFixed(2)}€` : "";
           return `<span class="pill">${esc(e.name)}${priceStr}</span>`;
         }).join("")}</div></div>` : "";
         composeHtml = `<div class="compose">${groupHtml}${extraHtml}</div>`;
@@ -4313,7 +4317,7 @@ function exportMenuPdf(restaurant, items, catOrder) {
         <div class="dish-head">
           <span class="dish-name">${i.emoji ? esc(i.emoji) + " " : ""}${esc(i.name)}</span>
           <span class="dots"></span>
-          <span class="dish-price">${Number(i.price).toFixed(2)} €</span>
+          <span class="dish-price">${mk(i.price).toFixed(2)} €</span>
         </div>
         ${i.description ? `<p class="dish-desc">${esc(i.description)}</p>` : ""}
         ${composeHtml}
@@ -4354,7 +4358,7 @@ function exportMenuPdf(restaurant, items, catOrder) {
   <button class="noprint" onclick="window.print()">🖨️ Imprimer / Enregistrer PDF</button>
   <div class="header">
     <h1>${esc(restaurant?.name || "Menu")}</h1>
-    <p class="sub">Carte</p>
+    <p class="sub">Carte${markup > 0 ? ` · tarifs +${markup}%` : ""}</p>
   </div>
   ${catSections || '<p style="text-align:center;color:#999">Aucun plat disponible.</p>'}
   <div class="footer">${esc(restaurant?.name || "")} · ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</div>
@@ -4437,6 +4441,15 @@ function MenuTabDash({ restaurant }) {
   const [groupClipboard, setGroupClipboard] = useState(null); // copied supplements groups
   const [copyMenuModal, setCopyMenuModal] = useState(null); // null | { sources, selectedId, mode: 'merge'|'replace', busy }
   const [exportImgStatus, setExportImgStatus] = useState("");
+  const [exportMarkup, setExportMarkup] = useState(() => {
+    const v = Number(localStorage.getItem("vg_export_markup"));
+    return Number.isFinite(v) ? v : 0;
+  });
+  const setMarkup = (v) => {
+    const n = Math.max(0, Math.min(200, Math.round(Number(v) || 0)));
+    setExportMarkup(n);
+    localStorage.setItem("vg_export_markup", String(n));
+  };
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
@@ -4661,9 +4674,18 @@ function MenuTabDash({ restaurant }) {
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn variant="ghost" size="sm" onClick={() => exportMenuPdf(restaurant, items, catOrder)}>📄 Exporter PDF</Btn>
-          <Btn variant="ghost" size="sm" disabled={!!exportImgStatus} onClick={() => exportMenuImage(restaurant, items, catOrder, setExportImgStatus)}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div title="Marge appliquée uniquement aux prix des exports (image + PDF). N'affecte pas votre carte réelle."
+            style={{ display: "flex", alignItems: "center", gap: 4, border: `1.5px solid ${exportMarkup > 0 ? C.accentGreen : C.border}`, borderRadius: 10, padding: "3px 6px 3px 10px", background: exportMarkup > 0 ? C.accentGreen + "10" : "transparent" }}>
+            <span style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>Marge export</span>
+            <button onClick={() => setMarkup(exportMarkup - 5)} style={{ width: 22, height: 22, borderRadius: 6, border: `1px solid ${C.border}`, background: C.white, cursor: "pointer", fontWeight: 900, fontSize: 14, lineHeight: 1, color: C.dark }}>−</button>
+            <input type="number" value={exportMarkup} onChange={e => setMarkup(e.target.value)} min={0} max={200}
+              style={{ width: 46, textAlign: "center", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 4px", fontSize: 13, fontWeight: 700, color: C.dark, outline: "none" }} />
+            <button onClick={() => setMarkup(exportMarkup + 5)} style={{ width: 22, height: 22, borderRadius: 6, border: `1px solid ${C.border}`, background: C.white, cursor: "pointer", fontWeight: 900, fontSize: 14, lineHeight: 1, color: C.dark }}>+</button>
+            <span style={{ fontSize: 13, color: C.textSecondary, fontWeight: 700 }}>%</span>
+          </div>
+          <Btn variant="ghost" size="sm" onClick={() => exportMenuPdf(restaurant, items, catOrder, exportMarkup)}>📄 Exporter PDF</Btn>
+          <Btn variant="ghost" size="sm" disabled={!!exportImgStatus} onClick={() => exportMenuImage(restaurant, items, catOrder, setExportImgStatus, exportMarkup)}>
             {exportImgStatus ? `⏳ ${exportImgStatus}` : "🖼️ Exporter Uber Eats"}
           </Btn>
           <Btn variant="ghost" size="sm" onClick={openCopyMenu}>📥 Copier un menu</Btn>
