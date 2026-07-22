@@ -4118,6 +4118,7 @@ function MenuTabDash({ restaurant }) {
   const [dishOrder, setDishOrder] = useState({}); // cat → [item ids] (pending reorder)
   const [renamingCat, setRenamingCat] = useState(null); // { oldName, value }
   const [groupClipboard, setGroupClipboard] = useState(null); // copied supplements groups
+  const [copyMenuModal, setCopyMenuModal] = useState(null); // null | { sources, selectedId, mode: 'merge'|'replace', busy }
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
@@ -4130,6 +4131,69 @@ function MenuTabDash({ restaurant }) {
 
   function openAdd() { setForm(EMPTY_ITEM); setError(""); setModal({ mode: "add" }); }
   function openEdit(item) { setForm({ name: item.name, description: item.description, price: String(item.price), category: item.category, emoji: item.emoji, photo_url: item.photo_url || "", is_popular: item.is_popular, is_menu: !!item.is_menu, available: item.available, stock: item.stock == null ? "" : String(item.stock), supplements: item.supplements || [], extras: item.extras || [] }); setError(""); setModal({ mode: "edit", item }); }
+
+  async function openCopyMenu() {
+    setCopyMenuModal({ sources: null, selectedId: "", mode: "merge", busy: false });
+    // Load the other restaurants owned by the same owner. `restaurant.owner_id` is
+    // enforced by RLS ("Owner manages restaurants") so this only returns their own.
+    const { data } = await supabase
+      .from("restaurants")
+      .select("id, name, slug")
+      .eq("owner_id", restaurant.owner_id)
+      .neq("id", restaurant.id)
+      .order("name");
+    setCopyMenuModal(m => m ? { ...m, sources: data || [] } : m);
+  }
+
+  async function runCopyMenu() {
+    const state = copyMenuModal;
+    if (!state?.selectedId) return;
+    setCopyMenuModal(m => ({ ...m, busy: true }));
+    try {
+      // Grab the whole menu of the source restaurant.
+      const { data: sourceItems, error: srcErr } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("restaurant_id", state.selectedId);
+      if (srcErr) throw srcErr;
+      if (!sourceItems?.length) {
+        setError("Ce restaurant n'a aucun plat à copier.");
+        setCopyMenuModal(null);
+        return;
+      }
+      // Optional wipe first
+      if (state.mode === "replace") {
+        const { error: delErr } = await supabase.from("menu_items").delete().eq("restaurant_id", restaurant.id);
+        if (delErr) throw delErr;
+      }
+      // Strip identity + FK columns, re-parent to the current restaurant, then bulk insert.
+      const rows = sourceItems.map(({ id, restaurant_id, created_at, updated_at, ...rest }) => ({
+        ...rest,
+        restaurant_id: restaurant.id,
+      }));
+      const { data: inserted, error: insErr } = await supabase.from("menu_items").insert(rows).select();
+      if (insErr) throw insErr;
+      // Copy the source's category order too, so the target's disposition matches
+      const { data: srcSettings } = await supabase
+        .from("restaurant_settings")
+        .select("category_order")
+        .eq("restaurant_id", state.selectedId)
+        .maybeSingle();
+      if (srcSettings?.category_order?.length) {
+        await supabase.from("restaurant_settings")
+          .upsert({ restaurant_id: restaurant.id, category_order: srcSettings.category_order }, { onConflict: "restaurant_id" });
+        setCatOrder(srcSettings.category_order);
+      }
+      // Refresh local list
+      const { data: refreshed } = await supabase.from("menu_items").select("*").eq("restaurant_id", restaurant.id).order("category").order("name");
+      setItems(refreshed || []);
+      store?.pushNotif?.(`✅ ${inserted?.length ?? rows.length} plats copiés`, "success");
+      setCopyMenuModal(null);
+    } catch (err) {
+      setError("Erreur lors de la copie : " + (err.message || err));
+      setCopyMenuModal(m => m ? { ...m, busy: false } : m);
+    }
+  }
 
   async function updateStock(item, delta) {
     const cur = item.stock == null ? null : item.stock;
@@ -4281,6 +4345,7 @@ function MenuTabDash({ restaurant }) {
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn variant="ghost" size="sm" onClick={() => exportMenuPdf(restaurant, items, catOrder)}>📄 Exporter PDF</Btn>
+          <Btn variant="ghost" size="sm" onClick={openCopyMenu}>📥 Copier un menu</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowOrder(false); setShowTranslate(o => !o); if (!showTranslate) { setTranslations({}); } }}>🌍 Traduction</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowTranslate(false); setShowOrder(o => !o); }}>📋 Disposition</Btn>
           <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
@@ -4667,6 +4732,63 @@ function MenuTabDash({ restaurant }) {
               <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
               <Btn variant="primary" full disabled={saving} onClick={save}>{saving ? "..." : modal.mode === "add" ? "Ajouter" : "Enregistrer"}</Btn>
             </div>
+          </Surface>
+        </div>
+      )}
+
+      {/* Copy-menu modal: pick a restaurant you own → import all its dishes */}
+      {copyMenuModal && (
+        <div onClick={() => !copyMenuModal.busy && setCopyMenuModal(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <Surface onClick={e => e.stopPropagation()} style={{ padding: 24, maxWidth: 480, width: "100%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>📥 Copier un menu</p>
+                <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>Importer les plats d'un autre restaurant vers <strong>{restaurant.name}</strong>.</p>
+              </div>
+              <button onClick={() => !copyMenuModal.busy && setCopyMenuModal(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.textTertiary }}>✕</button>
+            </div>
+
+            {copyMenuModal.sources === null ? (
+              <p style={{ fontSize: 13, color: C.textSecondary, textAlign: "center", padding: 20 }}>Chargement…</p>
+            ) : copyMenuModal.sources.length === 0 ? (
+              <p style={{ fontSize: 13, color: C.textSecondary, textAlign: "center", padding: 20 }}>Vous n'avez pas d'autre restaurant à copier.</p>
+            ) : (
+              <>
+                <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Restaurant source</label>
+                <select
+                  value={copyMenuModal.selectedId}
+                  onChange={e => setCopyMenuModal(m => ({ ...m, selectedId: e.target.value }))}
+                  disabled={copyMenuModal.busy}
+                  style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${C.border}`, fontSize: 14, outline: "none", marginBottom: 16 }}>
+                  <option value="">— Choisir un restaurant —</option>
+                  {copyMenuModal.sources.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
+                </select>
+
+                <label style={{ fontSize: 13, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Mode</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                  {[
+                    { v: "merge", t: "Ajouter aux plats existants", d: "Garde les plats actuels et ajoute ceux du menu source." },
+                    { v: "replace", t: "Remplacer tous les plats", d: "⚠️ Supprime les plats actuels, puis copie ceux du menu source." },
+                  ].map(o => (
+                    <label key={o.v} style={{ display: "flex", gap: 10, padding: 12, border: `1.5px solid ${copyMenuModal.mode === o.v ? C.dark : C.border}`, borderRadius: 12, cursor: "pointer", background: copyMenuModal.mode === o.v ? C.bg : "transparent" }}>
+                      <input type="radio" checked={copyMenuModal.mode === o.v} onChange={() => setCopyMenuModal(m => ({ ...m, mode: o.v }))} disabled={copyMenuModal.busy} />
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{o.t}</p>
+                        <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{o.d}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn variant="ghost" onClick={() => setCopyMenuModal(null)} disabled={copyMenuModal.busy}>Annuler</Btn>
+                  <Btn variant="primary" full onClick={runCopyMenu} disabled={!copyMenuModal.selectedId || copyMenuModal.busy}>
+                    {copyMenuModal.busy ? "Copie en cours…" : "Copier le menu"}
+                  </Btn>
+                </div>
+              </>
+            )}
           </Surface>
         </div>
       )}
