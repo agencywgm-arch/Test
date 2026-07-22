@@ -3986,6 +3986,70 @@ const EMPTY_ITEM = { name: "", description: "", price: "", category: "Menus", em
 // extras format: [{name, price}] — optional add-ons shown at end of composition tunnel
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
+// Open a print-ready HTML page for the restaurant's full menu.
+// Uses window.print() so the user can either print physically or "Save as PDF"
+// via the browser dialog — no extra libraries or dependencies needed.
+function exportMenuPdf(restaurant, items, catOrder) {
+  const available = (items || []).filter(i => i.available !== false);
+  const rawCats = Array.from(new Set(available.map(i => i.category || "Autres")));
+  const cats = catOrder?.length
+    ? [...catOrder.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrder.includes(c))]
+    : rawCats;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const catSections = cats.map(cat => {
+    const inCat = available.filter(i => (i.category || "Autres") === cat).sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
+    if (!inCat.length) return "";
+    const rows = inCat.map(i => `
+      <div class="dish">
+        <div class="dish-head">
+          <span class="dish-name">${i.emoji ? esc(i.emoji) + " " : ""}${esc(i.name)}</span>
+          <span class="dots"></span>
+          <span class="dish-price">${Number(i.price).toFixed(2)} €</span>
+        </div>
+        ${i.description ? `<p class="dish-desc">${esc(i.description)}</p>` : ""}
+      </div>
+    `).join("");
+    return `<section class="cat"><h2>${esc(cat)}</h2>${rows}</section>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Menu — ${esc(restaurant?.name || "Restaurant")}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; color: #1d1d1f; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .header { text-align: center; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #1d1d1f; }
+  .header h1 { font-size: 40px; margin: 0 0 6px; letter-spacing: -0.02em; font-weight: 800; }
+  .header .sub { font-size: 13px; color: #666; letter-spacing: 0.16em; text-transform: uppercase; }
+  .cat { margin-bottom: 26px; page-break-inside: avoid; }
+  .cat h2 { font-size: 22px; margin: 0 0 14px; padding-bottom: 6px; border-bottom: 1px solid #ddd; letter-spacing: -0.01em; color: #1d1d1f; }
+  .dish { margin-bottom: 14px; page-break-inside: avoid; }
+  .dish-head { display: flex; align-items: baseline; font-size: 15px; }
+  .dish-name { font-weight: 700; white-space: nowrap; }
+  .dots { flex: 1; border-bottom: 1px dotted #bbb; margin: 0 8px; transform: translateY(-4px); }
+  .dish-price { font-weight: 700; white-space: nowrap; }
+  .dish-desc { margin: 3px 0 0; font-size: 12.5px; color: #666; font-style: italic; line-height: 1.4; padding-right: 60px; }
+  .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #ddd; text-align: center; font-size: 10px; color: #999; letter-spacing: 0.08em; text-transform: uppercase; }
+  @media print { .noprint { display: none; } }
+  .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-family: -apple-system, sans-serif; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+</style></head>
+<body>
+  <button class="noprint" onclick="window.print()">🖨️ Imprimer / Enregistrer PDF</button>
+  <div class="header">
+    <h1>${esc(restaurant?.name || "Menu")}</h1>
+    <p class="sub">Carte</p>
+  </div>
+  ${catSections || '<p style="text-align:center;color:#999">Aucun plat disponible.</p>'}
+  <div class="footer">${esc(restaurant?.name || "")} · ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</div>
+  <script>setTimeout(() => window.print(), 400);</script>
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Le navigateur a bloqué l'ouverture. Autorisez les pop-ups pour ce site."); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 function MenuTabDash({ restaurant }) {
   const store = useContext(StoreCtx);
   const [items, setItems] = useState([]);
@@ -4215,7 +4279,8 @@ function MenuTabDash({ restaurant }) {
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn variant="ghost" size="sm" onClick={() => exportMenuPdf(restaurant, items, catOrder)}>📄 Exporter PDF</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowOrder(false); setShowTranslate(o => !o); if (!showTranslate) { setTranslations({}); } }}>🌍 Traduction</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowTranslate(false); setShowOrder(o => !o); }}>📋 Disposition</Btn>
           <Btn variant="primary" onClick={openAdd}>+ Ajouter un plat</Btn>
