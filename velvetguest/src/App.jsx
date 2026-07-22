@@ -4002,9 +4002,35 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
     ? [...catOrder.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrder.includes(c))]
     : rawCats;
 
+  // Prefetch every remote image as a base64 data URL so html2canvas doesn't have
+  // to fight Supabase Storage's CORS response or worry about tainting the canvas —
+  // the source of the vast majority of "nothing downloads" failures.
+  onStatus?.("Chargement des images…");
+  const imageUrls = new Set();
+  if (restaurant?.logo_url) imageUrls.add(restaurant.logo_url);
+  available.forEach(i => { if (i.photo_url) imageUrls.add(i.photo_url); });
+  const dataUrlMap = new Map();
+  await Promise.all(Array.from(imageUrls).map(async (u) => {
+    try {
+      const res = await fetch(u, { mode: "cors", cache: "force-cache" });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onerror = reject;
+        r.onload = () => resolve(r.result);
+        r.readAsDataURL(blob);
+      });
+      dataUrlMap.set(u, dataUrl);
+    } catch (err) {
+      console.warn("[export-menu] image prefetch failed for", u, err);
+    }
+  }));
+  const resolvedSrc = (u) => dataUrlMap.get(u) || u;
+
   const WIDTH = 724;
   const container = document.createElement("div");
-  container.style.cssText = `position: fixed; left: -10000px; top: 0; width: ${WIDTH}px; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", sans-serif; z-index: -1;`;
+  container.style.cssText = `position: fixed; left: 0; top: 0; width: ${WIDTH}px; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", sans-serif; opacity: 0.001; pointer-events: none; z-index: -1;`;
   container.setAttribute("data-export-menu", "1");
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -4014,8 +4040,8 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
     <div style="background: linear-gradient(180deg, #0d0d0d 0%, #1c1c1c 100%); padding: 30px 24px 24px; color: #fff;">
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          ${restaurant?.logo_url
-            ? `<img src="${esc(restaurant.logo_url)}" crossorigin="anonymous" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover;" />`
+          ${restaurant?.logo_url && dataUrlMap.has(restaurant.logo_url)
+            ? `<img src="${esc(resolvedSrc(restaurant.logo_url))}" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover;" />`
             : `<span style="font-size: 34px;">${esc(restaurant?.logo_emoji || "🍽️")}</span>`}
           <div>
             <p style="font-size: 12px; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 2px;">Menu</p>
@@ -4037,8 +4063,8 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
 
   // One card per dish — photo, name+badge, description, compose sub-groups (if any), price, "Ajouter" button.
   function dishCard(i) {
-    const photo = i.photo_url
-      ? `<img src="${esc(i.photo_url)}" crossorigin="anonymous" style="width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0;" />`
+    const photo = (i.photo_url && dataUrlMap.has(i.photo_url))
+      ? `<img src="${esc(resolvedSrc(i.photo_url))}" style="width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0;" />`
       : `<div style="width: 64px; height: 64px; border-radius: 12px; background: #f6f6f8; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">${esc(i.emoji || "🍽️")}</div>`;
     const popularBadge = i.is_popular
       ? `<span style="background: rgba(255,55,95,0.12); color: #FF375F; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-flex; align-items: center; gap: 3px;"><span style="font-size: 9px;">⭐</span> Populaire</span>`
@@ -4123,16 +4149,16 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
   container.innerHTML = headerHtml + tabsHtml + sectionsHtml + footerHtml;
   document.body.appendChild(container);
 
-  // Give images a chance to load before snapshotting — html2canvas won't wait
-  // for them itself, and un-decoded remote photos would come out blank.
-  onStatus?.("Chargement des images…");
+  // Wait for all inline (data:) images to decode. With base64 URLs this should
+  // be near-instant, but browsers still resolve them async on load.
   const imgs = Array.from(container.querySelectorAll("img"));
   await Promise.all(imgs.map(img => img.complete ? Promise.resolve() :
-    new Promise(res => { img.addEventListener("load", res); img.addEventListener("error", res); })));
+    new Promise(res => { img.addEventListener("load", res, { once: true }); img.addEventListener("error", res, { once: true }); })));
 
   try {
     onStatus?.("Génération de l'image…");
     const { default: html2canvas } = await import("html2canvas");
+    console.log("[export-menu] snapshotting container", { width: container.offsetWidth, height: container.offsetHeight, images: imgs.length, prefetched: dataUrlMap.size });
     const canvas = await html2canvas(container, {
       backgroundColor: "#ffffff",
       scale: 2,
@@ -4140,18 +4166,29 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
       allowTaint: false,
       logging: false,
       windowWidth: WIDTH,
+      width: WIDTH,
+      height: container.offsetHeight,
     });
-    const dataUrl = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
+    onStatus?.("Téléchargement…");
+    // Blob download beats data-URL download: Safari + Firefox reject huge data:
+    // URLs from synthetic <a> clicks, but every browser accepts an object URL.
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob returned null")), "image/png");
+    });
     const slug = (restaurant?.slug || restaurant?.name || "menu").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
     link.download = `menu-${slug}-${new Date().toISOString().split("T")[0]}.png`;
-    link.href = dataUrl;
+    link.href = url;
+    link.rel = "noopener";
+    document.body.appendChild(link);
     link.click();
+    setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
     onStatus?.("");
   } catch (err) {
-    console.error(err);
+    console.error("[export-menu] failed", err);
     onStatus?.("");
-    alert("Erreur lors de la génération de l'image : " + (err.message || err));
+    alert("Erreur lors de la génération de l'image : " + (err?.message || err) + "\n\nOuvre la console du navigateur (F12) pour plus de détails et envoie-moi la capture.");
   } finally {
     container.remove();
   }
