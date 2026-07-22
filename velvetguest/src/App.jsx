@@ -3986,6 +3986,177 @@ const EMPTY_ITEM = { name: "", description: "", price: "", category: "Menus", em
 // extras format: [{name, price}] — optional add-ons shown at end of composition tunnel
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
+// Render the restaurant's menu as a PNG image sized/styled like the customer
+// mobile view (724px wide, dark header, category pills, dish cards with photo
+// + populaire badge + composition sub-groups). Uses html2canvas on a hidden
+// DOM tree so the image is literally the current customer UI, not a duplicate
+// template that could drift over time. Loaded via dynamic import so it doesn't
+// bloat the main bundle for restaurants who never export.
+async function exportMenuImage(restaurant, items, catOrder, onStatus) {
+  onStatus?.("Préparation…");
+  const available = (items || []).filter(i => i.available !== false);
+  if (!available.length) { onStatus?.(""); alert("Aucun plat disponible à exporter."); return; }
+
+  const rawCats = Array.from(new Set(available.map(i => i.category || "Autres")));
+  const cats = catOrder?.length
+    ? [...catOrder.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrder.includes(c))]
+    : rawCats;
+
+  const WIDTH = 724;
+  const container = document.createElement("div");
+  container.style.cssText = `position: fixed; left: -10000px; top: 0; width: ${WIDTH}px; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", sans-serif; z-index: -1;`;
+  container.setAttribute("data-export-menu", "1");
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  // Header — dark gradient banner with restaurant name, matches the mobile customer UI.
+  const headerHtml = `
+    <div style="background: linear-gradient(180deg, #0d0d0d 0%, #1c1c1c 100%); padding: 30px 24px 24px; color: #fff;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          ${restaurant?.logo_url
+            ? `<img src="${esc(restaurant.logo_url)}" crossorigin="anonymous" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover;" />`
+            : `<span style="font-size: 34px;">${esc(restaurant?.logo_emoji || "🍽️")}</span>`}
+          <div>
+            <p style="font-size: 12px; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 2px;">Menu</p>
+            <p style="font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0;">${esc(restaurant?.name || "Restaurant")}</p>
+          </div>
+        </div>
+        <span style="font-size: 22px;">🇫🇷</span>
+      </div>
+    </div>
+  `;
+
+  // Category pills — first one "Tous" always active, matching the customer UI.
+  const tabsHtml = `
+    <div style="display: flex; gap: 8px; padding: 14px 20px; background: #fff; overflow: hidden; border-bottom: 1px solid #f2f2f2;">
+      <span style="padding: 8px 16px; border-radius: 999px; background: #1d1d1f; color: #fff; font-size: 13px; font-weight: 700;">Tous</span>
+      ${cats.slice(0, 6).map(c => `<span style="padding: 8px 16px; border-radius: 999px; background: #f2f2f2; color: #1d1d1f; font-size: 13px; font-weight: 600;">${esc(c)}</span>`).join("")}
+    </div>
+  `;
+
+  // One card per dish — photo, name+badge, description, compose sub-groups (if any), price, "Ajouter" button.
+  function dishCard(i) {
+    const photo = i.photo_url
+      ? `<img src="${esc(i.photo_url)}" crossorigin="anonymous" style="width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0;" />`
+      : `<div style="width: 64px; height: 64px; border-radius: 12px; background: #f6f6f8; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">${esc(i.emoji || "🍽️")}</div>`;
+    const popularBadge = i.is_popular
+      ? `<span style="background: rgba(255,55,95,0.12); color: #FF375F; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-flex; align-items: center; gap: 3px;"><span style="font-size: 9px;">⭐</span> Populaire</span>`
+      : "";
+    const menuBadge = i.is_menu
+      ? `<span style="background: rgba(0,113,227,0.12); color: #0071E3; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px;">Menu</span>`
+      : "";
+
+    // Composition sub-groups: one block per group (gratinage, viande, sauce…), each
+    // with its title + choice count + choices as pastel pills. Wrapping is native.
+    const groups = Array.isArray(i.supplements) ? i.supplements.filter(g => g.groupName && g.options?.length) : [];
+    const extras = Array.isArray(i.extras) ? i.extras.filter(e => e.name?.trim()) : [];
+    let composeHtml = "";
+    if (groups.length || extras.length) {
+      const parts = groups.map(g => {
+        const count = g.maxChoices || 1;
+        const label = count === 1 ? "1 au choix" : `${count} au choix`;
+        const req = g.required ? "" : ` · optionnel`;
+        const pills = g.options.map(o => {
+          const priceStr = o.price ? ` +${Number(o.price).toFixed(2)}€` : "";
+          return `<span style="display: inline-block; background: #fff; border: 1px solid #e6e6e8; border-radius: 999px; padding: 4px 10px; font-size: 11px; color: #1d1d1f; margin: 2px 4px 2px 0; font-weight: 500;">${esc(o.name)}${priceStr}</span>`;
+        }).join("");
+        return `
+          <div style="margin-top: 8px;">
+            <p style="font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px;">${esc(g.groupName)} · ${label}${req}</p>
+            <div>${pills}</div>
+          </div>
+        `;
+      }).join("");
+      const extrasPart = extras.length ? `
+        <div style="margin-top: 8px;">
+          <p style="font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px;">Extras · optionnel</p>
+          <div>${extras.map(e => {
+            const priceStr = e.price ? ` +${Number(e.price).toFixed(2)}€` : "";
+            return `<span style="display: inline-block; background: #fff; border: 1px solid #e6e6e8; border-radius: 999px; padding: 4px 10px; font-size: 11px; color: #1d1d1f; margin: 2px 4px 2px 0; font-weight: 500;">${esc(e.name)}${priceStr}</span>`;
+          }).join("")}</div>
+        </div>
+      ` : "";
+      composeHtml = `
+        <div style="background: #f7f7f9; border-radius: 12px; padding: 10px 12px; margin-top: 10px;">${parts}${extrasPart}</div>
+      `;
+    }
+
+    return `
+      <div style="display: flex; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #f2f2f2; background: #fff;">
+        ${photo}
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+            <div style="flex: 1; min-width: 0;">
+              <p style="font-weight: 700; font-size: 15px; color: #1d1d1f; margin: 0;">${esc(i.name)}</p>
+              ${(popularBadge || menuBadge) ? `<div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px;">${menuBadge}${popularBadge}</div>` : ""}
+            </div>
+            <p style="font-weight: 800; font-size: 16px; color: #1d1d1f; margin: 0; white-space: nowrap;">${Number(i.price).toFixed(2)}€</p>
+          </div>
+          ${i.description ? `<p style="color: #86868b; font-size: 12.5px; margin: 6px 0 8px; line-height: 1.4;">${esc(i.description)}</p>` : `<div style="height: 8px;"></div>`}
+          ${composeHtml}
+          <div style="margin-top: 10px;"><span style="display: inline-block; padding: 6px 14px; border-radius: 999px; border: 1.5px solid #d2d2d7; background: #fff; color: #1d1d1f; font-weight: 600; font-size: 12px;">Ajouter</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  const sectionsHtml = cats.map(cat => {
+    const inCat = available.filter(i => (i.category || "Autres") === cat).sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
+    if (!inCat.length) return "";
+    return `
+      <div>
+        <div style="padding: 20px 20px 8px; background: #fafafa;">
+          <p style="font-size: 20px; font-weight: 900; color: #1d1d1f; letter-spacing: -0.02em; margin: 0;">${esc(cat)}</p>
+        </div>
+        ${inCat.map(dishCard).join("")}
+      </div>
+    `;
+  }).join("");
+
+  const footerHtml = `
+    <div style="padding: 20px; text-align: center; background: #fafafa; border-top: 1px solid #f2f2f2;">
+      <p style="font-size: 11px; color: #a1a1a6; letter-spacing: 0.14em; text-transform: uppercase; margin: 0;">Menu ${esc(restaurant?.name || "")}</p>
+    </div>
+  `;
+
+  container.innerHTML = headerHtml + tabsHtml + sectionsHtml + footerHtml;
+  document.body.appendChild(container);
+
+  // Give images a chance to load before snapshotting — html2canvas won't wait
+  // for them itself, and un-decoded remote photos would come out blank.
+  onStatus?.("Chargement des images…");
+  const imgs = Array.from(container.querySelectorAll("img"));
+  await Promise.all(imgs.map(img => img.complete ? Promise.resolve() :
+    new Promise(res => { img.addEventListener("load", res); img.addEventListener("error", res); })));
+
+  try {
+    onStatus?.("Génération de l'image…");
+    const { default: html2canvas } = await import("html2canvas");
+    const canvas = await html2canvas(container, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      windowWidth: WIDTH,
+    });
+    const dataUrl = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    const slug = (restaurant?.slug || restaurant?.name || "menu").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    link.download = `menu-${slug}-${new Date().toISOString().split("T")[0]}.png`;
+    link.href = dataUrl;
+    link.click();
+    onStatus?.("");
+  } catch (err) {
+    console.error(err);
+    onStatus?.("");
+    alert("Erreur lors de la génération de l'image : " + (err.message || err));
+  } finally {
+    container.remove();
+  }
+}
+
 // Open a print-ready HTML page for the restaurant's full menu.
 // Uses window.print() so the user can either print physically or "Save as PDF"
 // via the browser dialog — no extra libraries or dependencies needed.
@@ -4119,6 +4290,7 @@ function MenuTabDash({ restaurant }) {
   const [renamingCat, setRenamingCat] = useState(null); // { oldName, value }
   const [groupClipboard, setGroupClipboard] = useState(null); // copied supplements groups
   const [copyMenuModal, setCopyMenuModal] = useState(null); // null | { sources, selectedId, mode: 'merge'|'replace', busy }
+  const [exportImgStatus, setExportImgStatus] = useState("");
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
@@ -4345,6 +4517,9 @@ function MenuTabDash({ restaurant }) {
         <p style={{ color: C.textSecondary, fontSize: 13 }}>{items.length} plat{items.length !== 1 ? "s" : ""}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn variant="ghost" size="sm" onClick={() => exportMenuPdf(restaurant, items, catOrder)}>📄 Exporter PDF</Btn>
+          <Btn variant="ghost" size="sm" disabled={!!exportImgStatus} onClick={() => exportMenuImage(restaurant, items, catOrder, setExportImgStatus)}>
+            {exportImgStatus ? `⏳ ${exportImgStatus}` : "🖼️ Exporter Uber Eats"}
+          </Btn>
           <Btn variant="ghost" size="sm" onClick={openCopyMenu}>📥 Copier un menu</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowOrder(false); setShowTranslate(o => !o); if (!showTranslate) { setTranslations({}); } }}>🌍 Traduction</Btn>
           <Btn variant="ghost" size="sm" onClick={() => { setShowTranslate(false); setShowOrder(o => !o); }}>📋 Disposition</Btn>
