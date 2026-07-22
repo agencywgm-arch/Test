@@ -3986,12 +3986,13 @@ const EMPTY_ITEM = { name: "", description: "", price: "", category: "Menus", em
 // extras format: [{name, price}] — optional add-ons shown at end of composition tunnel
 const CATEGORIES = ["Entrées", "Plats", "Poissons", "Burgers", "Pizzas", "Desserts", "Boissons", "Accompagnements"];
 
-// Render the restaurant's menu as a PNG image sized/styled like the customer
-// mobile view (724px wide, dark header, category pills, dish cards with photo
-// + populaire badge + composition sub-groups). Uses html2canvas on a hidden
-// DOM tree so the image is literally the current customer UI, not a duplicate
-// template that could drift over time. Loaded via dynamic import so it doesn't
-// bloat the main bundle for restaurants who never export.
+// Export the restaurant menu as PNG image(s) sized/styled like the mobile
+// customer view (724px, dark header, category pills, dish cards with photos +
+// badges + composition sub-groups). Rendered with the native Canvas 2D API —
+// NOT html2canvas — because html2canvas silently produces a blank/corrupt image
+// on iOS Safari once the DOM is tall enough to exceed the platform canvas-area
+// limit. Here we control the canvas size ourselves and auto-split into several
+// images when a menu is too long to fit iOS's ~16.7M-pixel ceiling.
 async function exportMenuImage(restaurant, items, catOrder, onStatus) {
   onStatus?.("Préparation…");
   const available = (items || []).filter(i => i.available !== false);
@@ -4002,195 +4003,273 @@ async function exportMenuImage(restaurant, items, catOrder, onStatus) {
     ? [...catOrder.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrder.includes(c))]
     : rawCats;
 
-  // Prefetch every remote image as a base64 data URL so html2canvas doesn't have
-  // to fight Supabase Storage's CORS response or worry about tainting the canvas —
-  // the source of the vast majority of "nothing downloads" failures.
+  // Prefetch each remote image (CORS) → data URL → decoded Image object. Drawing
+  // an Image built from a data: URL never taints the canvas, so toBlob() works.
   onStatus?.("Chargement des images…");
   const imageUrls = new Set();
   if (restaurant?.logo_url) imageUrls.add(restaurant.logo_url);
   available.forEach(i => { if (i.photo_url) imageUrls.add(i.photo_url); });
-  const dataUrlMap = new Map();
+  const imgMap = new Map();
   await Promise.all(Array.from(imageUrls).map(async (u) => {
     try {
       const res = await fetch(u, { mode: "cors", cache: "force-cache" });
       if (!res.ok) return;
       const blob = await res.blob();
       const dataUrl = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onerror = reject;
-        r.onload = () => resolve(r.result);
-        r.readAsDataURL(blob);
+        const r = new FileReader(); r.onerror = reject; r.onload = () => resolve(r.result); r.readAsDataURL(blob);
       });
-      dataUrlMap.set(u, dataUrl);
-    } catch (err) {
-      console.warn("[export-menu] image prefetch failed for", u, err);
-    }
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = dataUrl;
+      });
+      imgMap.set(u, img);
+    } catch (err) { console.warn("[export-menu] image load failed", u, err); }
   }));
-  const resolvedSrc = (u) => dataUrlMap.get(u) || u;
 
-  const WIDTH = 724;
-  const container = document.createElement("div");
-  container.style.cssText = `position: fixed; left: 0; top: 0; width: ${WIDTH}px; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", sans-serif; opacity: 0.001; pointer-events: none; z-index: -1;`;
-  container.setAttribute("data-export-menu", "1");
+  const W = 724;
+  const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", Roboto, sans-serif';
+  const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-
-  // Header — dark gradient banner with restaurant name, matches the mobile customer UI.
-  const headerHtml = `
-    <div style="background: linear-gradient(180deg, #0d0d0d 0%, #1c1c1c 100%); padding: 30px 24px 24px; color: #fff;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          ${restaurant?.logo_url && dataUrlMap.has(restaurant.logo_url)
-            ? `<img src="${esc(resolvedSrc(restaurant.logo_url))}" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover;" />`
-            : `<span style="font-size: 34px;">${esc(restaurant?.logo_emoji || "🍽️")}</span>`}
-          <div>
-            <p style="font-size: 12px; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 2px;">Menu</p>
-            <p style="font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0;">${esc(restaurant?.name || "Restaurant")}</p>
-          </div>
-        </div>
-        <span style="font-size: 22px;">🇫🇷</span>
-      </div>
-    </div>
-  `;
-
-  // Category pills — first one "Tous" always active, matching the customer UI.
-  const tabsHtml = `
-    <div style="display: flex; gap: 8px; padding: 14px 20px; background: #fff; overflow: hidden; border-bottom: 1px solid #f2f2f2;">
-      <span style="padding: 8px 16px; border-radius: 999px; background: #1d1d1f; color: #fff; font-size: 13px; font-weight: 700;">Tous</span>
-      ${cats.slice(0, 6).map(c => `<span style="padding: 8px 16px; border-radius: 999px; background: #f2f2f2; color: #1d1d1f; font-size: 13px; font-weight: 600;">${esc(c)}</span>`).join("")}
-    </div>
-  `;
-
-  // One card per dish — photo, name+badge, description, compose sub-groups (if any), price, "Ajouter" button.
-  function dishCard(i) {
-    const photo = (i.photo_url && dataUrlMap.has(i.photo_url))
-      ? `<img src="${esc(resolvedSrc(i.photo_url))}" style="width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0;" />`
-      : `<div style="width: 64px; height: 64px; border-radius: 12px; background: #f6f6f8; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0;">${esc(i.emoji || "🍽️")}</div>`;
-    const popularBadge = i.is_popular
-      ? `<span style="background: rgba(255,55,95,0.12); color: #FF375F; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-flex; align-items: center; gap: 3px;"><span style="font-size: 9px;">⭐</span> Populaire</span>`
-      : "";
-    const menuBadge = i.is_menu
-      ? `<span style="background: rgba(0,113,227,0.12); color: #0071E3; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px;">Menu</span>`
-      : "";
-
-    // Composition sub-groups: one block per group (gratinage, viande, sauce…), each
-    // with its title + choice count + choices as pastel pills. Wrapping is native.
-    const groups = Array.isArray(i.supplements) ? i.supplements.filter(g => g.groupName && g.options?.length) : [];
-    const extras = Array.isArray(i.extras) ? i.extras.filter(e => e.name?.trim()) : [];
-    let composeHtml = "";
-    if (groups.length || extras.length) {
-      const parts = groups.map(g => {
-        const count = g.maxChoices || 1;
-        const label = count === 1 ? "1 au choix" : `${count} au choix`;
-        const req = g.required ? "" : ` · optionnel`;
-        const pills = g.options.map(o => {
-          const priceStr = o.price ? ` +${Number(o.price).toFixed(2)}€` : "";
-          return `<span style="display: inline-block; background: #fff; border: 1px solid #e6e6e8; border-radius: 999px; padding: 4px 10px; font-size: 11px; color: #1d1d1f; margin: 2px 4px 2px 0; font-weight: 500;">${esc(o.name)}${priceStr}</span>`;
-        }).join("");
-        return `
-          <div style="margin-top: 8px;">
-            <p style="font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px;">${esc(g.groupName)} · ${label}${req}</p>
-            <div>${pills}</div>
-          </div>
-        `;
-      }).join("");
-      const extrasPart = extras.length ? `
-        <div style="margin-top: 8px;">
-          <p style="font-size: 10px; font-weight: 700; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px;">Extras · optionnel</p>
-          <div>${extras.map(e => {
-            const priceStr = e.price ? ` +${Number(e.price).toFixed(2)}€` : "";
-            return `<span style="display: inline-block; background: #fff; border: 1px solid #e6e6e8; border-radius: 999px; padding: 4px 10px; font-size: 11px; color: #1d1d1f; margin: 2px 4px 2px 0; font-weight: 500;">${esc(e.name)}${priceStr}</span>`;
-          }).join("")}</div>
-        </div>
-      ` : "";
-      composeHtml = `
-        <div style="background: #f7f7f9; border-radius: 12px; padding: 10px 12px; margin-top: 10px;">${parts}${extrasPart}</div>
-      `;
+  // Measurement context (text metrics only)
+  const mc = document.createElement("canvas").getContext("2d");
+  const tw = (str, font) => { mc.font = font; return mc.measureText(String(str)).width; };
+  const wrap = (str, font, maxW) => {
+    mc.font = font;
+    const words = String(str).split(/\s+/); const lines = []; let cur = "";
+    for (const w of words) {
+      const t = cur ? cur + " " + w : w;
+      if (mc.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
     }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  const layoutPills = (options, font, maxW) => {
+    const padX = 10, h = 22, gapX = 6, gapY = 6;
+    const rows = [[]]; let rowW = 0;
+    for (const o of options) {
+      const label = o.name + (o.price ? ` +${Number(o.price).toFixed(2)}€` : "");
+      const w = tw(label, font) + padX * 2;
+      if (rowW > 0 && rowW + gapX + w > maxW) { rows.push([]); rowW = 0; }
+      rows[rows.length - 1].push({ label, w }); rowW += (rowW > 0 ? gapX : 0) + w;
+    }
+    const height = rows.length * h + (rows.length - 1) * gapY;
+    return { rows, h, gapX, gapY, padX, height };
+  };
 
-    return `
-      <div style="display: flex; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #f2f2f2; background: #fff;">
-        ${photo}
-        <div style="flex: 1; min-width: 0;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-            <div style="flex: 1; min-width: 0;">
-              <p style="font-weight: 700; font-size: 15px; color: #1d1d1f; margin: 0;">${esc(i.name)}</p>
-              ${(popularBadge || menuBadge) ? `<div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px;">${menuBadge}${popularBadge}</div>` : ""}
-            </div>
-            <p style="font-weight: 800; font-size: 16px; color: #1d1d1f; margin: 0; white-space: nowrap;">${Number(i.price).toFixed(2)}€</p>
-          </div>
-          ${i.description ? `<p style="color: #86868b; font-size: 12.5px; margin: 6px 0 8px; line-height: 1.4;">${esc(i.description)}</p>` : `<div style="height: 8px;"></div>`}
-          ${composeHtml}
-          <div style="margin-top: 10px;"><span style="display: inline-block; padding: 6px 14px; border-radius: 999px; border: 1.5px solid #d2d2d7; background: #fff; color: #1d1d1f; font-weight: 600; font-size: 12px;">Ajouter</span></div>
-        </div>
-      </div>
-    `;
+  const PILL_FONT = `500 11px ${FONT}`;
+
+  // ---- block builders (each returns { height, ops } in coords relative to block top) ----
+  function buildHeader() {
+    const ops = []; const H = 98;
+    ops.push({ t: "grad", x: 0, y: 0, w: W, h: H, c1: "#0d0d0d", c2: "#1c1c1c" });
+    const hasLogo = restaurant?.logo_url && imgMap.has(restaurant.logo_url);
+    if (hasLogo) ops.push({ t: "img", img: imgMap.get(restaurant.logo_url), x: 24, y: 28, size: 44, r: 10 });
+    else ops.push({ t: "emoji", x: 24 + 22, y: 28 + 22, size: 34, str: restaurant?.logo_emoji || "🍽️" });
+    const tx = hasLogo ? 80 : 24;
+    ops.push({ t: "text", x: tx, y: 46, str: "MENU", font: `700 11px ${FONT}`, color: "rgba(255,255,255,0.55)" });
+    ops.push({ t: "text", x: tx, y: 72, str: restaurant?.name || "Restaurant", font: `900 24px ${FONT}`, color: "#ffffff" });
+    ops.push({ t: "emoji", x: W - 34, y: 50, size: 22, str: "🇫🇷" });
+    return { height: H, ops };
   }
 
-  const sectionsHtml = cats.map(cat => {
+  function buildTabs() {
+    const ops = []; const padTop = 14, h = 32; let x = 20;
+    const font = `700 13px ${FONT}`;
+    for (const c of ["Tous", ...cats]) {
+      const w = tw(c, font) + 32;
+      if (x + w > W - 12) break;
+      const active = c === "Tous";
+      ops.push({ t: "rect", x, y: padTop, w, h, r: 16, fill: active ? "#1d1d1f" : "#f2f2f2" });
+      ops.push({ t: "text", x: x + 16, y: padTop + 21, str: c, font, color: active ? "#ffffff" : "#1d1d1f" });
+      x += w + 8;
+    }
+    const H = padTop + h + 14;
+    ops.push({ t: "rect", x: 0, y: H - 1, w: W, h: 1, r: 0, fill: "#f2f2f2" });
+    return { height: H, ops };
+  }
+
+  function buildCategory(cat) {
     const inCat = available.filter(i => (i.category || "Autres") === cat).sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
-    if (!inCat.length) return "";
-    return `
-      <div>
-        <div style="padding: 20px 20px 8px; background: #fafafa;">
-          <p style="font-size: 20px; font-weight: 900; color: #1d1d1f; letter-spacing: -0.02em; margin: 0;">${esc(cat)}</p>
-        </div>
-        ${inCat.map(dishCard).join("")}
-      </div>
-    `;
-  }).join("");
+    if (!inCat.length) return null;
+    const ops = []; let y = 0;
+    ops.push({ t: "rect", x: 0, y: 0, w: W, h: 44, r: 0, fill: "#fafafa" });
+    ops.push({ t: "text", x: 20, y: 30, str: cat, font: `900 20px ${FONT}`, color: "#1d1d1f" });
+    y = 44;
+    const contentX = 96, contentW = W - contentX - 20;
+    for (const i of inCat) {
+      const cardTop = y; let cy = cardTop + 16;
+      ops.push({ t: "text", x: contentX, y: cy + 13, str: i.name, font: `700 15px ${FONT}`, color: "#1d1d1f" });
+      ops.push({ t: "text", x: W - 20, y: cy + 13, str: Number(i.price).toFixed(2) + "€", font: `800 16px ${FONT}`, color: "#1d1d1f", align: "right" });
+      cy += 20;
+      const badges = [];
+      if (i.is_menu) badges.push({ txt: "Menu", bg: "#E6F0FB", fg: "#0071E3" });
+      if (i.is_popular) badges.push({ txt: "⭐ Populaire", bg: "#FFE8ED", fg: "#FF375F" });
+      if (badges.length) {
+        let bx = contentX;
+        for (const b of badges) {
+          const bw = tw(b.txt, `700 10px ${FONT}`) + 16;
+          ops.push({ t: "rect", x: bx, y: cy, w: bw, h: 17, r: 8, fill: b.bg });
+          ops.push({ t: "text", x: bx + 8, y: cy + 12, str: b.txt, font: `700 10px ${FONT}`, color: b.fg });
+          bx += bw + 5;
+        }
+        cy += 23;
+      }
+      if (i.description) {
+        const lines = wrap(i.description, `12.5px ${FONT}`, contentW);
+        for (const ln of lines) { cy += 15; ops.push({ t: "text", x: contentX, y: cy, str: ln, font: `12.5px ${FONT}`, color: "#86868b" }); }
+        cy += 8;
+      } else cy += 8;
 
-  const footerHtml = `
-    <div style="padding: 20px; text-align: center; background: #fafafa; border-top: 1px solid #f2f2f2;">
-      <p style="font-size: 11px; color: #a1a1a6; letter-spacing: 0.14em; text-transform: uppercase; margin: 0;">Menu ${esc(restaurant?.name || "")}</p>
-    </div>
-  `;
+      const groups = Array.isArray(i.supplements) ? i.supplements.filter(g => g.groupName && g.options?.length) : [];
+      const extras = Array.isArray(i.extras) ? i.extras.filter(e => e.name?.trim()) : [];
+      if (groups.length || extras.length) {
+        const innerX = contentX + 12, innerW = contentW - 24;
+        const groupLayouts = groups.map(g => ({ g, pl: layoutPills(g.options, PILL_FONT, innerW) }));
+        const extraLayout = extras.length ? layoutPills(extras.map(e => ({ name: e.name, price: e.price })), PILL_FONT, innerW) : null;
+        let ph = 10;
+        for (const { pl } of groupLayouts) ph += 14 + pl.height + 8;
+        if (extraLayout) ph += 14 + extraLayout.height + 8;
+        ph += 2;
+        ops.push({ t: "rect", x: contentX, y: cy, w: contentW, h: ph, r: 12, fill: "#f7f7f9" });
+        let py = cy + 10;
+        const drawGroup = (label, pl) => {
+          ops.push({ t: "text", x: innerX, y: py + 10, str: label, font: `700 10px ${FONT}`, color: "#8e8e93" });
+          py += 14;
+          for (const row of pl.rows) {
+            let px = innerX;
+            for (const pill of row) {
+              ops.push({ t: "rect", x: px, y: py, w: pill.w, h: pl.h, r: pl.h / 2, fill: "#ffffff", stroke: "#e6e6e8", lw: 1 });
+              ops.push({ t: "text", x: px + pl.padX, y: py + 15, str: pill.label, font: PILL_FONT, color: "#1d1d1f" });
+              px += pill.w + pl.gapX;
+            }
+            py += pl.h + pl.gapY;
+          }
+          py += 8 - pl.gapY;
+        };
+        for (const { g, pl } of groupLayouts) {
+          const cnt = g.maxChoices || 1;
+          const lbl = (g.groupName + " · " + (cnt === 1 ? "1 au choix" : cnt + " au choix") + (g.required ? "" : " · optionnel")).toUpperCase();
+          drawGroup(lbl, pl);
+        }
+        if (extraLayout) drawGroup("EXTRAS · OPTIONNEL", extraLayout);
+        cy += ph + 10;
+      }
 
-  container.innerHTML = headerHtml + tabsHtml + sectionsHtml + footerHtml;
-  document.body.appendChild(container);
+      const addW = tw("Ajouter", `600 12px ${FONT}`) + 28;
+      ops.push({ t: "rect", x: contentX, y: cy, w: addW, h: 26, r: 13, fill: "#ffffff", stroke: "#d2d2d7", lw: 1.5 });
+      ops.push({ t: "text", x: contentX + 14, y: cy + 17, str: "Ajouter", font: `600 12px ${FONT}`, color: "#1d1d1f" });
+      cy += 26;
 
-  // Wait for all inline (data:) images to decode. With base64 URLs this should
-  // be near-instant, but browsers still resolve them async on load.
-  const imgs = Array.from(container.querySelectorAll("img"));
-  await Promise.all(imgs.map(img => img.complete ? Promise.resolve() :
-    new Promise(res => { img.addEventListener("load", res, { once: true }); img.addEventListener("error", res, { once: true }); })));
+      if (i.photo_url && imgMap.has(i.photo_url)) ops.push({ t: "img", img: imgMap.get(i.photo_url), x: 20, y: cardTop + 16, size: 64, r: 12 });
+      else ops.push({ t: "emojibox", x: 20, y: cardTop + 16, size: 64, r: 12, str: i.emoji || "🍽️" });
+
+      const cardBottom = Math.max(cy, cardTop + 16 + 64) + 16;
+      ops.push({ t: "rect", x: 0, y: cardBottom - 1, w: W, h: 1, r: 0, fill: "#f2f2f2" });
+      y = cardBottom;
+    }
+    return { height: y, ops };
+  }
+
+  function buildFooter() {
+    const ops = []; const H = 56;
+    ops.push({ t: "rect", x: 0, y: 0, w: W, h: H, r: 0, fill: "#fafafa" });
+    ops.push({ t: "text", x: W / 2, y: 32, str: ("Menu " + (restaurant?.name || "")).toUpperCase(), font: `700 11px ${FONT}`, color: "#a1a1a6", align: "center" });
+    return { height: H, ops };
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    r = Math.min(r || 0, w / 2, h / 2);
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function execOps(ctx, ops) {
+    for (const op of ops) {
+      if (op.t === "grad") {
+        const g = ctx.createLinearGradient(0, op.y, 0, op.y + op.h);
+        g.addColorStop(0, op.c1); g.addColorStop(1, op.c2);
+        ctx.fillStyle = g; ctx.fillRect(op.x, op.y, op.w, op.h);
+      } else if (op.t === "rect") {
+        roundRectPath(ctx, op.x, op.y, op.w, op.h, op.r);
+        ctx.fillStyle = op.fill; ctx.fill();
+        if (op.stroke) { ctx.strokeStyle = op.stroke; ctx.lineWidth = op.lw || 1; ctx.stroke(); }
+      } else if (op.t === "text") {
+        ctx.font = op.font; ctx.fillStyle = op.color; ctx.textAlign = op.align || "left"; ctx.textBaseline = "alphabetic";
+        ctx.fillText(op.str, op.x, op.y);
+      } else if (op.t === "emoji") {
+        ctx.font = `${op.size}px ${EMOJI_FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(op.str, op.x, op.y);
+      } else if (op.t === "emojibox") {
+        roundRectPath(ctx, op.x, op.y, op.size, op.size, op.r);
+        ctx.fillStyle = "#f6f6f8"; ctx.fill();
+        ctx.font = `${Math.round(op.size * 0.5)}px ${EMOJI_FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(op.str, op.x + op.size / 2, op.y + op.size / 2 + 2);
+      } else if (op.t === "img") {
+        ctx.save();
+        roundRectPath(ctx, op.x, op.y, op.size, op.size, op.r); ctx.clip();
+        const img = op.img, ratio = Math.max(op.size / img.width, op.size / img.height);
+        const dw = img.width * ratio, dh = img.height * ratio;
+        ctx.drawImage(img, op.x + (op.size - dw) / 2, op.y + (op.size - dh) / 2, dw, dh);
+        ctx.restore();
+      }
+    }
+  }
 
   try {
     onStatus?.("Génération de l'image…");
-    const { default: html2canvas } = await import("html2canvas");
-    console.log("[export-menu] snapshotting container", { width: container.offsetWidth, height: container.offsetHeight, images: imgs.length, prefetched: dataUrlMap.size });
-    const canvas = await html2canvas(container, {
-      backgroundColor: "#ffffff",
-      scale: 2,
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      windowWidth: WIDTH,
-      width: WIDTH,
-      height: container.offsetHeight,
-    });
-    onStatus?.("Téléchargement…");
-    // Blob download beats data-URL download: Safari + Firefox reject huge data:
-    // URLs from synthetic <a> clicks, but every browser accepts an object URL.
-    const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob returned null")), "image/png");
-    });
+    const header = buildHeader(), tabs = buildTabs(), footer = buildFooter();
+    const catBlocks = cats.map(buildCategory).filter(Boolean);
+
+    // Paginate: keep each page short enough that width*height stays under iOS's
+    // canvas-area limit even at 2× device scale. 4800 logical px ≈ 13.9M px² @2×.
+    const MAX_PAGE_H = 4800;
+    const pages = []; let cur = [header, tabs]; let curH = header.height + tabs.height;
+    for (const b of catBlocks) {
+      if (curH + b.height > MAX_PAGE_H && cur.length > 2) { pages.push(cur); cur = []; curH = 0; }
+      cur.push(b); curH += b.height;
+    }
+    pages.push(cur);
+    pages[pages.length - 1].push(footer);
+
     const slug = (restaurant?.slug || restaurant?.name || "menu").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.download = `menu-${slug}-${new Date().toISOString().split("T")[0]}.png`;
-    link.href = url;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
+    const date = new Date().toISOString().split("T")[0];
+    const AREA_LIMIT = 16777216 * 0.9;
+
+    for (let p = 0; p < pages.length; p++) {
+      const blocks = pages[p];
+      const totalH = blocks.reduce((s, b) => s + b.height, 0);
+      let scale = 2;
+      if (W * scale * totalH * scale > AREA_LIMIT) scale = 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(W * scale);
+      canvas.height = Math.round(totalH * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, totalH);
+      let yc = 0;
+      for (const b of blocks) { ctx.save(); ctx.translate(0, yc); execOps(ctx, b.ops); ctx.restore(); yc += b.height; }
+
+      onStatus?.(pages.length > 1 ? `Téléchargement ${p + 1}/${pages.length}…` : "Téléchargement…");
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob a renvoyé null (canvas trop grand ?)")), "image/png");
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.download = `menu-${slug}-${date}${pages.length > 1 ? `-${p + 1}` : ""}.png`;
+      link.href = url; link.rel = "noopener";
+      document.body.appendChild(link); link.click();
+      await new Promise(r => setTimeout(r, 400)); // let mobile browsers register each download
+      link.remove(); URL.revokeObjectURL(url);
+    }
     onStatus?.("");
   } catch (err) {
     console.error("[export-menu] failed", err);
     onStatus?.("");
-    alert("Erreur lors de la génération de l'image : " + (err?.message || err) + "\n\nOuvre la console du navigateur (F12) pour plus de détails et envoie-moi la capture.");
-  } finally {
-    container.remove();
+    alert("Erreur lors de la génération de l'image : " + (err?.message || err));
   }
 }
 
