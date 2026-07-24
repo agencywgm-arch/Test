@@ -4465,14 +4465,19 @@ function MenuTabDash({ restaurant }) {
 
   async function openCopyMenu() {
     setCopyMenuModal({ sources: null, selectedId: "", mode: "merge", busy: false });
-    // Load the other restaurants owned by the same owner. `restaurant.owner_id` is
-    // enforced by RLS ("Owner manages restaurants") so this only returns their own.
-    const { data } = await supabase
-      .from("restaurants")
-      .select("id, name, slug")
-      .eq("owner_id", restaurant.owner_id)
-      .neq("id", restaurant.id)
-      .order("name");
+    // Resolve the owner from the current auth session rather than trusting
+    // restaurant.owner_id — the restaurant object passed to the dashboard is
+    // sometimes a mapped shape that drops owner_id, which silently returned an
+    // empty source list (the "copy doesn't work" bug).
+    let ownerId = restaurant.owner_id;
+    if (!ownerId) {
+      const { data: auth } = await supabase.auth.getUser();
+      ownerId = auth?.user?.id;
+    }
+    let query = supabase.from("restaurants").select("id, name, slug, owner_id").neq("id", restaurant.id).order("name");
+    if (ownerId) query = query.eq("owner_id", ownerId);
+    const { data, error } = await query;
+    if (error) { setError("Impossible de charger vos restaurants : " + error.message); setCopyMenuModal(null); return; }
     setCopyMenuModal(m => m ? { ...m, sources: data || [] } : m);
   }
 
@@ -4497,12 +4502,21 @@ function MenuTabDash({ restaurant }) {
         const { error: delErr } = await supabase.from("menu_items").delete().eq("restaurant_id", restaurant.id);
         if (delErr) throw delErr;
       }
-      // Strip identity + FK columns, re-parent to the current restaurant, then bulk insert.
-      const rows = sourceItems.map(({ id, restaurant_id, created_at, updated_at, ...rest }) => ({
-        ...rest,
-        restaurant_id: restaurant.id,
-      }));
-      const { data: inserted, error: insErr } = await supabase.from("menu_items").insert(rows).select();
+      // Whitelist only real, copyable menu columns (photos are full public URLs
+      // so they display immediately on the target). Spreading unknown columns
+      // could include a generated/identity column and fail the whole batch.
+      const COPY_COLS = ["name", "description", "price", "category", "emoji", "photo_url", "is_popular", "is_menu", "available", "stock", "supplements", "extras", "sort_order", "translations"];
+      const rows = sourceItems.map(src => {
+        const row = { restaurant_id: restaurant.id };
+        for (const c of COPY_COLS) if (src[c] !== undefined) row[c] = src[c];
+        return row;
+      });
+      let { data: inserted, error: insErr } = await supabase.from("menu_items").insert(rows).select();
+      // Retry without optional columns some older DBs may not have (translations/sort_order)
+      if (insErr && /column .* does not exist|translations|sort_order/i.test(insErr.message || "")) {
+        const slimRows = rows.map(({ translations, sort_order, ...keep }) => keep);
+        ({ data: inserted, error: insErr } = await supabase.from("menu_items").insert(slimRows).select());
+      }
       if (insErr) throw insErr;
       // Copy the source's category order too, so the target's disposition matches
       const { data: srcSettings } = await supabase
