@@ -4,6 +4,27 @@ import QRCode from "qrcode";
 
 // Base path for QR URL generation — injected at build time, empty on Vercel
 const BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
+
+// Whether to offer card payment on a restaurant's customer page. True if the
+// restaurant has its own Stripe key, OR it's the account's payment master, OR a
+// sibling restaurant of the same owner is flagged as payment master (franchise
+// shared Stripe). The actual keys are resolved server-side by the Edge Function.
+async function resolveCardEnabled(restaurant, ownHasKey) {
+  if (ownHasKey) return true;
+  if (!restaurant) return false;
+  if (restaurant.is_payment_master) return true;
+  if (!restaurant.owner_id) return false;
+  try {
+    const { data, error } = await supabase
+      .from("restaurants")
+      .select("id")
+      .eq("owner_id", restaurant.owner_id)
+      .eq("is_payment_master", true)
+      .limit(1);
+    if (error) return false; // column may not exist yet (migration not run)
+    return !!(data && data.length);
+  } catch { return false; }
+}
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 // Public VAPID key for Web Push ("order ready" notifications that reach the
 // customer even with their screen locked). Safe to keep in client code —
@@ -2087,6 +2108,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [menuHeaderBg, setMenuHeaderBg] = useState("");
   const [menuBodyBg, setMenuBodyBg] = useState("");
   const [uploadingBg, setUploadingBg] = useState(null); // "welcome"|"header"|"body"|null
+  const [isPaymentMaster, setIsPaymentMaster] = useState(!!restaurant.is_payment_master);
+  const [savingMaster, setSavingMaster] = useState(false);
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -2162,6 +2185,37 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
         } else if (error?.code !== "PGRST116") console.warn("Settings load error:", error?.message);
       });
   }, [restaurant.id]);
+
+  // Load the payment-master flag freshly (the restaurant prop may be a mapped
+  // shape that doesn't carry it).
+  useEffect(() => {
+    if (restaurant.id === "demo") return;
+    supabase.from("restaurants").select("is_payment_master").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) setIsPaymentMaster(!!data.is_payment_master); });
+  }, [restaurant.id]);
+
+  async function togglePaymentMaster() {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    const next = !isPaymentMaster;
+    setSavingMaster(true);
+    setIsPaymentMaster(next); // optimistic
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const ownerId = restaurant.owner_id || auth?.user?.id;
+      // Single master per account: clear the flag on all the owner's restaurants first.
+      if (next && ownerId) {
+        await supabase.from("restaurants").update({ is_payment_master: false }).eq("owner_id", ownerId);
+      }
+      const { error } = await supabase.from("restaurants").update({ is_payment_master: next }).eq("id", restaurant.id);
+      if (error) throw error;
+      store.pushNotif(next ? "⭐ Restaurant principal défini — paiement partagé à la franchise" : "Restaurant principal retiré", "success");
+    } catch (err) {
+      setIsPaymentMaster(!next); // rollback
+      store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_payment_master.sql" : ""), "warning");
+    } finally {
+      setSavingMaster(false);
+    }
+  }
 
   function toggleShow(field) { setShow(p => ({ ...p, [field]: !p[field] })); }
   function set(field) { return e => setSettings(p => ({ ...p, [field]: e.target.value })); }
@@ -2291,6 +2345,27 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
         <SettingsTxtField label="Clé publique Stripe" placeholder="pk_live_..." value={settings.stripe_publishable_key} onChange={set("stripe_publishable_key")} />
         <SettingsPwField label="Clé secrète Stripe" placeholder="sk_live_..." value={settings.stripe_secret_key} onChange={set("stripe_secret_key")} shown={!!show.stripe_secret_key} onToggle={() => toggleShow("stripe_secret_key")} />
         <ExtLink href="https://dashboard.stripe.com/apikeys">Obtenir vos clés Stripe</ExtLink>
+
+        {/* Payment master (star) — share this Stripe config with the whole account */}
+        <div style={{ marginTop: 20, padding: "14px 16px", background: isPaymentMaster ? C.accentGreen + "12" : C.bg, borderRadius: 12, border: `1.5px solid ${isPaymentMaster ? C.accentGreen + "50" : C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>⭐ Restaurant principal de la franchise</div>
+              <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 3, lineHeight: 1.5 }}>
+                Partage cette configuration Stripe avec tous vos autres restaurants du même compte. Ils accepteront le paiement carte sans avoir à reconfigurer Stripe.
+              </div>
+            </div>
+            <div onClick={savingMaster ? undefined : togglePaymentMaster}
+              style={{ width: 44, height: 26, borderRadius: 13, background: isPaymentMaster ? C.accentGreen : C.border, cursor: savingMaster ? "wait" : "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0, opacity: savingMaster ? 0.6 : 1 }}>
+              <div style={{ position: "absolute", top: 3, left: isPaymentMaster ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
+            </div>
+          </div>
+          {isPaymentMaster && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: C.accentGreen, fontWeight: 600 }}>
+              ✓ Ce restaurant fournit le paiement carte à toute la franchise. Vérifiez que ses clés Stripe ci-dessus sont bien remplies.
+            </div>
+          )}
+        </div>
       </Surface>
 
       {/* Google Reviews */}
@@ -6492,7 +6567,7 @@ function ClientView({ restaurant, onBack }) {
       const seen = new Set();
       setMenuItems((menuRes.data ?? []).filter(i => seen.has(i.id) ? false : seen.add(i.id)));
       if (settRes.data?.category_order?.length) setCatOrderClient(settRes.data.category_order);
-      if (settRes.data?.stripe_publishable_key) setStripeEnabledCV(true);
+      resolveCardEnabled(restaurant, !!settRes.data?.stripe_publishable_key).then(setStripeEnabledCV);
       setLoadingMenu(false);
     });
   }, [restaurant.id]);
@@ -8210,7 +8285,7 @@ function CustomerPage({ slug, tableNum }) {
           const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url,menu_header_bg_url,menu_body_bg_url").eq("restaurant_id", resto.id).maybeSingle();
           if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
           if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
-          if (sett?.stripe_publishable_key) setStripeEnabled(true);
+          resolveCardEnabled(resto, !!sett?.stripe_publishable_key).then(setStripeEnabled);
           if (sett?.menu_background_url) setMenuWelcomeBg(sett.menu_background_url);
           if (sett?.menu_header_bg_url) setMenuHeaderBg(sett.menu_header_bg_url);
           if (sett?.menu_body_bg_url) setMenuBodyBg(sett.menu_body_bg_url);

@@ -23,16 +23,48 @@ Deno.serve(async (req) => {
     if (restaurant_id) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sHeaders = { "Authorization": `Bearer ${serviceKey}`, "apikey": serviceKey };
 
-      const r = await fetch(
-        `${supabaseUrl}/rest/v1/restaurant_settings?restaurant_id=eq.${restaurant_id}&select=stripe_secret_key,stripe_publishable_key`,
-        { headers: { "Authorization": `Bearer ${serviceKey}`, "apikey": serviceKey } }
-      );
-      const rows = await r.json();
-      if (Array.isArray(rows) && rows[0]) {
-        secretKey = rows[0].stripe_secret_key || null;
-        publishableKey = rows[0].stripe_publishable_key || null;
+      const readKeys = async (rid: string) => {
+        const r = await fetch(
+          `${supabaseUrl}/rest/v1/restaurant_settings?restaurant_id=eq.${rid}&select=stripe_secret_key,stripe_publishable_key`,
+          { headers: sHeaders }
+        );
+        const rows = await r.json();
+        if (Array.isArray(rows) && rows[0]) {
+          return { secret: rows[0].stripe_secret_key || null, pub: rows[0].stripe_publishable_key || null };
+        }
+        return { secret: null, pub: null };
+      };
+
+      // 1) Try the restaurant's own Stripe config.
+      let keys = await readKeys(restaurant_id);
+
+      // 2) Fallback: if this restaurant isn't configured, use the account's
+      //    "payment master" restaurant (same owner, is_payment_master = true).
+      //    This lets every restaurant in a franchise share one Stripe setup.
+      if (!keys.secret || !keys.pub) {
+        const rr = await fetch(
+          `${supabaseUrl}/rest/v1/restaurants?id=eq.${restaurant_id}&select=owner_id`,
+          { headers: sHeaders }
+        );
+        const rrows = await rr.json();
+        const ownerId = Array.isArray(rrows) && rrows[0] ? rrows[0].owner_id : null;
+        if (ownerId) {
+          const mr = await fetch(
+            `${supabaseUrl}/rest/v1/restaurants?owner_id=eq.${ownerId}&is_payment_master=eq.true&select=id&limit=1`,
+            { headers: sHeaders }
+          );
+          const mrows = await mr.json();
+          const masterId = Array.isArray(mrows) && mrows[0] ? mrows[0].id : null;
+          if (masterId && masterId !== restaurant_id) {
+            keys = await readKeys(masterId);
+          }
+        }
       }
+
+      secretKey = keys.secret;
+      publishableKey = keys.pub;
     }
 
     if (!secretKey || !publishableKey) {
