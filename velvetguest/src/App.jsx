@@ -6432,20 +6432,37 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Ask the payment function for an intent, trying both deployed slug variants.
+    const callIntent = async (rid) => {
+      let parsed = null, invokeErr = null;
+      for (const fnName of ["create-payment-intent-", "create-payment-intent"]) {
+        const r = await supabase.functions.invoke(fnName, { body: { amount: total, restaurant_id: rid } });
+        if (!r.error && r.data) { parsed = r.data; invokeErr = null; break; }
+        invokeErr = r.error;
+      }
+      if (invokeErr) throw new Error(`Appel fonction: ${invokeErr.message || invokeErr}`);
+      return parsed || {};
+    };
+    // Franchise fallback resolved CLIENT-SIDE (no Edge Function redeploy needed):
+    // if this restaurant isn't Stripe-configured, use the account's payment-master
+    // restaurant id so the existing function reads the master's keys.
+    const findMasterId = async () => {
+      try {
+        if (!restaurant?.owner_id) return null;
+        const { data } = await supabase.from("restaurants").select("id").eq("owner_id", restaurant.owner_id).eq("is_payment_master", true).limit(1);
+        const id = data && data[0]?.id;
+        return id && id !== restaurant.id ? id : null;
+      } catch { return null; }
+    };
     const init = async () => {
       try {
         const rid = restaurant?.id && restaurant.id !== "demo" ? restaurant.id : null;
-        // Use the configured supabase client (same one that loads the menu) to
-        // avoid CORS/preflight quirks with raw fetch.
-        // NB: the deployed function slug has a trailing dash ("create-payment-intent-"),
-        // so try it first, then fall back to the canonical name.
-        let parsed = null, invokeErr = null;
-        for (const fnName of ["create-payment-intent-", "create-payment-intent"]) {
-          const r = await supabase.functions.invoke(fnName, { body: { amount: total, restaurant_id: rid } });
-          if (!r.error && r.data) { parsed = r.data; invokeErr = null; break; }
-          invokeErr = r.error;
+        let parsed = await callIntent(rid);
+        // Not configured on this restaurant → retry once with the franchise master.
+        if (parsed.error === "stripe_not_configured") {
+          const masterId = await findMasterId();
+          if (masterId) parsed = await callIntent(masterId);
         }
-        if (invokeErr) throw new Error(`Appel fonction: ${invokeErr.message || invokeErr}`);
         const { client_secret, publishable_key, error: fnErr } = parsed || {};
         if (cancelled) return;
         const pubKey = ENV_STRIPE_KEY || publishable_key;
