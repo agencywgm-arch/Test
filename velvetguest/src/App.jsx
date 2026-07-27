@@ -3181,6 +3181,58 @@ function QRTab({ restaurant }) {
     const a = document.createElement("a"); a.download = `vg-table-${selNum}.png`; a.href = canvas.toDataURL("image/png"); a.click();
   };
 
+  const [exportingAll, setExportingAll] = useState(false);
+  // Build a print-ready A4 sheet with EVERY table's QR code (labelled), so the
+  // whole restaurant can be printed/exported in one go instead of one by one.
+  // Uses the exact same URL formula as the single-table view — QR codes already
+  // printed and stuck on tables are never affected.
+  const exportAllQRCodes = async () => {
+    if (exportingAll || !tables.length) return;
+    setExportingAll(true);
+    try {
+      const cells = await Promise.all(tables.slice().sort((a, b) => a.number - b.number).map(async (t) => {
+        const turl = t.qr_url || `${origin}${BASE_PATH}/r/${restaurant.id}/t/${t.number}`;
+        const dataUrl = await QRCode.toDataURL(turl, { width: 480, margin: 1, color: { dark: fg, light: bg } });
+        const title = t.label || `Table ${t.number}`;
+        const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        return `
+          <div class="cell">
+            <div class="rname">${esc(restaurant.name)}</div>
+            <div class="tname">${esc(title)}</div>
+            <img src="${dataUrl}" alt="${esc(title)}" />
+            <div class="scan">📱 Scannez pour commander</div>
+          </div>`;
+      }));
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>QR codes — ${restaurant.name}</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; color: #1d1d1f; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12mm; }
+  .cell { border: 1.5px dashed #cfcfd4; border-radius: 14px; padding: 14px 10px 12px; text-align: center; page-break-inside: avoid; display: flex; flex-direction: column; align-items: center; }
+  .rname { font-size: 13px; color: #86868b; font-weight: 600; }
+  .tname { font-size: 22px; font-weight: 800; margin: 2px 0 8px; letter-spacing: -0.02em; }
+  .cell img { width: 62%; max-width: 220px; height: auto; }
+  .scan { font-size: 12px; color: #1d1d1f; font-weight: 600; margin-top: 8px; }
+  .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  @media print { .noprint { display: none; } }
+</style></head>
+<body>
+  <button class="noprint" onclick="window.print()">🖨️ Imprimer / Enregistrer PDF</button>
+  <div class="grid">${cells.join("")}</div>
+  <script>setTimeout(() => window.print(), 500);</script>
+</body></html>`;
+      const w = window.open("", "_blank");
+      if (!w) { alert("Le navigateur a bloqué l'ouverture. Autorisez les pop-ups pour ce site."); return; }
+      w.document.write(html); w.document.close();
+    } catch (err) {
+      alert("Erreur lors de l'export : " + (err?.message || err));
+    } finally {
+      setExportingAll(false);
+    }
+  };
+
   return (
     <div className="fade-in">
       {isLocalhost && (
@@ -3214,9 +3266,14 @@ function QRTab({ restaurant }) {
         <Surface style={{ overflow: "hidden" }}>
           <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Tables</p>
-            <button onClick={addTable} disabled={adding} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF, opacity: adding ? 0.5 : 1 }}>
-              + Ajouter une table
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={exportAllQRCodes} disabled={exportingAll || !tables.length} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF, opacity: (exportingAll || !tables.length) ? 0.5 : 1 }}>
+                {exportingAll ? "Génération…" : "📥 Tous les QR"}
+              </button>
+              <button onClick={addTable} disabled={adding} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.dark, fontSize: 13, fontWeight: 600, cursor: "pointer", ...FF, opacity: adding ? 0.5 : 1 }}>
+                + Ajouter une table
+              </button>
+            </div>
           </div>
           <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(88px, 1fr))", gap: 8 }}>
             {tables.map(t => (
