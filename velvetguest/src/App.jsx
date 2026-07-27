@@ -3204,24 +3204,32 @@ function QRTab({ restaurant }) {
           </div>`;
       }));
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QR codes — ${restaurant.name}</title>
 <style>
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4; margin: 10mm; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; color: #1d1d1f; }
-  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12mm; }
-  .cell { border: 1.5px dashed #cfcfd4; border-radius: 14px; padding: 14px 10px 12px; text-align: center; page-break-inside: avoid; display: flex; flex-direction: column; align-items: center; }
-  .rname { font-size: 13px; color: #86868b; font-weight: 600; }
-  .tname { font-size: 22px; font-weight: 800; margin: 2px 0 8px; letter-spacing: -0.02em; }
-  .cell img { width: 62%; max-width: 220px; height: auto; }
-  .scan { font-size: 12px; color: #1d1d1f; font-weight: 600; margin-top: 8px; }
-  .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1d1d1f; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8mm; justify-content: center; padding: 6mm 0; }
+  /* Fixed physical size + hard break-avoid so a cell is never sliced across pages, even on mobile Chrome/Safari save-as-PDF. */
+  .cell {
+    width: 88mm; padding: 6mm 4mm; text-align: center;
+    border: 1px dashed #cfcfd4; border-radius: 5mm;
+    display: flex; flex-direction: column; align-items: center;
+    break-inside: avoid; page-break-inside: avoid; -webkit-column-break-inside: avoid;
+  }
+  .rname { font-size: 12px; color: #86868b; font-weight: 600; }
+  .tname { font-size: 20px; font-weight: 800; margin: 1mm 0 3mm; letter-spacing: -0.02em; }
+  .cell img { width: 60mm; height: 60mm; display: block; }
+  .scan { font-size: 11px; color: #1d1d1f; font-weight: 600; margin-top: 3mm; }
+  .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10; }
   @media print { .noprint { display: none; } }
 </style></head>
 <body>
   <button class="noprint" onclick="window.print()">🖨️ Imprimer / Enregistrer PDF</button>
   <div class="grid">${cells.join("")}</div>
-  <script>setTimeout(() => window.print(), 500);</script>
+  <script>setTimeout(() => window.print(), 600);</script>
 </body></html>`;
       const w = window.open("", "_blank");
       if (!w) { alert("Le navigateur a bloqué l'ouverture. Autorisez les pop-ups pour ce site."); return; }
