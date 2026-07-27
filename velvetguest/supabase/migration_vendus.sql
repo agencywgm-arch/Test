@@ -13,6 +13,10 @@ alter table orders add column if not exists vendus_invoice_number text;
 alter table orders add column if not exists vendus_invoice_url text;
 alter table orders add column if not exists vendus_invoice_created_at timestamptz;
 
+-- Optional customer tax number (NIF) captured at checkout so the fiscal receipt
+-- can be issued "com contribuinte" instead of to the generic final consumer.
+alter table orders add column if not exists customer_nif text;
+
 -- Seed La Gratinade with its real NIF + enable Vendus
 update restaurants
 set nif = '519061845', vendus_enabled = true

@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     // cashier double-click, etc.) — which would be a legal problem in Portugal.
     const { data: existing } = await supabase
       .from("orders")
-      .select("id, vendus_invoice_id, vendus_invoice_number, vendus_invoice_url, restaurant_id, total, customer_name, customer_email, payment_method")
+      .select("id, vendus_invoice_id, vendus_invoice_number, vendus_invoice_url, restaurant_id, total, customer_name, customer_email, customer_nif, payment_method")
       .eq("id", order_id)
       .single();
     if (!existing) return json({ error: "order not found" }, 404);
@@ -81,12 +81,19 @@ Deno.serve(async (req) => {
     const payload = {
       type: "FS",
       date: new Date().toISOString().split("T")[0], // YYYY-MM-DD
-      client: {
-        name: existing.customer_name || "Consumidor Final",
-        fiscal_id: "999999990", // NIF genérico for final consumer (standard Portugal)
-        email: existing.customer_email || undefined,
-        send_email: existing.customer_email ? "yes" : "no",
-      },
+      client: (() => {
+        // Use the customer's real NIF when they provided a valid 9-digit one
+        // (fatura "com contribuinte"); otherwise fall back to the generic final
+        // consumer NIF (999999990).
+        const nif = typeof existing.customer_nif === "string" && /^\d{9}$/.test(existing.customer_nif)
+          ? existing.customer_nif : "999999990";
+        return {
+          name: existing.customer_name || "Consumidor Final",
+          fiscal_id: nif,
+          email: existing.customer_email || undefined,
+          send_email: existing.customer_email ? "yes" : "no",
+        };
+      })(),
       items: items.map((it: any) => {
         const name = it.menu_items?.name || "Artigo";
         const unitPrice = Number(it.menu_items?.price || 0);

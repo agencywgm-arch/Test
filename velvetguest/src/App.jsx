@@ -8237,6 +8237,7 @@ function CustomerPage({ slug, tableNum }) {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerNif, setCustomerNif] = useState("");
   const [profileSkipped, setProfileSkipped] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMsgs, setChatMsgs] = useState([{ role: "assistant", content: "👋 Hello / Bonjour ! How can I help you with the menu?" }]);
@@ -8579,10 +8580,17 @@ function CustomerPage({ slug, tableNum }) {
         tid = newTbl?.id ?? null;
       }
 
+      const nif = customerNif && customerNif.length === 9 ? customerNif : null;
       let { data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
+        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
         .select().single();
 
+      // Fallback -1: without customer_nif column (not migrated yet)
+      if (error && /customer_nif/i.test(error.message || "")) {
+        ({ data: order, error } = await supabase.from("orders")
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
+          .select().single());
+      }
       // Fallback 0: without paid column (not migrated yet)
       if (error && error.message?.includes("paid")) {
         ({ data: order, error } = await supabase.from("orders")
@@ -9007,10 +9015,19 @@ function CustomerPage({ slug, tableNum }) {
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Email *</label>
             <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="votre@email.fr" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
           </div>
-          <div style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: restaurant?.vendus_enabled ? 16 : 28 }}>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Téléphone <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel)</span></label>
             <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="06 XX XX XX XX" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
           </div>
+          {restaurant?.vendus_enabled && (
+            <div style={{ marginBottom: 28 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>NIF <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel — pour facture avec contribuinte)</span></label>
+              <input inputMode="numeric" value={customerNif}
+                onChange={e => setCustomerNif(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                placeholder="9 chiffres" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${customerNif && customerNif.length !== 9 ? C.accent : C.border}`, fontSize: 16, outline: "none", ...FF }} />
+              {customerNif && customerNif.length !== 9 && <p style={{ fontSize: 11, color: C.accent, marginTop: 5 }}>Le NIF doit contenir 9 chiffres.</p>}
+            </div>
+          )}
           <button
             onClick={() => { if (!customerEmail.trim()) return; total === 0 ? confirm("free") : setStep("payment"); }}
             disabled={!customerEmail.trim()}
