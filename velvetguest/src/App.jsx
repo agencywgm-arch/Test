@@ -3087,6 +3087,45 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
   );
 }
 
+// Assemble a minimal multi-page A4 PDF that embeds one JPEG per page. Hand-rolled
+// (no library) so the bundle stays lean. Each page is [{ jpeg: Uint8Array, w, h }].
+function jpegPagesToPdf(pages) {
+  const A4W = 595.28, A4H = 841.89;
+  const enc = new TextEncoder();
+  const parts = []; let pos = 0; const objPos = {};
+  const w = (b) => { const bytes = typeof b === "string" ? enc.encode(b) : b; parts.push(bytes); pos += bytes.length; };
+  const startObj = (n) => { objPos[n] = pos; };
+  const N = pages.length;
+  const kids = [];
+  for (let k = 0; k < N; k++) kids.push(`${5 + k * 3} 0 R`);
+
+  w("%PDF-1.3\n%\xFF\xFF\xFF\xFF\n");
+  startObj(1); w("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  startObj(2); w(`2 0 obj\n<< /Type /Pages /Count ${N} /Kids [${kids.join(" ")}] >>\nendobj\n`);
+  for (let k = 0; k < N; k++) {
+    const { jpeg, w: iw, h: ih } = pages[k];
+    const imgN = 3 + k * 3, contN = 4 + k * 3, pageN = 5 + k * 3;
+    startObj(imgN);
+    w(`${imgN} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+    w(jpeg); w("\nendstream\nendobj\n");
+    const content = `q ${A4W} 0 0 ${A4H} 0 0 cm /Im0 Do Q`;
+    startObj(contN);
+    w(`${contN} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+    startObj(pageN);
+    w(`${pageN} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4W} ${A4H}] /Resources << /XObject << /Im0 ${imgN} 0 R >> >> /Contents ${contN} 0 R >>\nendobj\n`);
+  }
+  const total = 2 + 3 * N;
+  const xrefPos = pos;
+  w(`xref\n0 ${total + 1}\n0000000000 65535 f \n`);
+  for (let n = 1; n <= total; n++) w(`${String(objPos[n]).padStart(10, "0")} 00000 n \n`);
+  w(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`);
+
+  let len = 0; for (const p of parts) len += p.length;
+  const buf = new Uint8Array(len); let o = 0;
+  for (const p of parts) { buf.set(p, o); o += p.length; }
+  return new Blob([buf], { type: "application/pdf" });
+}
+
 function QRTab({ restaurant }) {
   const isDemo = restaurant.id === "demo";
   const [tables, setTables] = useState([]);
@@ -3207,6 +3246,7 @@ function QRTab({ restaurant }) {
       const pages = Math.ceil(cells.length / PER);
       const slug = (restaurant?.slug || restaurant?.name || "qr").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+      const pageJpegs = [];
       for (let p = 0; p < pages; p++) {
         const canvas = document.createElement("canvas");
         canvas.width = PW; canvas.height = PH;
@@ -3218,36 +3258,42 @@ function QRTab({ restaurant }) {
           const col = i % COLS, row = Math.floor(i / COLS);
           const x = MARGIN + col * (cellW + GAP);
           const y = MARGIN + row * (cellH + GAP);
-          // dashed cut border
           ctx.save();
           ctx.strokeStyle = "#cfcfd4"; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
           ctx.strokeRect(x, y, cellW, cellH);
           ctx.restore();
           const cx = x + cellW / 2;
-          // restaurant name
           ctx.fillStyle = "#86868b"; ctx.font = "600 26px -apple-system, 'Segoe UI', sans-serif";
           ctx.fillText(restaurant.name || "", cx, y + 52, cellW - 40);
-          // table title
           ctx.fillStyle = "#1d1d1f"; ctx.font = "800 44px -apple-system, 'Segoe UI', sans-serif";
           ctx.fillText(cell.title, cx, y + 100, cellW - 40);
-          // QR (square, centered)
           const qrSize = Math.min(cellW - 90, cellH - 200);
           ctx.drawImage(cell.img, cx - qrSize / 2, y + 130, qrSize, qrSize);
-          // scan hint
           ctx.fillStyle = "#1d1d1f"; ctx.font = "600 24px -apple-system, 'Segoe UI', sans-serif";
           ctx.fillText("Scannez pour commander", cx, y + cellH - 26, cellW - 40);
         });
-
-        const blob = await new Promise((resolve, reject) => {
-          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob null")), "image/png");
+        const jpegBlob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob null")), "image/jpeg", 0.95);
         });
-        const url = URL.createObjectURL(blob);
+        pageJpegs.push({ jpeg: new Uint8Array(await jpegBlob.arrayBuffer()), w: PW, h: PH });
+      }
+
+      const pdfBlob = jpegPagesToPdf(pageJpegs);
+      const fileName = `qr-${slug}.pdf`;
+      const file = new File([pdfBlob], fileName, { type: "application/pdf" });
+
+      // iPhone Safari can't reliably "download" a blob, but it CAN share a file
+      // to the native sheet → "Enregistrer dans Fichiers". Prefer that; fall back
+      // to a classic download on desktop, and to opening the PDF as a last resort.
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: `QR codes — ${restaurant.name}` }); }
+        catch (e) { if (e?.name !== "AbortError") window.open(URL.createObjectURL(pdfBlob), "_blank"); }
+      } else {
+        const url = URL.createObjectURL(pdfBlob);
         const link = document.createElement("a");
-        link.download = `qr-${slug}${pages > 1 ? `-${p + 1}` : ""}.png`;
-        link.href = url; link.rel = "noopener";
+        link.download = fileName; link.href = url; link.rel = "noopener";
         document.body.appendChild(link); link.click();
-        await new Promise(r => setTimeout(r, 400));
-        link.remove(); URL.revokeObjectURL(url);
+        setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
       }
     } catch (err) {
       alert("Erreur lors de l'export : " + (err?.message || err));
