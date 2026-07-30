@@ -3182,58 +3182,73 @@ function QRTab({ restaurant }) {
   };
 
   const [exportingAll, setExportingAll] = useState(false);
-  // Build a print-ready A4 sheet with EVERY table's QR code (labelled), so the
-  // whole restaurant can be printed/exported in one go instead of one by one.
-  // Uses the exact same URL formula as the single-table view — QR codes already
-  // printed and stuck on tables are never affected.
+  // Export EVERY table's QR code as ready-to-print A4 PNG page(s), 6 per page.
+  // Rendered on a fixed-size canvas (not window.print) so the layout is pixel-
+  // identical on every phone — mobile browsers mangle CSS print layouts, which
+  // was cutting/one-per-column the QR codes. Same URL formula as the single view,
+  // so QR codes already stuck on tables are never affected.
   const exportAllQRCodes = async () => {
     if (exportingAll || !tables.length) return;
     setExportingAll(true);
     try {
-      const cells = await Promise.all(tables.slice().sort((a, b) => a.number - b.number).map(async (t) => {
+      const sorted = tables.slice().sort((a, b) => a.number - b.number);
+      // Load each QR as an Image object from its data URL.
+      const cells = await Promise.all(sorted.map(async (t) => {
         const turl = t.qr_url || `${origin}${BASE_PATH}/r/${restaurant.id}/t/${t.number}`;
-        const dataUrl = await QRCode.toDataURL(turl, { width: 480, margin: 1, color: { dark: fg, light: bg } });
-        const title = t.label || `Table ${t.number}`;
-        const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-        return `
-          <div class="cell">
-            <div class="rname">${esc(restaurant.name)}</div>
-            <div class="tname">${esc(title)}</div>
-            <img src="${dataUrl}" alt="${esc(title)}" />
-            <div class="scan">📱 Scannez pour commander</div>
-          </div>`;
+        const dataUrl = await QRCode.toDataURL(turl, { width: 600, margin: 1, color: { dark: fg, light: bg } });
+        const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl; });
+        return { img, title: t.label || `Table ${t.number}` };
       }));
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QR codes — ${restaurant.name}</title>
-<style>
-  @page { size: A4; margin: 10mm; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1d1d1f; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .grid { display: flex; flex-wrap: wrap; gap: 8mm; justify-content: center; padding: 6mm 0; }
-  /* Fixed physical size + hard break-avoid so a cell is never sliced across pages, even on mobile Chrome/Safari save-as-PDF. */
-  .cell {
-    width: 88mm; padding: 6mm 4mm; text-align: center;
-    border: 1px dashed #cfcfd4; border-radius: 5mm;
-    display: flex; flex-direction: column; align-items: center;
-    break-inside: avoid; page-break-inside: avoid; -webkit-column-break-inside: avoid;
-  }
-  .rname { font-size: 12px; color: #86868b; font-weight: 600; }
-  .tname { font-size: 20px; font-weight: 800; margin: 1mm 0 3mm; letter-spacing: -0.02em; }
-  .cell img { width: 60mm; height: 60mm; display: block; }
-  .scan { font-size: 11px; color: #1d1d1f; font-weight: 600; margin-top: 3mm; }
-  .noprint { position: fixed; top: 12px; right: 12px; background: #1d1d1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10; }
-  @media print { .noprint { display: none; } }
-</style></head>
-<body>
-  <button class="noprint" onclick="window.print()">🖨️ Imprimer / Enregistrer PDF</button>
-  <div class="grid">${cells.join("")}</div>
-  <script>setTimeout(() => window.print(), 600);</script>
-</body></html>`;
-      const w = window.open("", "_blank");
-      if (!w) { alert("Le navigateur a bloqué l'ouverture. Autorisez les pop-ups pour ce site."); return; }
-      w.document.write(html); w.document.close();
+
+      // A4 portrait @ ~180 DPI. 2 columns × 3 rows = 6 QR per page.
+      const PW = 1488, PH = 2105, MARGIN = 70, GAP = 40, COLS = 2, ROWS = 3, PER = COLS * ROWS;
+      const cellW = (PW - MARGIN * 2 - GAP * (COLS - 1)) / COLS;
+      const cellH = (PH - MARGIN * 2 - GAP * (ROWS - 1)) / ROWS;
+      const pages = Math.ceil(cells.length / PER);
+      const slug = (restaurant?.slug || restaurant?.name || "qr").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+      for (let p = 0; p < pages; p++) {
+        const canvas = document.createElement("canvas");
+        canvas.width = PW; canvas.height = PH;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, PW, PH);
+        ctx.textAlign = "center";
+        const pageCells = cells.slice(p * PER, p * PER + PER);
+        pageCells.forEach((cell, i) => {
+          const col = i % COLS, row = Math.floor(i / COLS);
+          const x = MARGIN + col * (cellW + GAP);
+          const y = MARGIN + row * (cellH + GAP);
+          // dashed cut border
+          ctx.save();
+          ctx.strokeStyle = "#cfcfd4"; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+          ctx.strokeRect(x, y, cellW, cellH);
+          ctx.restore();
+          const cx = x + cellW / 2;
+          // restaurant name
+          ctx.fillStyle = "#86868b"; ctx.font = "600 26px -apple-system, 'Segoe UI', sans-serif";
+          ctx.fillText(restaurant.name || "", cx, y + 52, cellW - 40);
+          // table title
+          ctx.fillStyle = "#1d1d1f"; ctx.font = "800 44px -apple-system, 'Segoe UI', sans-serif";
+          ctx.fillText(cell.title, cx, y + 100, cellW - 40);
+          // QR (square, centered)
+          const qrSize = Math.min(cellW - 90, cellH - 200);
+          ctx.drawImage(cell.img, cx - qrSize / 2, y + 130, qrSize, qrSize);
+          // scan hint
+          ctx.fillStyle = "#1d1d1f"; ctx.font = "600 24px -apple-system, 'Segoe UI', sans-serif";
+          ctx.fillText("Scannez pour commander", cx, y + cellH - 26, cellW - 40);
+        });
+
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob null")), "image/png");
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = `qr-${slug}${pages > 1 ? `-${p + 1}` : ""}.png`;
+        link.href = url; link.rel = "noopener";
+        document.body.appendChild(link); link.click();
+        await new Promise(r => setTimeout(r, 400));
+        link.remove(); URL.revokeObjectURL(url);
+      }
     } catch (err) {
       alert("Erreur lors de l'export : " + (err?.message || err));
     } finally {
