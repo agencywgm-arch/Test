@@ -1366,32 +1366,67 @@ function SignupPage({ onDone, onDemo, onDemoPicker, initialMode = "signup" }) {
   const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const ok = mode === "login" ? form.email && form.password : form.name && form.email && form.password.length >= 8;
 
+  // Map Supabase's technical English errors to clear French guidance.
+  function friendlyError(msg) {
+    const m = (msg || "").toLowerCase();
+    if (m.includes("already registered") || m.includes("already exists")) return "Un compte existe déjà avec cet email. Connectez-vous.";
+    if (m.includes("invalid login")) return "Email ou mot de passe incorrect.";
+    if (m.includes("email not confirmed")) return "Confirmez d'abord votre compte via le lien reçu par email.";
+    if (m.includes("password")) return "Mot de passe trop court (8 caractères minimum).";
+    if (m.includes("rate limit") || m.includes("too many")) return "Trop de tentatives, réessayez dans quelques minutes.";
+    if (m.includes("unable to validate email") || m.includes("invalid email")) return "Adresse email invalide.";
+    return msg;
+  }
+
+  async function createGroupIfNeeded(uid) {
+    if (accountType === "solo" || !uid) return;
+    try {
+      const { data: existing } = await supabase.from("franchise_groups").select("id").eq("owner_id", uid).maybeSingle();
+      if (!existing) {
+        await supabase.from("franchise_groups").insert({ owner_id: uid, name: groupName || form.name + " Groupe", plan: accountType });
+      }
+    } catch { /* created later on first login if RLS blocked it now */ }
+  }
+
   async function submit() {
     setError(""); setLoading(true);
     try {
       if (mode === "signup") {
+        const email = form.email.trim();
         const { data: signUpData, error: err } = await supabase.auth.signUp({
-          email: form.email, password: form.password,
+          email, password: form.password,
           options: { data: { name: form.name } },
         });
         if (err) throw err;
-        if (accountType !== "solo" && signUpData?.user) {
-          await supabase.from("franchise_groups").insert({
-            owner_id: signUpData.user.id,
-            name: groupName || form.name + " Groupe",
-            plan: accountType,
-          });
+        // Supabase returns a user with an EMPTY identities array when the email is
+        // already registered (privacy-preserving) — surface it as a real message.
+        if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+          setMode("login");
+          setError("Un compte existe déjà avec cet email. Connectez-vous ci-dessous.");
+          return;
         }
+        // Email confirmation OFF → we already have a session: log straight in
+        // instead of stranding the user on the "check your email" screen.
+        if (signUpData?.session && signUpData?.user) {
+          await createGroupIfNeeded(signUpData.user.id);
+          const u = { name: form.name || email.split("@")[0], email: signUpData.user.email, id: signUpData.user.id };
+          let grp = null;
+          try { const r = await supabase.from("franchise_groups").select("*").eq("owner_id", signUpData.user.id).maybeSingle(); grp = r.data; } catch {}
+          onDone(u, grp || null);
+          return;
+        }
+        // Email confirmation ON → show the check-email screen.
+        await createGroupIfNeeded(signUpData?.user?.id);
         setSent(true);
       } else {
-        const { data, error: err } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email: form.email.trim(), password: form.password });
         if (err) throw err;
         const u = { name: data.user.user_metadata?.name || form.email.split("@")[0], email: data.user.email, id: data.user.id };
-        const { data: grp } = await supabase.from("franchise_groups").select("*").eq("owner_id", data.user.id).single();
+        const { data: grp } = await supabase.from("franchise_groups").select("*").eq("owner_id", data.user.id).maybeSingle();
         onDone(u, grp || null);
       }
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
