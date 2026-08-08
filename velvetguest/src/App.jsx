@@ -8539,15 +8539,30 @@ function CustomerPage({ slug, tableNum }) {
   useEffect(() => {
     if (step !== "done" || !orderId || orderId.startsWith("demo-")) return;
     let cancelled = false;
+    // The Vendus invoice columns only exist once migration_vendus.sql has been
+    // run. Selecting a missing column makes PostgREST reject the whole query,
+    // which would silently kill live order tracking — so fall back to the core
+    // columns if the fiscal ones aren't there yet.
+    let selectCols = "status,estimated_ready_at,created_at,vendus_invoice_url,vendus_invoice_number";
+    function apply(data) {
+      if (cancelled || !data) return;
+      setOrderStatus(data.status);
+      if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
+      if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
+      if (data.vendus_invoice_url) setVendusInvoice({ url: data.vendus_invoice_url, number: data.vendus_invoice_number });
+      if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
+    }
     function poll() {
-      supabase.from("orders").select("status,estimated_ready_at,created_at,vendus_invoice_url,vendus_invoice_number").eq("id", orderId).single()
-        .then(({ data }) => {
-          if (cancelled || !data) return;
-          setOrderStatus(data.status);
-          if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
-          if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
-          if (data.vendus_invoice_url) setVendusInvoice({ url: data.vendus_invoice_url, number: data.vendus_invoice_number });
-          if (["DONE", "CANCELED", "REFUNDED"].includes(data.status)) clearPendingOrder();
+      supabase.from("orders").select(selectCols).eq("id", orderId).single()
+        .then(({ data, error }) => {
+          if (cancelled) return;
+          if (error && /vendus_invoice/i.test(error.message || "")) {
+            selectCols = "status,estimated_ready_at,created_at";
+            supabase.from("orders").select(selectCols).eq("id", orderId).single()
+              .then(({ data: d2 }) => apply(d2)).catch(() => {});
+            return;
+          }
+          apply(data);
         }).catch(() => {});
     }
     poll();
@@ -8672,7 +8687,19 @@ function CustomerPage({ slug, tableNum }) {
   const add = item => setCart(p => { const e = p.find(i => i.id === item.id); return e ? p.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i) : [...p, { ...item, qty: 1, supplements: [] }]; });
   const rem = id => setCart(p => { const e = p.find(i => i.id === id); return e.qty === 1 ? p.filter(i => i.id !== id) : p.map(i => i.id === id ? { ...i, qty: i.qty - 1 } : i); });
 
+  // Guard against double submission: a fast double-tap on the payment option (or
+  // a re-entrant call from the free-order effect) would otherwise create two
+  // orders — and two fiscal invoices.
+  const confirmingRef = useRef(false);
+
+  // A 100%-discount cart skips the payment options entirely and is confirmed
+  // automatically, from an effect so it runs exactly once.
+  useEffect(() => {
+    if (step === "payment" && total === 0 && !confirmingRef.current) confirm("free");
+  }, [step, total]);
   async function confirm(paymentMethod = "cash") {
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
     setConfirming(true); setConfirmError("");
     // Demo mode: simulate order without Supabase
     if (restaurant.id === "demo") {
@@ -8681,6 +8708,7 @@ function CustomerPage({ slug, tableNum }) {
       setPayMode(paymentMethod === "cash" ? null : "card");
       setStep("done");
       setConfirming(false);
+      confirmingRef.current = false;
       return;
     }
     try {
@@ -8828,6 +8856,7 @@ function CustomerPage({ slug, tableNum }) {
       setConfirmError("Une erreur inattendue est survenue. Veuillez réessayer.");
     } finally {
       setConfirming(false);
+      confirmingRef.current = false;
     }
   }
 
@@ -9159,7 +9188,9 @@ function CustomerPage({ slug, tableNum }) {
         </div>
       )}
 
-      {step === "payment" && total === 0 && !confirming && (() => { confirm("free"); return null; })()}
+      {/* Free orders (100% promo) are confirmed from an effect, never during
+          render — a side effect in the render phase can fire twice and create
+          duplicate orders. */}
 
       {step === "payment" && (
         <div style={{ padding: "40px 20px 24px" }}>
