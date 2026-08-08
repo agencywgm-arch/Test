@@ -8382,6 +8382,15 @@ function CustomerPage({ slug, tableNum }) {
 
   function changeLang(code) { setLang(code); localStorage.setItem("vg_customer_lang", code); setShowLangPicker(false); }
 
+  // Keep the document's declared language in sync with the in-app picker. A
+  // mismatch (page declared "en" while showing French) is what makes Safari and
+  // Chrome offer their own translation, and their translator rewrites React's
+  // text nodes — which froze the cart total on its pre-discount amount.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  }, [lang]);
+
   // Translate menu items when language changes (unofficial Google Translate, no key needed)
   useEffect(() => {
     if (lang === "fr" || menuItems.length === 0) return;
@@ -9002,7 +9011,7 @@ function CustomerPage({ slug, tableNum }) {
           {count > 0 && (
             <div style={{ position: "sticky", bottom: 0, padding: "12px 16px", background: C.white, borderTop: `1px solid ${C.border}` }}>
               <button onClick={() => setStep("cart")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", justifyContent: "space-between", ...FF }}>
-                <span>🛒 {L.cart} ({count})</span><span>{total.toFixed(2)}€</span>
+                <span>🛒 {L.cart} ({count})</span><span translate="no">{total.toFixed(2)}€</span>
               </button>
             </div>
           )}
@@ -9079,22 +9088,25 @@ function CustomerPage({ slug, tableNum }) {
             )}
           </div>
 
+          {/* translate="no" on every amount: if a browser/third-party translator
+              is forced on, it must never rewrite these text nodes — doing so
+              detaches them from React and freezes the displayed price. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "16px 0" }}>
             {appliedPromo && (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 14, color: C.textSecondary }}>Sous-total</span>
-                <span style={{ fontSize: 14, color: C.textSecondary }}>{rawTotal.toFixed(2)}€</span>
+                <span translate="no" style={{ fontSize: 14, color: C.textSecondary }}>{rawTotal.toFixed(2)}€</span>
               </div>
             )}
             {appliedPromo && (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 14, color: C.accentGreen, fontWeight: 600 }}>Réduction ({appliedPromo.discount_percent}%)</span>
-                <span style={{ fontSize: 14, color: C.accentGreen, fontWeight: 700 }}>−{promoDiscount.toFixed(2)}€</span>
+                <span style={{ fontSize: 14, color: C.accentGreen, fontWeight: 600 }}>Réduction (<span translate="no">{appliedPromo.discount_percent}%</span>)</span>
+                <span translate="no" style={{ fontSize: 14, color: C.accentGreen, fontWeight: 700 }}>−{promoDiscount.toFixed(2)}€</span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: appliedPromo ? `1px solid ${C.border}` : "none", paddingTop: appliedPromo ? 10 : 0 }}>
               <span style={{ fontWeight: 700, fontSize: 18, color: C.dark }}>{L.total}</span>
-              <span style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
+              <span translate="no" style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
             </div>
           </div>
           <button onClick={() => total === 0 ? confirm("free") : setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>
@@ -9179,7 +9191,7 @@ function CustomerPage({ slug, tableNum }) {
                 <div style={{ background: C.bg, borderRadius: 16, padding: 18, marginBottom: 24 }}>
                   {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 15, color: C.dark }}><span>{i.emoji} {i.name} ×{i.qty}</span><span style={{ fontWeight: 700 }}>{(Number(i.price) * i.qty).toFixed(2)}€</span></div>)}
                   <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1.5px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
-                    <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
+                    <span style={{ fontWeight: 700, fontSize: 17 }}>Total</span><span translate="no" style={{ fontWeight: 900, fontSize: 22 }}>{total.toFixed(2)}€</span>
                   </div>
                 </div>
               )}
@@ -9404,7 +9416,7 @@ ${statusHtml}
                 <div style={{ background: C.bg, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <p style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>Total</p>
-                    <p style={{ fontSize: 20, fontWeight: 900, color: C.dark }}>{total.toFixed(2)}€</p>
+                    <p translate="no" style={{ fontSize: 20, fontWeight: 900, color: C.dark }}>{total.toFixed(2)}€</p>
                   </div>
                   <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 4 }}>Paiement : {payLabel[payMode] ?? "Espèces"}</p>
                 </div>

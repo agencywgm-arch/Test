@@ -1,9 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr" translate="no">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Browser auto-translation (Safari/Chrome) replaces React's text nodes, which
+         freezes dynamic values — the cart total stayed on the pre-discount amount
+         after applying a promo code. The app ships its own language picker
+         (FR/EN/AR/ES/PT), so we opt out of the browser translator rather than let
+         it corrupt prices. -->
+    <meta name="google" content="notranslate" />
     <title>Wegemo</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
