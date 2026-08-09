@@ -2146,6 +2146,7 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [isPaymentMaster, setIsPaymentMaster] = useState(!!restaurant.is_payment_master);
   const [savingMaster, setSavingMaster] = useState(false);
   const [redirectTargetId, setRedirectTargetId] = useState(restaurant.redirect_to_restaurant_id || "");
+  const [qrChoiceEnabled, setQrChoiceEnabled] = useState(!!restaurant.qr_choice_enabled);
   const [redirectOptions, setRedirectOptions] = useState(null); // null = loading, [] = none
   const [savingRedirect, setSavingRedirect] = useState(false);
 
@@ -2266,22 +2267,41 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       const { data } = await query;
       setRedirectOptions(data || []);
     })();
-    supabase.from("restaurants").select("redirect_to_restaurant_id").eq("id", restaurant.id).maybeSingle()
-      .then(({ data }) => { if (data) setRedirectTargetId(data.redirect_to_restaurant_id || ""); });
+    supabase.from("restaurants").select("redirect_to_restaurant_id, qr_choice_enabled").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) { setRedirectTargetId(data.redirect_to_restaurant_id || ""); setQrChoiceEnabled(!!data.qr_choice_enabled); } });
   }, [restaurant.id]);
 
+  // The three QR routing modes are mutually exclusive — enabling one always
+  // clears the other, so there's never an ambiguous "both are on" state.
   async function saveRedirect(targetId) {
     if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
     setSavingRedirect(true);
-    const prev = redirectTargetId;
-    setRedirectTargetId(targetId); // optimistic
+    const prevTarget = redirectTargetId, prevChoice = qrChoiceEnabled;
+    setRedirectTargetId(targetId); setQrChoiceEnabled(false); // optimistic
     try {
-      const { error } = await supabase.from("restaurants").update({ redirect_to_restaurant_id: targetId || null }).eq("id", restaurant.id);
+      const { error } = await supabase.from("restaurants").update({ redirect_to_restaurant_id: targetId || null, qr_choice_enabled: false }).eq("id", restaurant.id);
       if (error) throw error;
       store.pushNotif(targetId ? "🔀 QR codes redirigés vers l'autre restaurant" : "Redirection désactivée — les QR de ce restaurant servent à nouveau son propre menu", "success");
     } catch (err) {
-      setRedirectTargetId(prev); // rollback
+      setRedirectTargetId(prevTarget); setQrChoiceEnabled(prevChoice); // rollback
       store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_qr_redirect.sql" : ""), "warning");
+    } finally {
+      setSavingRedirect(false);
+    }
+  }
+
+  async function saveQrChoiceMode(enabled) {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    setSavingRedirect(true);
+    const prevTarget = redirectTargetId, prevChoice = qrChoiceEnabled;
+    setQrChoiceEnabled(enabled); if (enabled) setRedirectTargetId(""); // optimistic
+    try {
+      const { error } = await supabase.from("restaurants").update({ qr_choice_enabled: enabled, redirect_to_restaurant_id: enabled ? null : redirectTargetId || null }).eq("id", restaurant.id);
+      if (error) throw error;
+      store.pushNotif(enabled ? "🔀 Vos clients choisiront leur restaurant au scan du QR" : "Mode « laisser choisir » désactivé", "success");
+    } catch (err) {
+      setQrChoiceEnabled(prevChoice); setRedirectTargetId(prevTarget); // rollback
+      store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_qr_advanced_routing.sql" : ""), "warning");
     } finally {
       setSavingRedirect(false);
     }
@@ -2440,29 +2460,62 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
 
       {/* QR code redirect — reuse already-printed QR codes for another restaurant */}
       <Surface style={{ padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔀 Redirection des QR codes</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔀 Routage des QR codes</h3>
         <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
-          Vous avez déjà imprimé et posé les QR codes de <strong>{restaurant.name}</strong>, mais voulez maintenant qu'ils affichent un autre restaurant de votre compte ? Aucun besoin de réimprimer : activez la redirection ci-dessous. Chaque client qui scannera un QR déjà posé verra le menu de l'autre restaurant, et ses commandes seront enregistrées là-bas.
+          Les QR codes de <strong>{restaurant.name}</strong> sont déjà imprimés et posés. Aucun besoin de les réimprimer pour changer leur comportement — choisissez un mode ci-dessous.
         </p>
         {redirectOptions === null ? (
           <p style={{ fontSize: 13, color: C.textTertiary }}>Chargement…</p>
         ) : redirectOptions.length === 0 ? (
-          <p style={{ fontSize: 13, color: C.textTertiary }}>Vous n'avez pas d'autre restaurant vers lequel rediriger.</p>
+          <p style={{ fontSize: 13, color: C.textTertiary }}>Vous n'avez pas d'autre restaurant sur ce compte — ces options apparaîtront dès que vous en aurez un second.</p>
         ) : (
           <>
-            <select
-              value={redirectTargetId}
-              onChange={e => saveRedirect(e.target.value)}
-              disabled={savingRedirect}
-              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${redirectTargetId ? C.accentOrange : C.border}`, fontSize: 14, outline: "none", background: C.white, ...FF }}>
-              <option value="">— Pas de redirection (comportement normal) —</option>
-              {redirectOptions.map(r => (<option key={r.id} value={r.id}>Rediriger vers « {r.name} »</option>))}
-            </select>
-            {redirectTargetId && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[
+                { key: "normal", label: "Normal", desc: "Chaque QR affiche le menu de " + restaurant.name + ", comme d'habitude." },
+                { key: "choice", label: "Laisser le client choisir", desc: "Au scan, le client voit la liste de vos restaurants et choisit lui-même où commander." },
+                { key: "redirect", label: "Tout rediriger vers un restaurant fixe", desc: "Tous les QR de " + restaurant.name + " affichent automatiquement un autre restaurant choisi." },
+              ].map(mode => {
+                const active = mode.key === "normal" ? (!qrChoiceEnabled && !redirectTargetId) : mode.key === "choice" ? qrChoiceEnabled : (!qrChoiceEnabled && !!redirectTargetId);
+                return (
+                  <div key={mode.key}
+                    onClick={() => { if (savingRedirect) return; if (mode.key === "normal") saveRedirect(""); else if (mode.key === "choice") saveQrChoiceMode(true); /* "redirect" is picked via the select below */ }}
+                    style={{ padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${active ? C.accentOrange : C.border}`, background: active ? "#FFF4E3" : C.white, cursor: mode.key === "redirect" ? "default" : "pointer" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${active ? C.accentOrange : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {active && <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accentOrange }} />}
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.dark }}>{mode.label}</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 4, marginLeft: 24 }}>{mode.desc}</p>
+                    {mode.key === "redirect" && (
+                      <select
+                        value={!qrChoiceEnabled && redirectTargetId ? redirectTargetId : ""}
+                        onChange={e => saveRedirect(e.target.value)}
+                        disabled={savingRedirect}
+                        onClick={e => e.stopPropagation()}
+                        style={{ marginTop: 10, marginLeft: 24, width: "calc(100% - 24px)", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.border}`, fontSize: 13, outline: "none", background: C.white, ...FF }}>
+                        <option value="">— Choisir le restaurant cible —</option>
+                        {redirectOptions.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {qrChoiceEnabled && (
+              <div style={{ marginTop: 12, padding: "12px 14px", background: "#FFF4E3", border: `1.5px solid ${C.accentOrange}40`, borderRadius: 12, fontSize: 12.5, color: "#92700A", fontWeight: 600, lineHeight: 1.5 }}>
+                ⚠️ Actif — chaque client scannant un QR de {restaurant.name} verra d'abord un écran « Où souhaitez-vous commander ? » listant vos restaurants.
+              </div>
+            )}
+            {!qrChoiceEnabled && redirectTargetId && (
               <div style={{ marginTop: 12, padding: "12px 14px", background: "#FFF4E3", border: `1.5px solid ${C.accentOrange}40`, borderRadius: 12, fontSize: 12.5, color: "#92700A", fontWeight: 600, lineHeight: 1.5 }}>
                 ⚠️ Actif — tous les QR codes déjà imprimés de <strong>{restaurant.name}</strong> affichent maintenant « {redirectOptions.find(r => r.id === redirectTargetId)?.name} ». Son menu, sa vue cuisine et son tableau de bord reçoivent désormais ces commandes.
               </div>
             )}
+            <p style={{ fontSize: 11.5, color: C.textTertiary, marginTop: 14, lineHeight: 1.5 }}>
+              Besoin de rediriger une seule table précise plutôt que tout le restaurant ? Ouvrez l'onglet <strong>QR codes</strong> → sélectionnez la table concernée → « Rediriger cette table vers ».
+            </p>
           </>
         )}
       </Surface>
@@ -3243,6 +3296,35 @@ function QRTab({ restaurant }) {
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const origin = customBase || window.location.origin;
   const [scanCount, setScanCount] = useState(0);
+  const [siblingRestaurants, setSiblingRestaurants] = useState(null); // for per-table redirect picker
+  const [savingTableRedirect, setSavingTableRedirect] = useState(false);
+
+  useEffect(() => {
+    if (isDemo) { setSiblingRestaurants([]); return; }
+    (async () => {
+      let ownerId = restaurant.owner_id;
+      if (!ownerId) { const { data: auth } = await supabase.auth.getUser(); ownerId = auth?.user?.id; }
+      let query = supabase.from("restaurants").select("id, name").neq("id", restaurant.id).order("name");
+      if (ownerId) query = query.eq("owner_id", ownerId);
+      const { data } = await query;
+      setSiblingRestaurants(data || []);
+    })();
+  }, [restaurant.id, isDemo]);
+
+  async function saveTableRedirect(table, targetId) {
+    setSavingTableRedirect(true);
+    const nextVal = targetId || null;
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, redirect_to_restaurant_id: nextVal } : t));
+    setSel(prev => prev?.id === table.id ? { ...prev, redirect_to_restaurant_id: nextVal } : prev);
+    try {
+      const { error } = await supabase.from("tables").update({ redirect_to_restaurant_id: nextVal }).eq("id", table.id);
+      if (error) throw error;
+    } catch (err) {
+      alert("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_qr_advanced_routing.sql" : ""));
+    } finally {
+      setSavingTableRedirect(false);
+    }
+  }
 
   useEffect(() => {
     if (isDemo) {
@@ -3515,6 +3597,24 @@ function QRTab({ restaurant }) {
               <Btn variant="primary" size="sm" full onClick={download}>📥 Télécharger</Btn>
               <Btn variant="ghost" size="sm" full>🖨</Btn>
             </div>
+            {!!siblingRestaurants?.length && (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}`, textAlign: "left" }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.textSecondary, marginBottom: 6 }}>🔀 Rediriger cette table vers</p>
+                <select
+                  value={sel?.redirect_to_restaurant_id || ""}
+                  onChange={e => saveTableRedirect(sel, e.target.value)}
+                  disabled={savingTableRedirect}
+                  style={{ width: "100%", padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${sel?.redirect_to_restaurant_id ? C.accentOrange : C.border}`, fontSize: 12.5, outline: "none", background: C.white, ...FF }}>
+                  <option value="">— Ce QR affiche {restaurant.name} (normal) —</option>
+                  {siblingRestaurants.map(r => (<option key={r.id} value={r.id}>Rediriger vers « {r.name} »</option>))}
+                </select>
+                {sel?.redirect_to_restaurant_id && (
+                  <p style={{ fontSize: 11, color: "#92700A", marginTop: 6, fontWeight: 600 }}>
+                    ⚠️ Seul le QR de cette table précise est concerné, les autres tables ne changent pas.
+                  </p>
+                )}
+              </div>
+            )}
           </Surface>
         )}
       </div>
@@ -8410,6 +8510,7 @@ function CustomerPage({ slug, tableNum }) {
   const [restaurant, setRestaurant] = useState(null);
   const [tableId, setTableId] = useState(null);
   const [tableLabel, setTableLabel] = useState(null);
+  const [restaurantChoices, setRestaurantChoices] = useState(null); // list of sibling restaurants when "let the customer choose" mode is on
   const [menuItems, setMenuItems] = useState([]);
   const [cart, setCart] = useState([]);
   const [activeCat, setActiveCat] = useState("__ALL__");
@@ -8513,6 +8614,95 @@ function CustomerPage({ slug, tableNum }) {
     }
   }
 
+  // Finishes loading the customer page for a fully-resolved restaurant: menu,
+  // promos, settings, and pending-order restoration. Shared by the normal QR
+  // scan path and by the "let the customer choose" picker's selection handler.
+  async function finishLoad(resto) {
+    setRestaurant(resto);
+    const [tblRes, itemsRes] = await Promise.all([
+      supabase.from("tables").select("id,label").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
+      supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name"),
+    ]);
+    setTableId(tblRes.data?.id ?? null);
+    setTableLabel(tblRes.data?.label ?? null);
+    // Log this QR scan for the dashboard's real-time analytics. Fire-and-forget:
+    // never block or fail the customer's page load if this insert has trouble.
+    supabase.from("qr_scans").insert({
+      restaurant_id: resto.id,
+      table_id: tblRes.data?.id ?? null,
+      table_number: tableNum,
+    }).then(() => {}, () => {});
+    // deduplicate by id in case DB has duplicate rows
+    const raw = itemsRes.data ?? [];
+    const seen = new Set();
+    const deduped = raw.filter(i => seen.has(i.id) ? false : seen.add(i.id));
+    // Sort dishes within each category by custom sort_order (stable sort keeps category grouping logic intact)
+    deduped.sort((a, b) => ((a.sort_order ?? 9999) - (b.sort_order ?? 9999)) || a.name.localeCompare(b.name));
+    setMenuItems(deduped);
+    // promos optional — table may not exist yet
+    try {
+      const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
+      setActivePromos(promos ?? []);
+    } catch {}
+    // Google review settings + category order
+    try {
+      const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url,menu_header_bg_url,menu_body_bg_url").eq("restaurant_id", resto.id).maybeSingle();
+      if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
+      if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
+      resolveCardEnabled(resto, !!sett?.stripe_publishable_key).then(setStripeEnabled);
+      if (sett?.menu_background_url) setMenuWelcomeBg(sett.menu_background_url);
+      if (sett?.menu_header_bg_url) setMenuHeaderBg(sett.menu_header_bg_url);
+      if (sett?.menu_body_bg_url) setMenuBodyBg(sett.menu_body_bg_url);
+    } catch {}
+    // Ticket customization (separate query — columns may not exist yet)
+    try {
+      const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
+      if (tk) setTicketInfo(tk);
+    } catch {}
+    // If the customer had a live order in progress (just refreshed the page),
+    // restore them straight onto the tracking screen instead of the menu.
+    try {
+      const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        const ageMs = Date.now() - (saved.savedAt || 0);
+        if (saved.orderId && ageMs < 4 * 60 * 60 * 1000) {
+          const { data: orderRow } = await supabase
+            .from("orders")
+            .select("status,estimated_ready_at,created_at")
+            .eq("id", saved.orderId)
+            .maybeSingle();
+          const stillOpen = orderRow && !["DONE", "CANCELED", "REFUNDED"].includes(orderRow.status);
+          if (stillOpen) {
+            setOrderId(saved.orderId);
+            if (Array.isArray(saved.cart)) setCart(saved.cart);
+            setCustomerName(saved.customerName || "");
+            setCustomerEmail(saved.customerEmail || "");
+            setCustomerPhone(saved.customerPhone || "");
+            if (saved.note) setNote(saved.note);
+            if (saved.payMode) setPayMode(saved.payMode);
+            if (saved.orderType) setOrderType(saved.orderType);
+            setOrderStatus(orderRow.status || "PENDING");
+            setEstimatedReadyAt(orderRow.estimated_ready_at || saved.estimatedReadyAt || null);
+            setOrderCreatedAt(orderRow.created_at || saved.createdAt || null);
+            setStep("done");
+            return;
+          }
+          clearPendingOrder();
+        } else {
+          clearPendingOrder();
+        }
+      }
+    } catch {}
+    setStep("ordertype");
+  }
+
+  // Called when the customer picks a restaurant on the "choose-restaurant" screen.
+  async function chooseRestaurant(resto) {
+    setStep("loading");
+    try { await finishLoad(resto); } catch { setStep("error"); }
+  }
+
   useEffect(() => {
     async function load() {
       try {
@@ -8526,94 +8716,40 @@ function CustomerPage({ slug, tableNum }) {
         }
         // slug may be a UUID (durable QR) or a slug string (legacy)
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
-        let { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq(isUuid ? "id" : "slug", slug).single();
-        if (restoErr || !resto) { setStep("error"); return; }
-        // A restaurant's already-printed QR codes can be repointed to a different
-        // restaurant without reprinting anything: `redirect_to_restaurant_id` makes
-        // every table's URL for this restaurant transparently serve another
-        // restaurant's menu/orders instead. Followed once (no chained redirects)
-        // to keep the lookup simple and avoid loops.
-        if (resto.redirect_to_restaurant_id) {
-          const { data: target } = await supabase.from("restaurants").select("*").eq("id", resto.redirect_to_restaurant_id).single();
-          if (target) resto = target;
+        const { data: restoA, error: restoErr } = await supabase.from("restaurants").select("*").eq(isUuid ? "id" : "slug", slug).single();
+        if (restoErr || !restoA) { setStep("error"); return; }
+
+        // Already-printed QR codes can be repointed without reprinting anything,
+        // in three ways, most specific wins:
+        //  1) ONE specific physical table/QR was individually repointed
+        //     (tables.redirect_to_restaurant_id)
+        //  2) this restaurant's QR codes let the customer pick which of the
+        //     owner's restaurants they're ordering from (restaurants.qr_choice_enabled)
+        //  3) ALL of this restaurant's QR codes redirect to one fixed restaurant
+        //     (restaurants.redirect_to_restaurant_id)
+        const { data: tableRow } = await supabase.from("tables").select("redirect_to_restaurant_id").eq("restaurant_id", restoA.id).eq("number", tableNum).maybeSingle();
+
+        if (tableRow?.redirect_to_restaurant_id) {
+          const { data: target } = await supabase.from("restaurants").select("*").eq("id", tableRow.redirect_to_restaurant_id).single();
+          await finishLoad(target || restoA);
+          return;
         }
-        setRestaurant(resto);
-        const [tblRes, itemsRes] = await Promise.all([
-          supabase.from("tables").select("id,label").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
-          supabase.from("menu_items").select("*").eq("restaurant_id", resto.id).eq("available", true).order("category").order("name"),
-        ]);
-        setTableId(tblRes.data?.id ?? null);
-        setTableLabel(tblRes.data?.label ?? null);
-        // Log this QR scan for the dashboard's real-time analytics. Fire-and-forget:
-        // never block or fail the customer's page load if this insert has trouble.
-        supabase.from("qr_scans").insert({
-          restaurant_id: resto.id,
-          table_id: tblRes.data?.id ?? null,
-          table_number: tableNum,
-        }).then(() => {}, () => {});
-        // deduplicate by id in case DB has duplicate rows
-        const raw = itemsRes.data ?? [];
-        const seen = new Set();
-        const deduped = raw.filter(i => seen.has(i.id) ? false : seen.add(i.id));
-        // Sort dishes within each category by custom sort_order (stable sort keeps category grouping logic intact)
-        deduped.sort((a, b) => ((a.sort_order ?? 9999) - (b.sort_order ?? 9999)) || a.name.localeCompare(b.name));
-        setMenuItems(deduped);
-        // promos optional — table may not exist yet
-        try {
-          const { data: promos } = await supabase.from("promotions").select("*").eq("restaurant_id", resto.id).eq("active", true);
-          setActivePromos(promos ?? []);
-        } catch {}
-        // Google review settings + category order
-        try {
-          const { data: sett } = await supabase.from("restaurant_settings").select("google_review_url,google_review_enabled,category_order,stripe_publishable_key,menu_background_url,menu_header_bg_url,menu_body_bg_url").eq("restaurant_id", resto.id).maybeSingle();
-          if (sett?.google_review_enabled && sett?.google_review_url) setGoogleReviewUrl(sett.google_review_url);
-          if (sett?.category_order?.length) setCatOrderCustomer(sett.category_order);
-          resolveCardEnabled(resto, !!sett?.stripe_publishable_key).then(setStripeEnabled);
-          if (sett?.menu_background_url) setMenuWelcomeBg(sett.menu_background_url);
-          if (sett?.menu_header_bg_url) setMenuHeaderBg(sett.menu_header_bg_url);
-          if (sett?.menu_body_bg_url) setMenuBodyBg(sett.menu_body_bg_url);
-        } catch {}
-        // Ticket customization (separate query — columns may not exist yet)
-        try {
-          const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
-          if (tk) setTicketInfo(tk);
-        } catch {}
-        // If the customer had a live order in progress (just refreshed the page),
-        // restore them straight onto the tracking screen instead of the menu.
-        try {
-          const raw = localStorage.getItem(PENDING_STORAGE_KEY);
-          if (raw) {
-            const saved = JSON.parse(raw);
-            const ageMs = Date.now() - (saved.savedAt || 0);
-            if (saved.orderId && ageMs < 4 * 60 * 60 * 1000) {
-              const { data: orderRow } = await supabase
-                .from("orders")
-                .select("status,estimated_ready_at,created_at")
-                .eq("id", saved.orderId)
-                .maybeSingle();
-              const stillOpen = orderRow && !["DONE", "CANCELED", "REFUNDED"].includes(orderRow.status);
-              if (stillOpen) {
-                setOrderId(saved.orderId);
-                if (Array.isArray(saved.cart)) setCart(saved.cart);
-                setCustomerName(saved.customerName || "");
-                setCustomerEmail(saved.customerEmail || "");
-                setCustomerPhone(saved.customerPhone || "");
-                if (saved.note) setNote(saved.note);
-                if (saved.payMode) setPayMode(saved.payMode);
-                if (saved.orderType) setOrderType(saved.orderType);
-                setOrderStatus(orderRow.status || "PENDING");
-                setEstimatedReadyAt(orderRow.estimated_ready_at || saved.estimatedReadyAt || null);
-                setOrderCreatedAt(orderRow.created_at || saved.createdAt || null);
-                setStep("done");
-                return;
-              }
-              clearPendingOrder();
-            } else {
-              clearPendingOrder();
-            }
-          }
-        } catch {}
-        setStep("ordertype");
+
+        if (restoA.qr_choice_enabled) {
+          const { data: siblings } = await supabase.from("restaurants").select("id, name, slug, logo_emoji, logo_url").eq("owner_id", restoA.owner_id).order("name");
+          const choices = siblings?.length ? siblings : [restoA];
+          setRestaurantChoices(choices);
+          setStep("choose-restaurant");
+          return;
+        }
+
+        if (restoA.redirect_to_restaurant_id) {
+          const { data: target } = await supabase.from("restaurants").select("*").eq("id", restoA.redirect_to_restaurant_id).single();
+          await finishLoad(target || restoA);
+          return;
+        }
+
+        await finishLoad(restoA);
       } catch {
         setStep("error");
       }
@@ -9017,6 +9153,29 @@ function CustomerPage({ slug, tableNum }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 16 }}>
           <Logo size={20} />
           <div style={{ width: 20, height: 20, border: `2px solid ${C.dark}`, borderTopColor: "transparent", borderRadius: "50%", animation: "ring 0.8s linear infinite" }} />
+        </div>
+      )}
+
+      {step === "choose-restaurant" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "32px 24px", gap: 24 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.dark, marginBottom: 6 }}>Où souhaitez-vous commander ?</div>
+            <div style={{ fontSize: 15, color: C.textSecondary }}>Choisissez un établissement pour continuer</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", maxWidth: 340 }}>
+            {(restaurantChoices || []).map(r => (
+              <button key={r.id} onClick={() => chooseRestaurant(r)}
+                style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 20px", background: C.white, border: `2px solid ${C.border}`, borderRadius: 18, cursor: "pointer", textAlign: "left", transition: "all 0.15s", ...FF }}>
+                {r.logo_url
+                  ? <img src={r.logo_url} alt={r.name} style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover", flexShrink: 0 }} />
+                  : <span style={{ fontSize: 32, flexShrink: 0 }}>{r.logo_emoji || "🍽️"}</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: C.dark }}>{r.name}</div>
+                </div>
+                <span style={{ fontSize: 20, color: C.textTertiary }}>›</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
