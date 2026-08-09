@@ -3346,7 +3346,10 @@ function QRTab({ restaurant }) {
   useEffect(() => {
     if (isDemo) { setScanCount(0); return; }
     supabase.from("qr_scans").select("id", { count: "exact", head: true }).eq("restaurant_id", restaurant.id)
-      .then(({ count }) => setScanCount(count ?? 0));
+      .then(({ count, error }) => {
+        if (error) console.error("[scans] count failed — run migration_scans_and_crm_fix.sql:", error.message);
+        setScanCount(count ?? 0);
+      });
     const ch = supabase.channel(`qr-scans-${restaurant.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "qr_scans", filter: `restaurant_id=eq.${restaurant.id}` },
         () => setScanCount(c => c + 1))
@@ -8631,7 +8634,7 @@ function CustomerPage({ slug, tableNum }) {
       restaurant_id: resto.id,
       table_id: tblRes.data?.id ?? null,
       table_number: tableNum,
-    }).then(() => {}, () => {});
+    }).then(({ error }) => { if (error) console.error("[scans] insert failed — run migration_scans_and_crm_fix.sql:", error.message); }, () => {});
     // deduplicate by id in case DB has duplicate rows
     const raw = itemsRes.data ?? [];
     const seen = new Set();
@@ -9464,9 +9467,6 @@ function CustomerPage({ slug, tableNum }) {
             disabled={!customerEmail.trim()}
             style={{ width: "100%", padding: "16px", background: customerEmail.trim() ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: customerEmail.trim() ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
             {total === 0 ? "✓ Confirmer la commande gratuite" : "Continuer vers le paiement →"}
-          </button>
-          <button onClick={() => { setProfileSkipped(true); total === 0 ? confirm("free") : setStep("payment"); }} style={{ width: "100%", padding: "12px", background: "none", color: C.textTertiary, border: "none", fontSize: 14, cursor: "pointer", ...FF }}>
-            Passer cette étape
           </button>
           <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
             🔒 Vos données sont protégées et utilisées uniquement pour votre ticket et les offres du restaurant.
