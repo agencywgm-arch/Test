@@ -13,7 +13,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const VENDUS_API_KEY = Deno.env.get("VENDUS_API_KEY")!;
+// Secrets set via CLI/dashboard often keep surrounding quotes or a trailing
+// newline. Vendus then receives `"key"` instead of `key` and answers 401/A001,
+// so normalise the value here rather than depending on how it was pasted.
+const VENDUS_API_KEY = (Deno.env.get("VENDUS_API_KEY") || "").trim().replace(/^["']+|["']+$/g, "").trim();
 
 const VENDUS_BASE = "https://www.vendus.pt/ws/v1.1";
 // Vendus accepts the API key either as HTTP Basic Auth (key as username, empty
