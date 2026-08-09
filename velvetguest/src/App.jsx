@@ -3354,6 +3354,8 @@ function QRTab({ restaurant }) {
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const origin = customBase || window.location.origin;
   const [scanCount, setScanCount] = useState(0);
+  const [scanRows, setScanRows] = useState([]);
+  const [scanError, setScanError] = useState("");
   const [siblingRestaurants, setSiblingRestaurants] = useState(null); // for per-table redirect picker
   const [savingTableRedirect, setSavingTableRedirect] = useState(false);
 
@@ -3399,21 +3401,41 @@ function QRTab({ restaurant }) {
       });
   }, [restaurant.id]);
 
-  // Real-time scan counter: initial count + live increment on every new scan,
-  // so this card reflects reality instead of a hardcoded 0.
-  useEffect(() => {
-    if (isDemo) { setScanCount(0); return; }
-    supabase.from("qr_scans").select("id", { count: "exact", head: true }).eq("restaurant_id", restaurant.id)
-      .then(({ count, error }) => {
-        if (error) console.error("[scans] count failed — run migration_scans_and_crm_fix.sql:", error.message);
-        setScanCount(count ?? 0);
-      });
-    const ch = supabase.channel(`qr-scans-${restaurant.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "qr_scans", filter: `restaurant_id=eq.${restaurant.id}` },
-        () => setScanCount(c => c + 1))
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+  // Detailed scan log: every QR scan, with the order it converted into (name,
+  // email, payment method, amount) when there is one. Refreshes live.
+  const loadScans = useCallback(async () => {
+    if (isDemo) { setScanCount(0); setScanRows([]); setScanError(""); return; }
+    const { data, error } = await supabase
+      .from("qr_scans")
+      .select("id, table_number, scanned_at, order_id, orders(customer_name, customer_email, customer_nif, payment_method, total, paid, status)")
+      .eq("restaurant_id", restaurant.id)
+      .order("scanned_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      // Surface the real reason in the UI instead of silently showing 0 —
+      // "no scans" and "the scans table doesn't exist yet" look identical
+      // otherwise, which is exactly what made this hard to diagnose.
+      setScanError(error.message || "Erreur inconnue");
+      setScanRows([]);
+      setScanCount(0);
+      return;
+    }
+    setScanError("");
+    setScanRows(data || []);
+    setScanCount((data || []).length);
   }, [restaurant.id, isDemo]);
+
+  useEffect(() => {
+    loadScans();
+    if (isDemo) return;
+    const ch = supabase.channel(`qr-scans-${restaurant.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "qr_scans", filter: `restaurant_id=eq.${restaurant.id}` },
+        () => loadScans())
+      .subscribe();
+    // Safety net in case the realtime publication wasn't enabled for qr_scans.
+    const poll = setInterval(loadScans, 15000);
+    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+  }, [restaurant.id, isDemo, loadScans]);
 
   const selNum = sel?.number ?? 1;
   const url = sel?.qr_url || `${origin}${BASE_PATH}/r/${restaurant.id}/t/${selNum}`;
@@ -3588,6 +3610,15 @@ function QRTab({ restaurant }) {
             </Surface>
           ))}
         </div>
+        {scanError && (
+          <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}40`, borderRadius: 14, padding: "14px 18px", marginBottom: 16 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: C.accent, marginBottom: 4 }}>⚠️ Le suivi des scans n'est pas actif</p>
+            <p style={{ fontSize: 12.5, color: "#8A2036", lineHeight: 1.5 }}>
+              La base de données a répondu : <code style={{ background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>{scanError}</code>
+              <br />C'est pourquoi le compteur reste à 0. Exécutez le script SQL <strong>CONSOLIDATED_fix_all_missing_columns.sql</strong> dans Supabase → SQL Editor, puis rechargez cette page.
+            </p>
+          </div>
+        )}
         <Surface style={{ overflow: "hidden" }}>
           <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Tables</p>
@@ -3630,6 +3661,72 @@ function QRTab({ restaurant }) {
             ))}
           </div>
         </Surface>
+
+        {/* Detailed scan log — who scanned which QR, and what it turned into */}
+        {!scanError && (
+          <Surface style={{ overflow: "hidden", marginTop: 16 }}>
+            <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <p style={{ fontSize: 15, fontWeight: 700, color: C.dark }}>Détail des scans</p>
+                <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 2 }}>
+                  {scanRows.filter(s => s.order_id).length} commande{scanRows.filter(s => s.order_id).length !== 1 ? "s" : ""} sur {scanRows.length} scan{scanRows.length !== 1 ? "s" : ""}
+                  {scanRows.length > 0 && ` · ${Math.round((scanRows.filter(s => s.order_id).length / scanRows.length) * 100)}% de conversion`}
+                </p>
+              </div>
+              <Btn variant="ghost" size="sm" onClick={() => exportScansCSV(scanRows, restaurant)} disabled={!scanRows.length}>📊 Exporter CSV</Btn>
+            </div>
+            {scanRows.length === 0 ? (
+              <div style={{ padding: 32, textAlign: "center", color: C.textTertiary, fontSize: 13, lineHeight: 1.6 }}>
+                Aucun scan enregistré pour l'instant.<br />
+                <span style={{ fontSize: 12 }}>Scannez un QR code avec votre téléphone pour voir apparaître la ligne ici en direct.</span>
+              </div>
+            ) : (
+              <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                {scanRows.map((s, i) => {
+                  const o = s.orders;
+                  return (
+                    <div key={s.id} style={{ padding: "12px 22px", borderBottom: i < scanRows.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, background: o ? C.accentGreen + "18" : C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: o ? C.accentGreen : C.textTertiary, flexShrink: 0 }}>
+                        T{s.table_number ?? "?"}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.dark }}>
+                            QR Table {s.table_number ?? "?"}
+                          </span>
+                          <span style={{ fontSize: 11, color: C.textTertiary }}>
+                            {new Date(s.scanned_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {o ? <Tag color={C.accentGreen}>✓ Commande</Tag> : <Tag color={C.textTertiary}>Scan seul</Tag>}
+                        </div>
+                        {o ? (
+                          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
+                            <span style={{ fontSize: 12, color: C.dark }}>👤 {o.customer_name || "—"}</span>
+                            <span style={{ fontSize: 12, color: C.textSecondary }}>✉️ {o.customer_email || "—"}</span>
+                            {o.customer_nif && <span style={{ fontSize: 12, color: C.textSecondary }}>🧾 NIF {o.customer_nif}</span>}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: 11.5, color: C.textTertiary, marginTop: 3 }}>Le client a ouvert le menu sans commander.</p>
+                        )}
+                      </div>
+                      {o && (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14, color: C.dark }}>{Number(o.total || 0).toFixed(2)} €</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: o.payment_method === "cash" ? C.accentGreen : C.accentBlue }}>
+                            {pmLabel(o.payment_method)}
+                          </span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: o.paid ? C.accentGreen : C.accentOrange }}>
+                            {o.paid ? "✓ Payé" : "En attente"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Surface>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <Surface style={{ padding: "18px 20px" }}>
@@ -6005,6 +6102,36 @@ function pmLabel(pm) {
   if (pm === "apple_pay") return "Apple Pay";
   if (pm === "google_pay") return "Google Pay";
   return "Espèces";
+}
+
+// Export the QR scan log (with the order each scan converted into) as CSV.
+function exportScansCSV(scanRows, restaurant) {
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = ["Date/heure du scan", "QR / Table", "A commandé", "Nom", "Email", "NIF", "Moyen de paiement", "Montant", "Payé", "Statut commande"];
+  const lines = scanRows.map(s => {
+    const o = s.orders;
+    return [
+      new Date(s.scanned_at).toLocaleString("fr-FR"),
+      `Table ${s.table_number ?? "?"}`,
+      o ? "Oui" : "Non",
+      o?.customer_name || "",
+      o?.customer_email || "",
+      o?.customer_nif || "",
+      o ? pmLabel(o.payment_method) : "",
+      o ? Number(o.total || 0).toFixed(2) : "",
+      o ? (o.paid ? "Oui" : "Non") : "",
+      o?.status || "",
+    ].map(esc).join(";");
+  });
+  const csv = "﻿" + [headers.map(esc).join(";"), ...lines].join("\n");
+  const slug = (restaurant?.slug || restaurant?.name || "restaurant").toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `scans-${slug}-${new Date().toISOString().split("T")[0]}.csv`;
+  document.body.appendChild(link); link.click();
+  setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
 }
 
 function exportCSV(orders, restaurant) {
@@ -8610,6 +8737,7 @@ function CustomerPage({ slug, tableNum }) {
   const [tableId, setTableId] = useState(null);
   const [tableLabel, setTableLabel] = useState(null);
   const [restaurantChoices, setRestaurantChoices] = useState(null); // list of sibling restaurants when "let the customer choose" mode is on
+  const scanIdRef = useRef(null); // id of the qr_scans row for this visit, linked to the order once placed
   const [menuItems, setMenuItems] = useState([]);
   const [cart, setCart] = useState([]);
   const [activeCat, setActiveCat] = useState("__ALL__");
@@ -8726,11 +8854,20 @@ function CustomerPage({ slug, tableNum }) {
     setTableLabel(tblRes.data?.label ?? null);
     // Log this QR scan for the dashboard's real-time analytics. Fire-and-forget:
     // never block or fail the customer's page load if this insert has trouble.
-    supabase.from("qr_scans").insert({
-      restaurant_id: resto.id,
-      table_id: tblRes.data?.id ?? null,
-      table_number: tableNum,
-    }).then(({ error }) => { if (error) console.error("[scans] insert failed — run migration_scans_and_crm_fix.sql:", error.message); }, () => {});
+    // The id is generated client-side ON PURPOSE: an anonymous customer has no
+    // SELECT privilege on qr_scans, so asking PostgREST to return the new row
+    // (.select()) would fail the INSERT itself. Knowing the id up-front also
+    // lets us link this scan to the order it becomes, further down.
+    try {
+      const scanId = (crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      scanIdRef.current = scanId;
+      supabase.from("qr_scans").insert({
+        id: scanId,
+        restaurant_id: resto.id,
+        table_id: tblRes.data?.id ?? null,
+        table_number: tableNum,
+      }).then(({ error }) => { if (error) { scanIdRef.current = null; console.error("[scans] insert failed — run CONSOLIDATED_fix_all_missing_columns.sql:", error.message); } }, () => { scanIdRef.current = null; });
+    } catch { scanIdRef.current = null; }
     // deduplicate by id in case DB has duplicate rows
     const raw = itemsRes.data ?? [];
     const seen = new Set();
@@ -9142,6 +9279,12 @@ function CustomerPage({ slug, tableNum }) {
         }
       } catch {}
       setOrderId(order.id);
+      // Link this order back to the QR scan that started it, so the dashboard
+      // can show scan → order conversion with the customer's details.
+      if (scanIdRef.current) {
+        supabase.from("qr_scans").update({ order_id: order.id }).eq("id", scanIdRef.current)
+          .then(({ error }) => { if (error) console.error("[scans] could not link order:", error.message); }, () => {});
+      }
       const createdAtIso = new Date().toISOString();
       setOrderCreatedAt(createdAtIso);
       // Set default estimated ready time (15 min from now)
