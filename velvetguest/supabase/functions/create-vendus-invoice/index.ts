@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     // Load restaurant → must have vendus_enabled + a NIF configured
     const { data: resto } = await supabase
       .from("restaurants")
-      .select("id, name, nif, vendus_enabled")
+      .select("id, name, nif, vendus_enabled, vendus_tax_id")
       .eq("id", existing.restaurant_id)
       .single();
     if (!resto) return json({ error: "restaurant not found" }, 404);
@@ -88,6 +88,12 @@ Deno.serve(async (req) => {
       .select("quantity, detail, menu_items(name, price)")
       .eq("order_id", order_id);
     if (!items?.length) return json({ error: "no items on order" }, 400);
+
+    // Default to NOR (23%): over-declaring VAT is recoverable, under-declaring
+    // is a tax liability. Override per restaurant once validated with the accountant.
+    const ALLOWED_TAX = ["NOR", "INT", "RED", "ISE", "OUT", "NS"];
+    const taxCode = ALLOWED_TAX.includes(String(resto.vendus_tax_id || "").toUpperCase())
+      ? String(resto.vendus_tax_id).toUpperCase() : "NOR";
 
     // Build Vendus document payload.
     // - "FS" = Fatura Simplificada, legally sufficient for retail sales under
@@ -118,9 +124,12 @@ Deno.serve(async (req) => {
           title: title.substring(0, 100),
           gross_price: unitPrice,
           qty: it.quantity,
-          // 23% VAT is the standard Portuguese rate for restaurant takeaway food.
-          // Vendus lets us pass the rate directly; it resolves the tax_id server-side.
-          tax_id: 0, // 0 = use default IVA config from the store's product tax settings
+          // Vendus expects a Portuguese VAT code, not a numeric id:
+          //   NOR = normal (23%) · INT = intermédia (13%) · RED = reduzida (6%)
+          //   ISE = isenta · OUT = outra · NS = não sujeito
+          // Configurable per restaurant because the correct rate is a fiscal
+          // decision (dine-in vs takeaway vs drinks), not a technical one.
+          tax_id: taxCode,
         };
       }),
       // Payment method mapping — Vendus needs at least one payment line
