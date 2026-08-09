@@ -1540,6 +1540,7 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
   const isMobile = useIsMobile();
   const [restaurants, setRestaurants] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [cardStats, setCardStats] = useState({}); // { [restaurantId]: { scans, orders } }
   const [creatingFranchise, setCreatingFranchise] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", address: "", logo_emoji: "🍽️", tables_count: 8 });
@@ -1575,10 +1576,26 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
 
   useEffect(() => {
     supabase.from("restaurants").select("*").eq("owner_id", user.id).order("created_at", { ascending: false })
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         const list = data ?? [];
         setRestaurants(list);
         setLoadingList(false);
+        // Real scan/order counts per restaurant — these were previously hardcoded
+        // to 0 on this screen, so the cards never reflected reality.
+        const stats = {};
+        await Promise.all(list.map(async (r) => {
+          const [scanRes, orderRes] = await Promise.all([
+            supabase.from("qr_scans").select("id", { count: "exact", head: true }).eq("restaurant_id", r.id),
+            supabase.from("orders").select("id", { count: "exact", head: true }).eq("restaurant_id", r.id),
+          ]);
+          stats[r.id] = {
+            // null (rendered as "—") when the query errored, e.g. the qr_scans
+            // table doesn't exist yet — never a misleading 0.
+            scans: scanRes.error ? null : (scanRes.count ?? 0),
+            orders: orderRes.error ? null : (orderRes.count ?? 0),
+          };
+        }));
+        setCardStats(stats);
       });
 
     // Silently refresh franchise group in cache (no redirect — user stays here)
@@ -1815,7 +1832,7 @@ function RestaurantsPage({ user, franchiseGroup, onSelect, onLogout, onDemo, onF
                   <h3 style={{ fontSize: 18, fontWeight: 700, color: C.dark, marginBottom: 4, letterSpacing: "-0.02em" }}>{r.name}</h3>
                   <p style={{ color: C.textSecondary, fontSize: 13, marginBottom: 20 }}>{r.address || "—"}</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-                    {[["Tables", r.tables_count], ["Scans", 0], ["Commandes", 0]].map(([l, v]) => (
+                    {[["Tables", r.tables_count], ["Scans", cardStats[r.id]?.scans ?? "—"], ["Commandes", cardStats[r.id]?.orders ?? "—"]].map(([l, v]) => (
                       <div key={l} style={{ textAlign: "center" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: C.dark }}>{v}</div>
                         <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 2 }}>{l}</div>
