@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
     // failing with an opaque "not found".
     let paymentId: number | undefined;
     const pmDebug: any = {};
-    for (const path of ["/paymentmethods/", "/paymentmethods", "/payment_methods/"]) {
+    for (const path of ["/paymenttypes/", "/paymentmethods/", "/payment_types/", "/payments/"]) {
       try {
         const pmRes = await fetch(`${VENDUS_BASE}${path}?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
           headers: { "Authorization": VENDUS_AUTH, "Accept": "application/json" },
@@ -126,14 +126,9 @@ Deno.serve(async (req) => {
       } catch (e) { pmDebug[path] = { error: String(e) }; }
     }
 
-    if (!paymentId) {
-      return json({
-        ok: false,
-        error: "no Vendus payment method found",
-        fix: "Vendus → Configurações → Tipos de Pagamento",
-        vendus_paymentmethods_debug: pmDebug,
-      }, 502);
-    }
+    // No usable payment-method endpoint on this account/API version: emit the
+    // document WITHOUT a payments block and let the register apply its default,
+    // rather than blocking the invoice entirely over a lookup detail.
 
     // Build Vendus document payload.
     // - "FS" = Fatura Simplificada, legally sufficient for retail sales under
@@ -172,15 +167,10 @@ Deno.serve(async (req) => {
           tax_id: taxCode,
         };
       }),
-      // Payment method mapping — Vendus needs a REAL payment-method id from the
-      // account (there is no generic "0"), so we look it up from their API and
-      // match it to how the customer actually paid.
-      payments: [
-        {
-          id: paymentId,
-          amount: Number(existing.total),
-        },
-      ],
+      // Only sent when we actually resolved a real payment-method id — Vendus
+      // rejects a placeholder ("Missing payment ID"), but accepts the document
+      // with no payments block at all and falls back to the register default.
+      ...(paymentId ? { payments: [{ id: paymentId, amount: Number(existing.total) }] } : {}),
       output: "escpos", // ask Vendus to also return an ESC/POS payload we can push to the printer later
     };
 
@@ -199,6 +189,8 @@ Deno.serve(async (req) => {
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
         key_len: VENDUS_API_KEY.length,
+        payment_id_used: paymentId ?? null,
+        vendus_paymentmethods_debug: pmDebug,
       }, 502);
     }
 
