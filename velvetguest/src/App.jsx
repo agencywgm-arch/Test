@@ -698,12 +698,19 @@ function useStore(restaurantId) {
         }
       });
 
-    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    supabase.from("orders").select(ORDER_QUERY)
-      .eq("restaurant_id", restaurantId).eq("status", "DONE")
-      .gte("created_at", dayStart.toISOString())
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setDoneOrders((data ?? []).map(fmtOrder)));
+    // Closed orders powering the Caisse. `dayStart` is recomputed on EVERY call
+    // on purpose: it used to be captured once at mount, so a dashboard left open
+    // overnight kept showing the previous day's till — the "on voit la caisse que
+    // le lendemain" symptom.
+    const refreshDoneOrders = async () => {
+      const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+      const { data } = await supabase.from("orders").select(ORDER_QUERY)
+        .eq("restaurant_id", restaurantId).eq("status", "DONE")
+        .gte("created_at", dayStart.toISOString())
+        .order("created_at", { ascending: false });
+      if (data) setDoneOrders(data.map(fmtOrder));
+    };
+    refreshDoneOrders();
 
     const ch = supabase.channel(`store-${restaurantId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
@@ -791,8 +798,30 @@ function useStore(restaurantId) {
     };
     reconcile();
     const poll = setInterval(reconcile, 3000);
+    // The till list is refreshed on its own slower cadence — it only changes when
+    // an order is closed, so it doesn't need the 3s beat of the active board.
+    const donePoll = setInterval(refreshDoneOrders, 30000);
 
-    return () => { supabase.removeChannel(ch); clearInterval(tick); clearInterval(poll); };
+    // A tablet that goes to sleep silently kills its websocket, and nothing
+    // wakes it back up — that's the main reason orders showed up 5, 15 or 30
+    // minutes late. Re-sync immediately whenever the screen comes back or the
+    // network returns, instead of waiting for the next poll tick.
+    const resync = () => {
+      if (document.visibilityState !== "visible") return;
+      reconcile();
+      refreshDoneOrders();
+    };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    window.addEventListener("online", resync);
+
+    return () => {
+      supabase.removeChannel(ch);
+      clearInterval(tick); clearInterval(poll); clearInterval(donePoll);
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("online", resync);
+    };
   }, [restaurantId]);
 
   // Keep ringing in the Dashboard too, every few seconds, as long as at least
@@ -6324,14 +6353,36 @@ function exportRapportZ(orders, restaurant) {
   w.document.close();
 }
 
+// Local calendar date (YYYY-MM-DD). Using toISOString() directly would give the
+// UTC day, which is the wrong day for anyone west/east of UTC around midnight —
+// the till would then look like it belonged to the previous/next day.
+function localDateStr(d = new Date()) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0];
+}
+
 function CaisseTab({ store, restaurant }) {
   const isMobile = useIsMobile();
-  const todayStr = new Date().toISOString().split("T")[0];
+  // Recomputed on a timer so a dashboard left open rolls over to the new day by
+  // itself at midnight instead of staying stuck on yesterday's till.
+  const [todayStr, setTodayStr] = useState(() => localDateStr());
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [histOrders, setHistOrders] = useState(null);
   const [histLoading, setHistLoading] = useState(false);
   const isToday = selectedDate === todayStr;
   const orders = isToday ? (store.doneOrders || []) : (histOrders || []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = localDateStr();
+      setTodayStr(prev => {
+        if (prev === now) return prev;
+        // Day just rolled over: follow it if the user was watching "today".
+        setSelectedDate(sel => (sel === prev ? now : sel));
+        return now;
+      });
+    }, 60000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (isToday) { setHistOrders(null); return; }
@@ -6397,7 +6448,7 @@ function CaisseTab({ store, restaurant }) {
     <div className="fade-in">
       {/* Date navigation */}
       <Surface style={{ padding: "14px 20px", marginBottom: isMobile ? 12 : 20, display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toISOString().split("T")[0]); }} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, ...FF }}>‹</button>
+        <button onClick={() => { const d = new Date(selectedDate + "T12:00:00"); d.setDate(d.getDate() - 1); setSelectedDate(localDateStr(d)); }} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, ...FF }}>‹</button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: 15, fontWeight: 700, color: C.dark, textTransform: "capitalize", margin: 0 }}>{dateLabel}</p>
           <p style={{ fontSize: 11, color: C.textTertiary, margin: 0 }}>Historique caisse</p>
@@ -6405,7 +6456,7 @@ function CaisseTab({ store, restaurant }) {
         <input type="date" value={selectedDate} max={todayStr}
           onChange={e => e.target.value && setSelectedDate(e.target.value)}
           style={{ fontSize: 13, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "6px 10px", background: C.white, cursor: "pointer", ...FF }} />
-        <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); const next = d.toISOString().split("T")[0]; if (next <= todayStr) setSelectedDate(next); }} disabled={isToday} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: isToday ? C.bg : C.white, cursor: isToday ? "not-allowed" : "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: isToday ? 0.4 : 1, ...FF }}>›</button>
+        <button onClick={() => { const d = new Date(selectedDate + "T12:00:00"); d.setDate(d.getDate() + 1); const next = localDateStr(d); if (next <= todayStr) setSelectedDate(next); }} disabled={isToday} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: isToday ? C.bg : C.white, cursor: isToday ? "not-allowed" : "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: isToday ? 0.4 : 1, ...FF }}>›</button>
       </Surface>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
@@ -6672,7 +6723,20 @@ function useLiveOrders(restaurantId, pushNotif) {
       });
     }, 3000);
 
-    return () => { supabase.removeChannel(channel); clearInterval(tick); clearInterval(poll); };
+    // A kitchen tablet that sleeps kills its websocket silently. Re-sync the
+    // moment the screen wakes or the network returns, rather than letting the
+    // board sit stale until the next poll tick.
+    const resync = () => { if (document.visibilityState === "visible") fetchOrders(); };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    window.addEventListener("online", resync);
+
+    return () => {
+      supabase.removeChannel(channel); clearInterval(tick); clearInterval(poll);
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("online", resync);
+    };
   }, [restaurantId]);
 
   const advanceOrder = useCallback(async (id) => {
