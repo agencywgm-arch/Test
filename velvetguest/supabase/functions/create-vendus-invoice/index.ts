@@ -16,8 +16,11 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VENDUS_API_KEY = Deno.env.get("VENDUS_API_KEY")!;
 
 const VENDUS_BASE = "https://www.vendus.pt/ws/v1.1";
-// Vendus uses HTTP Basic Auth: the API key is the username, password is empty.
-const VENDUS_AUTH = "Basic " + btoa(VENDUS_API_KEY + ":");
+// Vendus accepts the API key either as HTTP Basic Auth (key as username, empty
+// password) OR as an `api_key` query parameter, depending on the endpoint and
+// account. Sending both covers either convention — a mismatch here is what
+// produced the opaque "401 / A001 / AUTH" response.
+const VENDUS_AUTH = "Basic " + btoa((VENDUS_API_KEY || "") + ":");
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +35,16 @@ Deno.serve(async (req) => {
     const { order_id } = await req.json();
     if (!order_id) {
       return json({ error: "order_id is required" }, 400);
+    }
+
+    // Fail loudly and unambiguously if the secret was never set, instead of
+    // letting Vendus answer with a generic 401 that looks like a bad key.
+    if (!VENDUS_API_KEY) {
+      return json({
+        ok: false,
+        error: "VENDUS_API_KEY secret is not set on this Supabase project",
+        fix: "Supabase → Edge Functions → Secrets → add VENDUS_API_KEY",
+      }, 500);
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -118,10 +131,10 @@ Deno.serve(async (req) => {
       output: "escpos", // ask Vendus to also return an ESC/POS payload we can push to the printer later
     };
 
-    const vendusRes = await fetch(`${VENDUS_BASE}/documents`, {
+    const vendusRes = await fetch(`${VENDUS_BASE}/documents/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
       method: "POST",
       headers: { "Authorization": VENDUS_AUTH, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, api_key: VENDUS_API_KEY }),
     });
     const vendusJson: any = await vendusRes.json().catch(() => ({}));
 
@@ -131,6 +144,8 @@ Deno.serve(async (req) => {
         error: "vendus API error",
         status: vendusRes.status,
         vendus_response: vendusJson,
+        // Helps tell "wrong key" apart from "key not transmitted".
+        key_len: VENDUS_API_KEY.length,
       }, 502);
     }
 
