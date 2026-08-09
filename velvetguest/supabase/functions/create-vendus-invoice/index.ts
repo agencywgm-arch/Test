@@ -95,6 +95,31 @@ Deno.serve(async (req) => {
     const taxCode = ALLOWED_TAX.includes(String(resto.vendus_tax_id || "").toUpperCase())
       ? String(resto.vendus_tax_id).toUpperCase() : "NOR";
 
+    // Resolve a real Vendus payment-method id. Their ids are account-specific,
+    // so we fetch the list and match it to how the customer paid, rather than
+    // hardcoding a number that would differ from one account to another.
+    let paymentId: number | undefined;
+    try {
+      const pmRes = await fetch(`${VENDUS_BASE}/paymentmethods/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
+        headers: { "Authorization": VENDUS_AUTH },
+      });
+      const pmList: any = await pmRes.json().catch(() => []);
+      if (Array.isArray(pmList) && pmList.length) {
+        const isCard = existing.payment_method && existing.payment_method !== "cash";
+        const wanted = isCard ? /multibanco|cart|card|tpa/i : /numer|dinheiro|cash|esp/i;
+        const match = pmList.find((p: any) => wanted.test(String(p.title || p.name || "")));
+        paymentId = Number((match || pmList[0]).id);
+      }
+    } catch { /* fall through to the explicit error below */ }
+
+    if (!paymentId) {
+      return json({
+        ok: false,
+        error: "no Vendus payment method found",
+        fix: "Vendus → Configurações → Tipos de Pagamento: create at least one payment method",
+      }, 502);
+    }
+
     // Build Vendus document payload.
     // - "FS" = Fatura Simplificada, legally sufficient for retail sales under
     //   1000€ to consumers (with or without NIF). Perfect for fast-food orders.
@@ -132,11 +157,12 @@ Deno.serve(async (req) => {
           tax_id: taxCode,
         };
       }),
-      // Payment method mapping — Vendus needs at least one payment line
-      // matching the document total so it can close the fiscal document.
+      // Payment method mapping — Vendus needs a REAL payment-method id from the
+      // account (there is no generic "0"), so we look it up from their API and
+      // match it to how the customer actually paid.
       payments: [
         {
-          id: 0, // 0 = use default payment type ("Numerário" or "Multibanco")
+          id: paymentId,
           amount: Number(existing.total),
         },
       ],
