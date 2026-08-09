@@ -6404,6 +6404,40 @@ function CaisseTab({ store, restaurant }) {
     return acc;
   }, {});
 
+  // ── Fiscal compliance monitor ────────────────────────────────────────────
+  // Continuously checks that every paid order actually produced a certified
+  // Vendus invoice. Silence is dangerous here: a missing invoice is a legal
+  // problem, so it must be visible on the till screen, not buried in logs.
+  const [fiscal, setFiscal] = useState(null); // null = loading | { enabled, paid, invoiced, missing, error }
+  useEffect(() => {
+    if (restaurant.id === "demo") { setFiscal({ enabled: false }); return; }
+    let cancelled = false;
+    const check = async () => {
+      const { data: resto } = await supabase.from("restaurants").select("vendus_enabled, nif").eq("id", restaurant.id).maybeSingle();
+      if (cancelled) return;
+      if (!resto?.vendus_enabled) { setFiscal({ enabled: false }); return; }
+      const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const { data, error } = await supabase.from("orders")
+        .select("id, vendus_invoice_id, total, created_at")
+        .eq("restaurant_id", restaurant.id).eq("paid", true)
+        .gte("created_at", since);
+      if (cancelled) return;
+      if (error) { setFiscal({ enabled: true, error: error.message }); return; }
+      const paidOrders = data || [];
+      const missing = paidOrders.filter(o => !o.vendus_invoice_id);
+      setFiscal({
+        enabled: true, nif: resto.nif,
+        paid: paidOrders.length,
+        invoiced: paidOrders.length - missing.length,
+        missing: missing.length,
+        missingAmount: missing.reduce((s, o) => s + Number(o.total || 0), 0),
+      });
+    };
+    check();
+    const t = setInterval(check, 60000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [restaurant.id]);
+
   // Ticket de caisse customization
   const [ticketForm, setTicketForm] = useState({ ticket_address: "", ticket_phone: "", ticket_tax_id: "", ticket_footer: "" });
   const [ticketSaving, setTicketSaving] = useState(false);
@@ -6458,6 +6492,35 @@ function CaisseTab({ store, restaurant }) {
           style={{ fontSize: 13, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "6px 10px", background: C.white, cursor: "pointer", ...FF }} />
         <button onClick={() => { const d = new Date(selectedDate + "T12:00:00"); d.setDate(d.getDate() + 1); const next = localDateStr(d); if (next <= todayStr) setSelectedDate(next); }} disabled={isToday} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: isToday ? C.bg : C.white, cursor: isToday ? "not-allowed" : "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: isToday ? 0.4 : 1, ...FF }}>›</button>
       </Surface>
+
+      {/* Fiscal compliance monitor — 30 rolling days */}
+      {fiscal?.enabled && (
+        fiscal.error ? (
+          <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}40`, borderRadius: 14, padding: "14px 18px", marginBottom: isMobile ? 12 : 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: C.accent, marginBottom: 4 }}>⚠️ Contrôle fiscal impossible</p>
+            <p style={{ fontSize: 12.5, color: "#8A2036", lineHeight: 1.5 }}>
+              La base a répondu : <code style={{ background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>{fiscal.error}</code>
+            </p>
+          </div>
+        ) : fiscal.missing > 0 ? (
+          <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}40`, borderRadius: 14, padding: "14px 18px", marginBottom: isMobile ? 12 : 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: C.accent, marginBottom: 4 }}>
+              🚨 {fiscal.missing} commande{fiscal.missing > 1 ? "s" : ""} encaissée{fiscal.missing > 1 ? "s" : ""} sans facture fiscale
+            </p>
+            <p style={{ fontSize: 12.5, color: "#8A2036", lineHeight: 1.5 }}>
+              Sur les 30 derniers jours : {fiscal.invoiced}/{fiscal.paid} facturées.
+              Montant sans justificatif : <strong>{fiscal.missingAmount.toFixed(2)} €</strong>.
+              <br />Vérifiez que la fonction <strong>create-vendus-invoice</strong> est bien déployée (Supabase → Edge Functions) et que le secret <strong>VENDUS_API_KEY</strong> est renseigné.
+            </p>
+          </div>
+        ) : fiscal.paid > 0 ? (
+          <div style={{ background: C.accentGreen + "12", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 14, padding: "12px 18px", marginBottom: isMobile ? 12 : 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#1E7E34" }}>
+              ✅ Conformité fiscale — {fiscal.invoiced}/{fiscal.paid} commandes encaissées ont leur facture Vendus (30 derniers jours){fiscal.nif ? ` · NIF ${fiscal.nif}` : ""}
+            </p>
+          </div>
+        ) : null
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 12 : 20 }}>
         <KPICard label="CA du jour" value={`${revenue.toFixed(2)}€`} sub="clôturées" />
