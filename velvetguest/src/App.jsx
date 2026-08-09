@@ -6409,6 +6409,36 @@ function CaisseTab({ store, restaurant }) {
   // Vendus invoice. Silence is dangerous here: a missing invoice is a legal
   // problem, so it must be visible on the till screen, not buried in logs.
   const [fiscal, setFiscal] = useState(null); // null = loading | { enabled, paid, invoiced, missing, error }
+  const fiscalCheckRef = useRef(null);
+  const [regularizing, setRegularizing] = useState(null); // null | { done, total, failed }
+
+  // Re-triggers invoice emission for every paid order that has none. The Edge
+  // Function is idempotent (it returns the existing invoice instead of issuing
+  // a second one), so this is safe to run more than once.
+  async function regularizeInvoices() {
+    const ids = fiscal?.missingIds || [];
+    if (!ids.length || regularizing) return;
+    if (!confirm(
+      `Émettre les factures Vendus manquantes pour ${ids.length} commande(s) ?\n\n` +
+      `⚠️ Les factures seront datées d'AUJOURD'HUI, pas de la date de vente d'origine ` +
+      `(une facture certifiée ne peut pas être antidatée). Validez cette régularisation ` +
+      `avec votre comptable avant de continuer.`
+    )) return;
+    setRegularizing({ done: 0, total: ids.length, failed: 0 });
+    let failed = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i] }, 2);
+      if (error) failed++;
+      setRegularizing({ done: i + 1, total: ids.length, failed });
+      await new Promise(r => setTimeout(r, 400)); // stay well under Vendus rate limits
+    }
+    await fiscalCheckRef.current?.();
+    setRegularizing(null);
+    store.pushNotif?.(
+      failed ? `⚠️ ${ids.length - failed}/${ids.length} factures émises — ${failed} en échec` : `✅ ${ids.length} factures émises`,
+      failed ? "warning" : "success"
+    );
+  }
   useEffect(() => {
     if (restaurant.id === "demo") { setFiscal({ enabled: false }); return; }
     let cancelled = false;
@@ -6430,9 +6460,11 @@ function CaisseTab({ store, restaurant }) {
         paid: paidOrders.length,
         invoiced: paidOrders.length - missing.length,
         missing: missing.length,
+        missingIds: missing.map(o => o.id),
         missingAmount: missing.reduce((s, o) => s + Number(o.total || 0), 0),
       });
     };
+    fiscalCheckRef.current = check;
     check();
     const t = setInterval(check, 60000);
     return () => { cancelled = true; clearInterval(t); };
@@ -6512,6 +6544,22 @@ function CaisseTab({ store, restaurant }) {
               Montant sans justificatif : <strong>{fiscal.missingAmount.toFixed(2)} €</strong>.
               <br />Vérifiez que la fonction <strong>create-vendus-invoice</strong> est bien déployée (Supabase → Edge Functions) et que le secret <strong>VENDUS_API_KEY</strong> est renseigné.
             </p>
+            <div style={{ marginTop: 12 }}>
+              {regularizing ? (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#8A2036" }}>
+                  Émission en cours… {regularizing.done}/{regularizing.total}
+                  {regularizing.failed > 0 && ` · ${regularizing.failed} en échec`}
+                </div>
+              ) : (
+                <button onClick={regularizeInvoices}
+                  style={{ background: C.accent, border: "none", borderRadius: 10, padding: "10px 16px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", ...FF }}>
+                  🧾 Émettre les {fiscal.missing} facture{fiscal.missing > 1 ? "s" : ""} manquante{fiscal.missing > 1 ? "s" : ""}
+                </button>
+              )}
+              <p style={{ fontSize: 11, color: "#8A2036", marginTop: 8, lineHeight: 1.5 }}>
+                À utiliser une fois la fonction déployée. Les factures porteront la date du jour, pas celle de la vente d'origine — à valider avec votre comptable.
+              </p>
+            </div>
           </div>
         ) : fiscal.paid > 0 ? (
           <div style={{ background: C.accentGreen + "12", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 14, padding: "12px 18px", marginBottom: isMobile ? 12 : 20 }}>
