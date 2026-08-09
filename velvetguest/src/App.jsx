@@ -2145,6 +2145,9 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [uploadingBg, setUploadingBg] = useState(null); // "welcome"|"header"|"body"|null
   const [isPaymentMaster, setIsPaymentMaster] = useState(!!restaurant.is_payment_master);
   const [savingMaster, setSavingMaster] = useState(false);
+  const [redirectTargetId, setRedirectTargetId] = useState(restaurant.redirect_to_restaurant_id || "");
+  const [redirectOptions, setRedirectOptions] = useState(null); // null = loading, [] = none
+  const [savingRedirect, setSavingRedirect] = useState(false);
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -2249,6 +2252,38 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_payment_master.sql" : ""), "warning");
     } finally {
       setSavingMaster(false);
+    }
+  }
+
+  // Load the sibling restaurants of the same account, for the QR-redirect picker.
+  useEffect(() => {
+    if (restaurant.id === "demo") { setRedirectOptions([]); return; }
+    (async () => {
+      let ownerId = restaurant.owner_id;
+      if (!ownerId) { const { data: auth } = await supabase.auth.getUser(); ownerId = auth?.user?.id; }
+      let query = supabase.from("restaurants").select("id, name").neq("id", restaurant.id).order("name");
+      if (ownerId) query = query.eq("owner_id", ownerId);
+      const { data } = await query;
+      setRedirectOptions(data || []);
+    })();
+    supabase.from("restaurants").select("redirect_to_restaurant_id").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) setRedirectTargetId(data.redirect_to_restaurant_id || ""); });
+  }, [restaurant.id]);
+
+  async function saveRedirect(targetId) {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    setSavingRedirect(true);
+    const prev = redirectTargetId;
+    setRedirectTargetId(targetId); // optimistic
+    try {
+      const { error } = await supabase.from("restaurants").update({ redirect_to_restaurant_id: targetId || null }).eq("id", restaurant.id);
+      if (error) throw error;
+      store.pushNotif(targetId ? "🔀 QR codes redirigés vers l'autre restaurant" : "Redirection désactivée — les QR de ce restaurant servent à nouveau son propre menu", "success");
+    } catch (err) {
+      setRedirectTargetId(prev); // rollback
+      store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_qr_redirect.sql" : ""), "warning");
+    } finally {
+      setSavingRedirect(false);
     }
   }
 
@@ -2401,6 +2436,35 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
             </div>
           )}
         </div>
+      </Surface>
+
+      {/* QR code redirect — reuse already-printed QR codes for another restaurant */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔀 Redirection des QR codes</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
+          Vous avez déjà imprimé et posé les QR codes de <strong>{restaurant.name}</strong>, mais voulez maintenant qu'ils affichent un autre restaurant de votre compte ? Aucun besoin de réimprimer : activez la redirection ci-dessous. Chaque client qui scannera un QR déjà posé verra le menu de l'autre restaurant, et ses commandes seront enregistrées là-bas.
+        </p>
+        {redirectOptions === null ? (
+          <p style={{ fontSize: 13, color: C.textTertiary }}>Chargement…</p>
+        ) : redirectOptions.length === 0 ? (
+          <p style={{ fontSize: 13, color: C.textTertiary }}>Vous n'avez pas d'autre restaurant vers lequel rediriger.</p>
+        ) : (
+          <>
+            <select
+              value={redirectTargetId}
+              onChange={e => saveRedirect(e.target.value)}
+              disabled={savingRedirect}
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${redirectTargetId ? C.accentOrange : C.border}`, fontSize: 14, outline: "none", background: C.white, ...FF }}>
+              <option value="">— Pas de redirection (comportement normal) —</option>
+              {redirectOptions.map(r => (<option key={r.id} value={r.id}>Rediriger vers « {r.name} »</option>))}
+            </select>
+            {redirectTargetId && (
+              <div style={{ marginTop: 12, padding: "12px 14px", background: "#FFF4E3", border: `1.5px solid ${C.accentOrange}40`, borderRadius: 12, fontSize: 12.5, color: "#92700A", fontWeight: 600, lineHeight: 1.5 }}>
+                ⚠️ Actif — tous les QR codes déjà imprimés de <strong>{restaurant.name}</strong> affichent maintenant « {redirectOptions.find(r => r.id === redirectTargetId)?.name} ». Son menu, sa vue cuisine et son tableau de bord reçoivent désormais ces commandes.
+              </div>
+            )}
+          </>
+        )}
       </Surface>
 
       {/* Google Reviews */}
@@ -8462,8 +8526,17 @@ function CustomerPage({ slug, tableNum }) {
         }
         // slug may be a UUID (durable QR) or a slug string (legacy)
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
-        const { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq(isUuid ? "id" : "slug", slug).single();
+        let { data: resto, error: restoErr } = await supabase.from("restaurants").select("*").eq(isUuid ? "id" : "slug", slug).single();
         if (restoErr || !resto) { setStep("error"); return; }
+        // A restaurant's already-printed QR codes can be repointed to a different
+        // restaurant without reprinting anything: `redirect_to_restaurant_id` makes
+        // every table's URL for this restaurant transparently serve another
+        // restaurant's menu/orders instead. Followed once (no chained redirects)
+        // to keep the lookup simple and avoid loops.
+        if (resto.redirect_to_restaurant_id) {
+          const { data: target } = await supabase.from("restaurants").select("*").eq("id", resto.redirect_to_restaurant_id).single();
+          if (target) resto = target;
+        }
         setRestaurant(resto);
         const [tblRes, itemsRes] = await Promise.all([
           supabase.from("tables").select("id,label").eq("restaurant_id", resto.id).eq("number", tableNum).single(),
