@@ -712,6 +712,14 @@ function useStore(restaurantId) {
           }
         }
       )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        ({ old: row }) => {
+          // Keeps every open dashboard/kitchen/caisse screen in sync the instant
+          // an order is deleted from the history, from any device.
+          setOrders(prev => prev.filter(o => o.id !== row.id));
+          setDoneOrders(prev => prev.filter(o => o.id !== row.id));
+        }
+      )
       .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `restaurant_id=eq.${restaurantId}` },
         async () => {
           const { data } = await supabase.from("customers").select("*").eq("restaurant_id", restaurantId).order("last_visit", { ascending: false });
@@ -781,7 +789,7 @@ function useStore(restaurantId) {
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
   const clearNotifHistory = useCallback(() => setNotifHistory([]), []);
-  return { orders, setOrders, servedOrders: doneOrders, doneOrders, notifications, notifHistory, pushNotif, silentNotif, clearNotifHistory, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, setDoneOrders, notifications, notifHistory, pushNotif, silentNotif, clearNotifHistory, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6172,6 +6180,25 @@ function CaisseTab({ store, restaurant }) {
 
   const dateLabel = isToday ? "Aujourd'hui" : new Date(selectedDate + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
+  const [deletingId, setDeletingId] = useState(null);
+  async function deleteOrder(o) {
+    if (deletingId) return;
+    if (!confirm(`Supprimer définitivement la commande #${o.id.slice(0, 6).toUpperCase()} (${o.total.toFixed(2)} €) de l'historique ?\n\nCette action est irréversible.`)) return;
+    setDeletingId(o.id);
+    try {
+      // order_items cascade-delete automatically with the order (FK ON DELETE CASCADE).
+      const { error } = await supabase.from("orders").delete().eq("id", o.id);
+      if (error) throw error;
+      if (isToday) store.setDoneOrders?.(prev => prev.filter(x => x.id !== o.id));
+      else setHistOrders(prev => (prev || []).filter(x => x.id !== o.id));
+      store.pushNotif?.("🗑️ Commande supprimée de l'historique", "success");
+    } catch (err) {
+      store.pushNotif?.("Erreur : " + (err.message || err), "warning");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="fade-in">
       {/* Date navigation */}
@@ -6265,6 +6292,11 @@ function CaisseTab({ store, restaurant }) {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                   <p style={{ fontWeight: 800, fontSize: 16, color: C.dark }}>{o.total.toFixed(2)} €</p>
                   <Tag color={pmColor}>{pm}</Tag>
+                  <button onClick={() => deleteOrder(o)} disabled={deletingId === o.id}
+                    style={{ background: "none", border: "none", color: C.textTertiary, fontSize: 11, cursor: deletingId === o.id ? "wait" : "pointer", padding: "2px 0", opacity: deletingId === o.id ? 0.5 : 1, ...FF }}
+                    title="Supprimer cette commande de l'historique">
+                    {deletingId === o.id ? "…" : "🗑️ Supprimer"}
+                  </button>
                 </div>
               </div>
             </div>
