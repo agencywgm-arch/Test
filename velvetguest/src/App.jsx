@@ -3143,8 +3143,15 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
       // Portuguese fiscal invoice: emit the certified receipt via Vendus API
       // now that the cash payment is confirmed. No-op if the restaurant hasn't
       // enabled Vendus, or if the invoice already exists (Edge Function is idempotent).
+      // A failed call is surfaced to the cashier instead of vanishing silently —
+      // that silence was exactly why missing invoices/receipts went unnoticed.
       if (resolvedRestaurant.id !== "demo") {
-        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: o.id } }).catch(() => {});
+        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: o.id } })
+          .then(({ data, error }) => {
+            if (error) { storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${error.message}`, "warning"); return; }
+            if (data?.error) storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${data.error}`, "warning");
+          })
+          .catch(err => storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${err?.message || err}`, "warning"));
       }
 
       // Send the PAYÉ receipt by email if the customer left one
@@ -3160,7 +3167,10 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
         const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${resolvedRestaurant.name || ""}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${o.table} · ${new Date(o.createdAt).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${o.shortId || o.id.slice(0,8).toUpperCase()}</p>${o.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${o.customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${o.total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : Espèces</p><div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${tk?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
         supabase.functions.invoke("send-receipt-email", {
           body: { restaurant_id: resolvedRestaurant.id, to_email: o.customerEmail, subject: `Votre reçu — ${resolvedRestaurant.name || "Wegemo"}`, html_body: receiptHtml }
-        }).catch(() => {});
+        }).then(({ data, error }) => {
+          if (error || data?.error) { storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) : ${(error?.message || data?.error)}. Configurez Resend dans Paramètres → Email.`, "warning"); return; }
+          supabase.from("orders").update({ receipt_email_sent: true }).eq("id", o.id).then(() => {});
+        }).catch(err => storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) : ${err?.message || err}`, "warning"));
       }
     } finally {
       setPayingIds(p => ({ ...p, [o.id]: false }));
@@ -9116,7 +9126,9 @@ function CustomerPage({ slug, tableNum }) {
       // Portuguese fiscal invoice via the Vendus API right away. Cash orders
       // trigger this later when the cashier marks them as paid at the counter.
       if (paymentMethod !== "cash") {
-        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: order.id } }).catch(() => {});
+        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: order.id } })
+          .then(({ data, error }) => { if (error || data?.error) console.error("[vendus] invoice failed for order", order.id, error?.message || data?.error); })
+          .catch(err => console.error("[vendus] invoice failed for order", order.id, err));
       }
       // Persist so a page refresh keeps the customer on the tracking screen instead of dumping them back to the menu
       try {
@@ -9171,7 +9183,10 @@ function CustomerPage({ slug, tableNum }) {
           const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p>${statusHtml}<p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
           supabase.functions.invoke("send-receipt-email", {
             body: { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml }
-          }).catch(() => {});
+          }).then(({ data, error }) => {
+            if (error || data?.error) { console.error("[receipt-email] failed for order", order.id, error?.message || data?.error); return; }
+            supabase.from("orders").update({ receipt_email_sent: true }).eq("id", order.id).then(() => {});
+          }).catch(err => console.error("[receipt-email] failed for order", order.id, err));
           }
         }
       } catch {}
