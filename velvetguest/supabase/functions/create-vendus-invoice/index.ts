@@ -98,25 +98,40 @@ Deno.serve(async (req) => {
     // Resolve a real Vendus payment-method id. Their ids are account-specific,
     // so we fetch the list and match it to how the customer paid, rather than
     // hardcoding a number that would differ from one account to another.
+    // Vendus has shipped this list under a few different shapes/paths over time,
+    // so probe the known ones and keep the raw answer for diagnostics rather than
+    // failing with an opaque "not found".
     let paymentId: number | undefined;
-    try {
-      const pmRes = await fetch(`${VENDUS_BASE}/paymentmethods/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
-        headers: { "Authorization": VENDUS_AUTH },
-      });
-      const pmList: any = await pmRes.json().catch(() => []);
-      if (Array.isArray(pmList) && pmList.length) {
-        const isCard = existing.payment_method && existing.payment_method !== "cash";
-        const wanted = isCard ? /multibanco|cart|card|tpa/i : /numer|dinheiro|cash|esp/i;
-        const match = pmList.find((p: any) => wanted.test(String(p.title || p.name || "")));
-        paymentId = Number((match || pmList[0]).id);
-      }
-    } catch { /* fall through to the explicit error below */ }
+    const pmDebug: any = {};
+    for (const path of ["/paymentmethods/", "/paymentmethods", "/payment_methods/"]) {
+      try {
+        const pmRes = await fetch(`${VENDUS_BASE}${path}?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
+          headers: { "Authorization": VENDUS_AUTH, "Accept": "application/json" },
+        });
+        const raw = await pmRes.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(raw); } catch { /* keep raw for debugging */ }
+        pmDebug[path] = { status: pmRes.status, body: parsed ?? raw.slice(0, 400) };
+        const list = Array.isArray(parsed) ? parsed
+          : Array.isArray(parsed?.data) ? parsed.data
+          : Array.isArray(parsed?.paymentmethods) ? parsed.paymentmethods
+          : null;
+        if (list?.length) {
+          const isCard = existing.payment_method && existing.payment_method !== "cash";
+          const wanted = isCard ? /multibanco|cart|card|tpa/i : /numer|dinheiro|cash|esp/i;
+          const match = list.find((p: any) => wanted.test(String(p.title || p.name || p.description || "")));
+          const chosen = match || list[0];
+          if (chosen?.id != null) { paymentId = Number(chosen.id); break; }
+        }
+      } catch (e) { pmDebug[path] = { error: String(e) }; }
+    }
 
     if (!paymentId) {
       return json({
         ok: false,
         error: "no Vendus payment method found",
-        fix: "Vendus → Configurações → Tipos de Pagamento: create at least one payment method",
+        fix: "Vendus → Configurações → Tipos de Pagamento",
+        vendus_paymentmethods_debug: pmDebug,
       }, 502);
     }
 
