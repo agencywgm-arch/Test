@@ -6782,13 +6782,13 @@ function ClientView({ restaurant, onBack }) {
 
       let { data: order, error } = await supabase.from("orders")
         .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING", payment_method: paymentMethod })
-        .select().single();
+        .select("id").single();
 
       // Fallback si colonnes pas encore migrées
       if (error && (error.message?.includes("column") || error.message?.includes("payment_method"))) {
         ({ data: order, error } = await supabase.from("orders")
           .insert({ restaurant_id: restaurant.id, table_id: tbl?.id, note, total, status: "PENDING" })
-          .select().single());
+          .select("id").single());
       }
 
       if (error || !order) { setOrderError("Erreur commande : " + (error?.message || "réessayez")); setOrdering(false); return; }
@@ -8722,36 +8722,58 @@ function CustomerPage({ slug, tableNum }) {
       }
 
       const nif = customerNif && customerNif.length === 9 ? customerNif : null;
-      let { data: order, error } = await supabase.from("orders")
-        .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
-        .select().single();
+      // IMPORTANT: only ever ask PostgREST to return `id` (via RETURNING) here.
+      // A past migration revoked anonymous SELECT on the personal-data columns
+      // (customer_name, customer_email, note, customer_nif) — a bare `.select()`
+      // asks for every column back, and Postgres requires SELECT privilege on
+      // every column named in RETURNING, so it silently failed the INSERT
+      // itself, not just a later read. Requesting only "id" back keeps working
+      // no matter how those columns' read privileges are configured.
+      const orderPayloadFull = { restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" };
+      let { data: order, error } = await supabase.from("orders").insert(orderPayloadFull).select("id").single();
 
       // Fallback -1: without customer_nif column (not migrated yet)
       if (error && /customer_nif/i.test(error.message || "")) {
-        ({ data: order, error } = await supabase.from("orders")
-          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" })
-          .select().single());
+        const { customer_nif, ...payload } = orderPayloadFull;
+        ({ data: order, error } = await supabase.from("orders").insert(payload).select("id").single());
       }
       // Fallback 0: without paid column (not migrated yet)
       if (error && error.message?.includes("paid")) {
-        ({ data: order, error } = await supabase.from("orders")
-          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null })
-          .select().single());
+        const { customer_nif, paid, order_type, ...payload } = orderPayloadFull;
+        ({ data: order, error } = await supabase.from("orders").insert(payload).select("id").single());
       }
       // Fallback 1: without customer fields
       if (error) {
         ({ data: order, error } = await supabase.from("orders")
           .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod })
-          .select().single());
+          .select("id").single());
       }
       // Fallback 2: without payment_method either
       if (error) {
         ({ data: order, error } = await supabase.from("orders")
           .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING" })
-          .select().single());
+          .select("id").single());
       }
 
-      if (error || !order) { setConfirmError("Erreur lors de la commande : " + (error?.message || "réessayez")); setConfirming(false); return; }
+      if (error || !order) {
+        // Never let a failed insert vanish with just an on-screen message: keep
+        // a durable local trace (cart, totals, customer info, payment method)
+        // so staff can reconstruct and honor the order/payment even if the
+        // database write is broken for some unforeseen reason.
+        try {
+          const failLog = JSON.parse(localStorage.getItem("vg_failed_orders") || "[]");
+          failLog.push({
+            at: new Date().toISOString(), restaurant_id: restaurant.id, table: tableNum,
+            cart, total, paymentMethod, customerName, customerEmail, customerPhone, note,
+            error: error?.message || "unknown",
+          });
+          localStorage.setItem("vg_failed_orders", JSON.stringify(failLog.slice(-20)));
+        } catch {}
+        setConfirmError("Erreur lors de l'enregistrement de la commande (" + (error?.message || "réessayez") + "). Montrez cet écran au personnel — votre commande a été sauvegardée localement sur cet appareil pour ne rien perdre.");
+        setConfirming(false);
+        confirmingRef.current = false;
+        return;
+      }
 
       const orderItems = cart.map(i => {
         const choices = i._choices || {};
