@@ -3169,6 +3169,27 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
 
   const audioUnlocked = useOrderAudioUnlocked();
 
+  const [deletingId, setDeletingId] = useState(null);
+  async function deleteOrder(o) {
+    if (deletingId) return;
+    if (!confirm(`Supprimer définitivement la commande #${o.id.slice(0, 6).toUpperCase()} (${o.total.toFixed(2)} €) ?\n\nCette action est irréversible.`)) return;
+    setDeletingId(o.id);
+    try {
+      if (resolvedRestaurant.id !== "demo") {
+        const { error } = await supabase.from("orders").delete().eq("id", o.id);
+        if (error) throw error;
+      }
+      // order_items cascade-delete automatically with the order (FK ON DELETE CASCADE).
+      if (storeCtx?.setOrders) storeCtx.setOrders(prev => prev.filter(x => x.id !== o.id));
+      if (storeCtx?.setDoneOrders) storeCtx.setDoneOrders(prev => prev.filter(x => x.id !== o.id));
+      storeCtx?.pushNotif?.("🗑️ Commande supprimée", "success");
+    } catch (err) {
+      storeCtx?.pushNotif?.("Erreur : " + (err.message || err), "warning");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="fade-in">
       {!audioUnlocked && (
@@ -3239,6 +3260,10 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
               {o.status !== "served" && (
                 <button onClick={() => setEditOrder(o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, color: C.textSecondary, flexShrink: 0, ...FF }} title="Modifier la commande">✏️</button>
               )}
+              <button onClick={() => deleteOrder(o)} disabled={deletingId === o.id}
+                style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: deletingId === o.id ? "wait" : "pointer", fontSize: 13, color: C.accent, flexShrink: 0, opacity: deletingId === o.id ? 0.5 : 1, ...FF }} title="Supprimer la commande">
+                {deletingId === o.id ? "…" : "🗑️"}
+              </button>
             </div>
           );
         })}
