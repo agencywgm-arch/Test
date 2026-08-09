@@ -3178,6 +3178,7 @@ function QRTab({ restaurant }) {
   const isMobile = useIsMobile();
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const origin = customBase || window.location.origin;
+  const [scanCount, setScanCount] = useState(0);
 
   useEffect(() => {
     if (isDemo) {
@@ -3193,6 +3194,19 @@ function QRTab({ restaurant }) {
         if (rows.length > 0) setSel(rows[0]);
       });
   }, [restaurant.id]);
+
+  // Real-time scan counter: initial count + live increment on every new scan,
+  // so this card reflects reality instead of a hardcoded 0.
+  useEffect(() => {
+    if (isDemo) { setScanCount(0); return; }
+    supabase.from("qr_scans").select("id", { count: "exact", head: true }).eq("restaurant_id", restaurant.id)
+      .then(({ count }) => setScanCount(count ?? 0));
+    const ch = supabase.channel(`qr-scans-${restaurant.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "qr_scans", filter: `restaurant_id=eq.${restaurant.id}` },
+        () => setScanCount(c => c + 1))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [restaurant.id, isDemo]);
 
   const selNum = sel?.number ?? 1;
   const url = sel?.qr_url || `${origin}${BASE_PATH}/r/${restaurant.id}/t/${selNum}`;
@@ -3360,7 +3374,7 @@ function QRTab({ restaurant }) {
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: 16 }}>
       <div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
-          {[["Tables", tables.length], ["QR actifs", tables.length], ["Scans totaux", 0]].map(([l, v]) => (
+          {[["Tables", tables.length], ["QR actifs", tables.length], ["Scans totaux", scanCount]].map(([l, v]) => (
             <Surface key={l} style={{ padding: "16px 18px" }}>
               <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 6, fontWeight: 500 }}>{l}</p>
               <p style={{ fontSize: 24, fontWeight: 800, color: C.dark }}>{v}</p>
@@ -7940,6 +7954,7 @@ function CRMTab({ restaurant, store }) {
                   { label: "Dernière visite", value: `J-${selected.days}` },
                   { label: "1ère visite", value: selected.first_visit ? new Date(selected.first_visit).toLocaleDateString("fr-FR") : "—" },
                   { label: "Téléphone", value: selected.phone || "—" },
+                  { label: "NIF", value: selected.nif || "—" },
                 ].map(r => (
                   <div key={r.label} style={{ background: C.bg, borderRadius: 10, padding: "10px 12px" }}>
                     <p style={{ fontSize: 11, color: C.textTertiary, marginBottom: 3 }}>{r.label}</p>
@@ -8456,6 +8471,13 @@ function CustomerPage({ slug, tableNum }) {
         ]);
         setTableId(tblRes.data?.id ?? null);
         setTableLabel(tblRes.data?.label ?? null);
+        // Log this QR scan for the dashboard's real-time analytics. Fire-and-forget:
+        // never block or fail the customer's page load if this insert has trouble.
+        supabase.from("qr_scans").insert({
+          restaurant_id: resto.id,
+          table_id: tblRes.data?.id ?? null,
+          table_number: tableNum,
+        }).then(() => {}, () => {});
         // deduplicate by id in case DB has duplicate rows
         const raw = itemsRes.data ?? [];
         const seen = new Set();
@@ -8841,17 +8863,27 @@ function CustomerPage({ slug, tableNum }) {
           savedAt: Date.now(),
         }));
       } catch {}
-      // Upsert customer profile + send receipt email
+      // Upsert customer profile (CRM) + send receipt email
       try {
         if (customerEmail.trim()) {
-          await supabase.from("customers").upsert({
+          const custPayloadFull = {
             restaurant_id: restaurant.id,
             email: customerEmail.trim().toLowerCase(),
             first_name: customerName.trim() || "Client",
             phone: customerPhone.trim() || "",
+            nif: nif || null,
             last_visit: new Date().toISOString().split("T")[0],
             last_order_total: total,
-          }, { onConflict: "restaurant_id,email", ignoreDuplicates: false });
+          };
+          let { error: custErr } = await supabase.from("customers")
+            .upsert(custPayloadFull, { onConflict: "restaurant_id,email", ignoreDuplicates: false });
+          // Fallback if the `nif` column hasn't been migrated on this project yet.
+          if (custErr && /nif/i.test(custErr.message || "")) {
+            const { nif, ...withoutNif } = custPayloadFull;
+            ({ error: custErr } = await supabase.from("customers")
+              .upsert(withoutNif, { onConflict: "restaurant_id,email", ignoreDuplicates: false }));
+          }
+          if (custErr) console.error("[CRM] customer upsert failed:", custErr.message);
 
           // Send receipt email immediately only for paid (card) orders.
           // Cash orders: the cashier triggers the PAYÉ receipt from the live orders view.
