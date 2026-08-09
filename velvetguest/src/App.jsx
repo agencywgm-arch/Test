@@ -424,6 +424,21 @@ function useSilencedOrders() {
   return __silencedOrderIds;
 }
 
+// Retries an Edge Function call a few times with short backoff before giving
+// up. Receipt emails and fiscal invoices are important enough that a single
+// transient network/cold-start hiccup should never be the reason one never
+// goes out — this is deliberately used everywhere those two are triggered.
+async function invokeWithRetry(fnName, body, attempts = 3) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    const { data, error } = await supabase.functions.invoke(fnName, { body });
+    if (!error && !data?.error) return { data, error: null };
+    lastErr = error || new Error(data?.error || "unknown error");
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
+  }
+  return { data: null, error: lastErr };
+}
+
 // Browsers only allow AudioContext.resume() to actually take effect when it
 // runs inside a real user-gesture call stack (click/touch/key). A generic
 // "click anywhere" listener can fire too late or be swallowed by an
@@ -758,16 +773,20 @@ function useStore(restaurantId) {
       }
       const fresh = fmtd.filter(o => !knownIds.has(o.id));
       fresh.forEach(o => knownIds.add(o.id));
-      if (fresh.length === 0) return;
+      const activeIds = new Set(fmtd.map(o => o.id));
       setOrders(prev => {
         const existing = new Set(prev.map(o => o.id));
         const newcomers = fresh.filter(o => !existing.has(o.id));
-        if (newcomers.length === 0) return prev;
+        // Full reconciliation: also drop any order the dashboard still shows
+        // that the server no longer lists as active (deleted elsewhere, or
+        // moved to DONE while the realtime UPDATE/DELETE event was missed).
+        const stillActive = prev.filter(o => activeIds.has(o.id));
+        if (newcomers.length === 0 && stillActive.length === prev.length) return prev;
         newcomers.forEach(o => {
           pushNotif(`Commande #${o.shortId} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new");
         });
-        playOrderAlarm();
-        return [...newcomers, ...prev];
+        if (newcomers.length > 0) playOrderAlarm();
+        return [...newcomers, ...stillActive];
       });
     };
     reconcile();
@@ -3146,12 +3165,9 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
       // A failed call is surfaced to the cashier instead of vanishing silently —
       // that silence was exactly why missing invoices/receipts went unnoticed.
       if (resolvedRestaurant.id !== "demo") {
-        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: o.id } })
-          .then(({ data, error }) => {
-            if (error) { storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${error.message}`, "warning"); return; }
-            if (data?.error) storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${data.error}`, "warning");
-          })
-          .catch(err => storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) : ${err?.message || err}`, "warning"));
+        invokeWithRetry("create-vendus-invoice", { order_id: o.id }).then(({ error }) => {
+          if (error) storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) après 3 tentatives : ${error.message}`, "warning");
+        });
       }
 
       // Send the PAYÉ receipt by email if the customer left one
@@ -3165,12 +3181,11 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
           .filter(Boolean).map(l => `<p style="color:rgba(255,255,255,0.55);margin:2px 0 0;font-size:11px;">${l}</p>`).join("");
         const itemsHtml = o.items.map(i => `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;">${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ""}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:700;font-size:14px;">${(i.price * i.qty).toFixed(2)} €</td></tr>`).join("");
         const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${resolvedRestaurant.name || ""}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${o.table} · ${new Date(o.createdAt).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${o.shortId || o.id.slice(0,8).toUpperCase()}</p>${o.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${o.customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${o.total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : Espèces</p><div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${tk?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
-        supabase.functions.invoke("send-receipt-email", {
-          body: { restaurant_id: resolvedRestaurant.id, to_email: o.customerEmail, subject: `Votre reçu — ${resolvedRestaurant.name || "Wegemo"}`, html_body: receiptHtml }
-        }).then(({ data, error }) => {
-          if (error || data?.error) { storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) : ${(error?.message || data?.error)}. Configurez Resend dans Paramètres → Email.`, "warning"); return; }
-          supabase.from("orders").update({ receipt_email_sent: true }).eq("id", o.id).then(() => {});
-        }).catch(err => storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) : ${err?.message || err}`, "warning"));
+        invokeWithRetry("send-receipt-email", { restaurant_id: resolvedRestaurant.id, to_email: o.customerEmail, subject: `Votre reçu — ${resolvedRestaurant.name || "Wegemo"}`, html_body: receiptHtml })
+          .then(({ error }) => {
+            if (error) { storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) après 3 tentatives : ${error.message}. Configurez Resend dans Paramètres → Email.`, "warning"); return; }
+            supabase.from("orders").update({ receipt_email_sent: true }).eq("id", o.id).then(() => {});
+          });
       }
     } finally {
       setPayingIds(p => ({ ...p, [o.id]: false }));
@@ -6473,6 +6488,14 @@ function useLiveOrders(restaurantId, pushNotif) {
           if (labels[updated.status]) pushNotif(`Table ${updated.table} — Commande ${labels[updated.status]}`, updated.status === "ready" ? "warning" : "info");
         }
       )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
+        ({ old: row }) => {
+          // A deleted order must vanish from the kitchen board instantly too —
+          // otherwise a cook keeps preparing something that's been cancelled.
+          setOrders(prev => prev.filter(o => o.id !== row.id));
+          setServed(prev => prev.filter(o => o.id !== row.id));
+        }
+      )
       .subscribe();
 
     // Tick elapsed time every minute
@@ -6491,11 +6514,17 @@ function useLiveOrders(restaurantId, pushNotif) {
       if (!data) return;
       setOrders(prev => {
         const known = new Set(prev.map(o => o.id));
+        const incomingIds = new Set(data.map(o => o.id));
         const incoming = data.map(fmt);
         const fresh = incoming.filter(o => !known.has(o.id));
-        if (fresh.length === 0) return prev;
+        // Full reconciliation, not just additions: also drop anything the board
+        // still shows that the server no longer lists as active (deleted, or
+        // moved to DONE by another screen — the websocket UPDATE/DELETE event
+        // for that could itself have been the one silently dropped).
+        const stillActive = prev.filter(o => incomingIds.has(o.id));
+        if (fresh.length === 0 && stillActive.length === prev.length) return prev;
         fresh.forEach(o => pushNotif(`Commande #${o.id.slice(0,6).toUpperCase()} — Table ${o.table}${o.customerName ? ` · ${o.customerName}` : ""}`, "new"));
-        return [...fresh, ...prev];
+        return [...fresh, ...stillActive];
       });
     }, 3000);
 
@@ -9126,9 +9155,8 @@ function CustomerPage({ slug, tableNum }) {
       // Portuguese fiscal invoice via the Vendus API right away. Cash orders
       // trigger this later when the cashier marks them as paid at the counter.
       if (paymentMethod !== "cash") {
-        supabase.functions.invoke("create-vendus-invoice", { body: { order_id: order.id } })
-          .then(({ data, error }) => { if (error || data?.error) console.error("[vendus] invoice failed for order", order.id, error?.message || data?.error); })
-          .catch(err => console.error("[vendus] invoice failed for order", order.id, err));
+        invokeWithRetry("create-vendus-invoice", { order_id: order.id })
+          .then(({ error }) => { if (error) console.error("[vendus] invoice failed for order", order.id, "after 3 attempts:", error.message); });
       }
       // Persist so a page refresh keeps the customer on the tracking screen instead of dumping them back to the menu
       try {
@@ -9181,12 +9209,11 @@ function CustomerPage({ slug, tableNum }) {
             ? `<div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div>`
             : `<div style="border:2px solid #FF9F0A;background:#FF9F0A10;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#C77700;font-weight:900;font-size:16px;letter-spacing:.04em;">💵 À PAYER À LA CAISSE</span><br/><span style="color:#C77700;font-size:12px;font-weight:600;">Présentez ce ticket au comptoir</span></div>`;
           const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p>${statusHtml}<p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
-          supabase.functions.invoke("send-receipt-email", {
-            body: { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml }
-          }).then(({ data, error }) => {
-            if (error || data?.error) { console.error("[receipt-email] failed for order", order.id, error?.message || data?.error); return; }
-            supabase.from("orders").update({ receipt_email_sent: true }).eq("id", order.id).then(() => {});
-          }).catch(err => console.error("[receipt-email] failed for order", order.id, err));
+          invokeWithRetry("send-receipt-email", { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml })
+            .then(({ error }) => {
+              if (error) { console.error("[receipt-email] failed for order", order.id, "after 3 attempts:", error.message); return; }
+              supabase.from("orders").update({ receipt_email_sent: true }).eq("id", order.id).then(() => {});
+            });
           }
         }
       } catch {}
