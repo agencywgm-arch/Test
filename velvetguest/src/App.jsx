@@ -3212,7 +3212,10 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
       // that silence was exactly why missing invoices/receipts went unnoticed.
       if (resolvedRestaurant.id !== "demo") {
         invokeWithRetry("create-vendus-invoice", { order_id: o.id }).then(({ error }) => {
-          if (error) storeCtx?.pushNotif?.(`⚠️ Facture Vendus non émise (Table ${o.table}) après 3 tentatives : ${error.message}`, "warning");
+          // Logged only, never shown to staff: the Vendus/AT setup is still in
+          // progress and these toasts were popping up during service. The
+          // Caisse tab remains the place to see and fix missing invoices.
+          if (error) console.error("[vendus] invoice failed for order", o.id, "after 3 attempts:", error.message);
         });
       }
 
@@ -3229,7 +3232,9 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
         const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${resolvedRestaurant.name || ""}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${o.table} · ${new Date(o.createdAt).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${o.shortId || o.id.slice(0,8).toUpperCase()}</p>${o.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 20px;">${o.customerName}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${o.total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : Espèces</p><div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div><p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${tk?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
         invokeWithRetry("send-receipt-email", { restaurant_id: resolvedRestaurant.id, to_email: o.customerEmail, subject: `Votre reçu — ${resolvedRestaurant.name || "Wegemo"}`, html_body: receiptHtml })
           .then(({ error }) => {
-            if (error) { storeCtx?.pushNotif?.(`⚠️ Email de reçu non envoyé (Table ${o.table}) après 3 tentatives : ${error.message}. Configurez Resend dans Paramètres → Email.`, "warning"); return; }
+            // Logged only — no toast during service. `receipt_email_sent` on the
+            // order stays the source of truth for auditing what actually went out.
+            if (error) { console.error("[receipt-email] failed for order", o.id, "after 3 attempts:", error.message); return; }
             supabase.from("orders").update({ receipt_email_sent: true }).eq("id", o.id).then(() => {});
           });
       }
