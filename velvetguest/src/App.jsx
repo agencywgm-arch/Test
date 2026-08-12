@@ -8976,7 +8976,21 @@ function CustomerPage({ slug, tableNum }) {
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
   }, [lang]);
 
-  // Translate menu items when language changes (unofficial Google Translate, no key needed)
+  // Translate menu items when language changes (unofficial Google Translate, no
+  // key needed). Covers name/description AND the composition data (supplement
+  // group names, their option names, extras names) — those used to stay in
+  // French because only name/description were ever sent through translation,
+  // which is exactly what showed up untranslated inside the compose tunnel.
+  const gtranslateLive = async (text, tl) => {
+    if (!text?.trim()) return text;
+    try {
+      const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`);
+      if (!res.ok) return text;
+      const json = await res.json();
+      return json?.[0]?.map(s => s[0]).join("") || text;
+    } catch { return text; }
+  };
+
   useEffect(() => {
     if (lang === "fr" || menuItems.length === 0) return;
     const uncached = menuItems.filter(i => !translCache[`${lang}:${i.id}`]);
@@ -8985,17 +8999,27 @@ function CustomerPage({ slug, tableNum }) {
       const results = {};
       await Promise.all(uncached.map(async (item) => {
         try {
-          const [tName, tDesc] = await Promise.all(
-            [item.name, item.description || ""].map(async (t) => {
-              if (!t) return t;
-              const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${lang}&dt=t&q=${encodeURIComponent(t)}`);
-              if (!res.ok) return t;
-              const json = await res.json();
-              return json?.[0]?.map(s => s[0]).join("") || t;
-            })
-          );
-          results[`${lang}:${item.id}`] = { name: tName || item.name, description: tDesc || item.description };
-        } catch { results[`${lang}:${item.id}`] = { name: item.name, description: item.description }; }
+          const [tName, tDesc] = await Promise.all([
+            gtranslateLive(item.name, lang),
+            item.description ? gtranslateLive(item.description, lang) : Promise.resolve(""),
+          ]);
+          const groups = Array.isArray(item.supplements) ? item.supplements : [];
+          const tGroups = await Promise.all(groups.map(async (g) => {
+            const [tGroupName, tOptions] = await Promise.all([
+              gtranslateLive(g.groupName, lang),
+              Promise.all((g.options || []).map(async (o) => ({ ...o, name: await gtranslateLive(o.name, lang) }))),
+            ]);
+            return { ...g, groupName: tGroupName || g.groupName, options: tOptions };
+          }));
+          const extrasList = Array.isArray(item.extras) ? item.extras : [];
+          const tExtras = await Promise.all(extrasList.map(async (e) => ({ ...e, name: await gtranslateLive(e.name, lang) })));
+          results[`${lang}:${item.id}`] = {
+            name: tName || item.name, description: tDesc || item.description,
+            supplements: tGroups, extras: tExtras,
+          };
+        } catch {
+          results[`${lang}:${item.id}`] = { name: item.name, description: item.description, supplements: item.supplements, extras: item.extras };
+        }
       }));
       setTranslCache(prev => ({ ...prev, ...results }));
     })();
@@ -9004,9 +9028,19 @@ function CustomerPage({ slug, tableNum }) {
   function tItem(item) {
     // Prefer stored translations (set by admin) over live API cache
     const stored = item.translations?.[lang];
-    if (stored?.name) return { ...item, name: stored.name, description: stored.description || item.description };
     const t = translCache[`${lang}:${item.id}`];
-    return t ? { ...item, name: t.name || item.name, description: t.description || item.description } : item;
+    if (stored?.name) {
+      return {
+        ...item,
+        name: stored.name,
+        description: stored.description || item.description,
+        // Admin translation UI only covers name/description today — fall back
+        // to the live-translated composition data so it's never left in French.
+        supplements: stored.supplements || t?.supplements || item.supplements,
+        extras: stored.extras || t?.extras || item.extras,
+      };
+    }
+    return t ? { ...item, name: t.name || item.name, description: t.description || item.description, supplements: t.supplements || item.supplements, extras: t.extras || item.extras } : item;
   }
 
   function addToCart(item) {
