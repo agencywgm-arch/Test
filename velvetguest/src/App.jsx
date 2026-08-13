@@ -9612,12 +9612,24 @@ function CustomerPage({ slug, tableNum }) {
       // Upsert customer profile (CRM) + send receipt email
       try {
         if (customerEmail.trim()) {
+          const custEmail = customerEmail.trim().toLowerCase();
+          // Never let a repeat order with a blank optional field (phone, NIF)
+          // erase what a PREVIOUS order already captured — merge onto the
+          // existing record instead of blindly overwriting it. This is the
+          // actual meaning of "keep all its data" for a CRM: nothing already
+          // on file should ever be wiped out by a later, less-complete order.
+          let existingCust = null;
+          try {
+            const { data } = await supabase.from("customers")
+              .select("phone, nif").eq("restaurant_id", restaurant.id).eq("email", custEmail).maybeSingle();
+            existingCust = data;
+          } catch {}
           const custPayloadFull = {
             restaurant_id: restaurant.id,
-            email: customerEmail.trim().toLowerCase(),
+            email: custEmail,
             first_name: customerName.trim() || "Client",
-            phone: customerPhone.trim() || "",
-            nif: nif || null,
+            phone: customerPhone.trim() || existingCust?.phone || "",
+            nif: nif || existingCust?.nif || null,
             last_visit: new Date().toISOString().split("T")[0],
             last_order_total: total,
           };
