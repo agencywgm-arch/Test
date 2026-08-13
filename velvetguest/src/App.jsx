@@ -7353,13 +7353,17 @@ function ClientView({ restaurant, onBack }) {
   async function confirmOrder(paymentMethod = "cash") {
     setOrdering(true); setOrderError("");
     try {
-      // Find or auto-create table 1
+      // Find or auto-create table 1. See the matching comment in CustomerPage's
+      // confirm() for why this is an upsert+ignoreDuplicates and not a plain insert.
       let { data: tbl } = await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).single();
       if (!tbl) {
-        const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` })
-          .select("id").single();
-        tbl = newTbl;
+        const { data: upserted } = await supabase.from("tables")
+          .upsert(
+            { restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` },
+            { onConflict: "restaurant_id,number", ignoreDuplicates: true }
+          )
+          .select("id");
+        tbl = upserted?.[0] || (await supabase.from("tables").select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).maybeSingle()).data;
       }
 
       let { data: order, error } = await supabase.from("orders")
@@ -9391,13 +9395,31 @@ function CustomerPage({ slug, tableNum }) {
       return;
     }
     try {
-      // Auto-create table if not found
+      // Auto-create table if not found. Uses upsert+ignoreDuplicates instead of
+      // a plain insert: table 0 (the QR with no fixed physical table — used by
+      // several customers at once) can have two people hit this exact code path
+      // within milliseconds. A plain insert then fails on the (restaurant_id,
+      // number) unique constraint for whoever loses the race; since only `data`
+      // was read (the `error` was silently dropped), tid stayed null and the
+      // order insert below failed on orders.table_id NOT NULL — the order was
+      // never created at all, not just delayed. ignoreDuplicates makes the
+      // loser's insert a no-op instead of an error, then we just look the row up.
       let tid = tableId;
       if (!tid) {
-        const { data: newTbl } = await supabase.from("tables")
-          .insert({ restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` })
-          .select("id").single();
-        tid = newTbl?.id ?? null;
+        const { data: upserted } = await supabase.from("tables")
+          .upsert(
+            { restaurant_id: restaurant.id, number: tableNum, qr_url: `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}` },
+            { onConflict: "restaurant_id,number", ignoreDuplicates: true }
+          )
+          .select("id");
+        tid = upserted?.[0]?.id ?? null;
+        if (!tid) {
+          // Lost the race (or the row already existed before this page load):
+          // the winner's row is there, just go read its id.
+          const { data: existingTbl } = await supabase.from("tables")
+            .select("id").eq("restaurant_id", restaurant.id).eq("number", tableNum).maybeSingle();
+          tid = existingTbl?.id ?? null;
+        }
       }
 
       const nif = customerNif && customerNif.length === 9 ? customerNif : null;
