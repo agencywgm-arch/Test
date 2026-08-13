@@ -8488,13 +8488,6 @@ alter table customers add column if not exists nif text;`}
           </pre>
         </div>
       )}
-      {!store?.customersError && customers.length === 0 && (
-        <div style={{ background: "#FFF8E7", border: "1.5px solid #FFD60A40", borderRadius: 14, padding: "14px 18px", marginBottom: 16 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#7A5C00" }}>
-            Aucun client enregistré pour l'instant. Vérifiez qu'un client a bien passé une commande complète (nom + email obligatoires) depuis la mise à jour du menu QR.
-          </p>
-        </div>
-      )}
 
       {/* Gmail + Campaign */}
       <GmailConnectSection restaurant={restaurant} />
