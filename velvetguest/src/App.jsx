@@ -595,6 +595,7 @@ function useStore(restaurantId) {
   const [ingredients, setIngredients] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [customersError, setCustomersError] = useState("");
 
   const pushNotif = useCallback((msg, type = "info") => {
     const n = { id: Date.now(), msg, type, ts: new Date() };
@@ -679,7 +680,14 @@ function useStore(restaurantId) {
 
     supabase.from("customers").select("*").eq("restaurant_id", restaurantId)
       .order("last_visit", { ascending: false })
-      .then(({ data }) => setCustomers(data ?? []));
+      .then(({ data, error }) => {
+        // The read side used to silently fall back to an empty array on any
+        // error, which is indistinguishable from "genuinely no customers yet" —
+        // exactly the confusion that made this bug hard to pin down.
+        if (error) { console.error("[CRM] customers read failed:", error.message); setCustomersError(error.message); return; }
+        setCustomersError("");
+        setCustomers(data ?? []);
+      });
 
     supabase.from("orders").select(ORDER_QUERY)
       .eq("restaurant_id", restaurantId).neq("status", "DONE")
@@ -837,7 +845,7 @@ function useStore(restaurantId) {
 
   const revenue = doneOrders.reduce((s, o) => s + o.total, 0);
   const clearNotifHistory = useCallback(() => setNotifHistory([]), []);
-  return { orders, setOrders, servedOrders: doneOrders, doneOrders, setDoneOrders, notifications, notifHistory, pushNotif, silentNotif, clearNotifHistory, revenue, ingredients, promotions, setPromotions, customers, setCustomers, launchCampaign };
+  return { orders, setOrders, servedOrders: doneOrders, doneOrders, setDoneOrders, notifications, notifHistory, pushNotif, silentNotif, clearNotifHistory, revenue, ingredients, promotions, setPromotions, customers, setCustomers, customersError, launchCampaign };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8460,6 +8468,34 @@ function CRMTab({ restaurant, store }) {
 
   return (
     <div>
+      {store?.customersError && (
+        <div style={{ background: "#FFF0F3", border: `1.5px solid ${C.accent}40`, borderRadius: 14, padding: "14px 18px", marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: C.accent, marginBottom: 4 }}>⚠️ Le CRM ne peut pas lire ses données</p>
+          <p style={{ fontSize: 12.5, color: "#8A2036", lineHeight: 1.5 }}>
+            La base a répondu : <code style={{ background: "rgba(0,0,0,0.06)", padding: "1px 5px", borderRadius: 4 }}>{store.customersError}</code>
+            <br />Ce n'est pas "aucun client" — c'est que la lecture échoue. Exécutez dans Supabase SQL Editor :
+          </p>
+          <pre style={{ background: "rgba(0,0,0,0.06)", borderRadius: 8, padding: "8px 10px", fontSize: 11, marginTop: 8, whiteSpace: "pre-wrap", color: "#8A2036" }}>
+{`drop policy if exists "Anyone can create their own customer profile" on customers;
+create policy "Anyone can create their own customer profile"
+  on customers for insert with check (true);
+
+drop policy if exists "Anyone can update their own customer profile" on customers;
+create policy "Anyone can update their own customer profile"
+  on customers for update using (true);
+
+alter table customers add column if not exists nif text;`}
+          </pre>
+        </div>
+      )}
+      {!store?.customersError && customers.length === 0 && (
+        <div style={{ background: "#FFF8E7", border: "1.5px solid #FFD60A40", borderRadius: 14, padding: "14px 18px", marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#7A5C00" }}>
+            Aucun client enregistré pour l'instant. Vérifiez qu'un client a bien passé une commande complète (nom + email obligatoires) depuis la mise à jour du menu QR.
+          </p>
+        </div>
+      )}
+
       {/* Gmail + Campaign */}
       <GmailConnectSection restaurant={restaurant} />
       <CampaignSender restaurant={restaurant} customers={withSegment} />
