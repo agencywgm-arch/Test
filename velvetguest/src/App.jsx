@@ -2941,9 +2941,35 @@ function StockAlerts({ restaurantId }) {
   );
 }
 
+// Live scan feed, shown on the dashboard's main screen so scans are visible
+// without digging into the QR codes tab. Newest first, realtime + a 15s poll
+// safety net (same reconciliation pattern used for orders elsewhere).
+function useLiveScans(restaurantId) {
+  const [scans, setScans] = useState([]);
+  useEffect(() => {
+    if (!restaurantId || restaurantId === "demo") return;
+    const load = () => {
+      supabase.from("qr_scans")
+        .select("id, table_number, scanned_at, order_id, orders(customer_name, customer_email, payment_method, total, paid)")
+        .eq("restaurant_id", restaurantId)
+        .order("scanned_at", { ascending: false })
+        .limit(8)
+        .then(({ data }) => { if (data) setScans(data); });
+    };
+    load();
+    const ch = supabase.channel(`live-scans-${restaurantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "qr_scans", filter: `restaurant_id=eq.${restaurantId}` }, load)
+      .subscribe();
+    const poll = setInterval(load, 15000);
+    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+  }, [restaurantId]);
+  return scans;
+}
+
 function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const [weeklyRev, setWeeklyRev] = useState(Array(7).fill(0));
   const isMobile = useIsMobile();
+  const liveScans = useLiveScans(restaurant.id);
 
   useEffect(() => {
     if (restaurant.id === "demo") {
@@ -3056,6 +3082,40 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
           })}
         </Surface>
       </div>
+
+      {/* Live scan feed — every QR scan as it happens, with the order it turned
+          into (customer, payment) when there is one. */}
+      {restaurant.id !== "demo" && (
+        <Surface style={{ padding: "22px 24px", marginTop: isMobile ? 8 : 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.accentGreen, boxShadow: `0 0 0 3px ${C.accentGreen}25`, flexShrink: 0 }} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>Scans en direct</p>
+          </div>
+          <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 16 }}>
+            {liveScans.length === 0 ? "Aucun scan pour l'instant" : "Derniers QR scannés, mis à jour en temps réel"}
+          </p>
+          {liveScans.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 0", color: C.textTertiary, fontSize: 13 }}>En attente du premier scan 👀</div>
+          ) : liveScans.map(s => {
+            const o = s.orders;
+            const mins = Math.max(0, Math.round((Date.now() - new Date(s.scanned_at).getTime()) / 60000));
+            return (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: o ? C.accentGreen + "18" : C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: o ? C.accentGreen : C.textTertiary, flexShrink: 0 }}>
+                  T{s.table_number ?? "?"}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {o ? (o.customer_name || o.customer_email || "Commande passée") : "Menu consulté"}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.textTertiary }}>{mins < 1 ? "à l'instant" : `il y a ${mins} min`}</div>
+                </div>
+                {o ? <Tag color={C.accentGreen}>{Number(o.total || 0).toFixed(2)}€</Tag> : <Tag color={C.textTertiary}>Scan</Tag>}
+              </div>
+            );
+          })}
+        </Surface>
+      )}
     </div>
   );
 }
@@ -9939,9 +9999,9 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           )}
           <button
-            onClick={() => { if (!customerEmail.trim()) return; total === 0 ? confirm("free") : setStep("payment"); }}
-            disabled={!customerEmail.trim()}
-            style={{ width: "100%", padding: "16px", background: customerEmail.trim() ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: customerEmail.trim() ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
+            onClick={() => { if (!customerName.trim() || !customerEmail.trim()) return; total === 0 ? confirm("free") : setStep("payment"); }}
+            disabled={!customerName.trim() || !customerEmail.trim()}
+            style={{ width: "100%", padding: "16px", background: (customerName.trim() && customerEmail.trim()) ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: (customerName.trim() && customerEmail.trim()) ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
             {total === 0 ? "✓ Confirmer la commande gratuite" : "Continuer vers le paiement →"}
           </button>
           <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
