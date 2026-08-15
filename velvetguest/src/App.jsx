@@ -362,6 +362,8 @@ function fmtOrder(o) {
     payment_method: o.payment_method || "cash",
     order_type: o.order_type || "dine_in",
     paid: o.paid === true,
+    stripePaymentIntentId: o.stripe_payment_intent_id || null,
+    refunded: o.refunded === true,
     status: fmtStatus(o.status),
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
     items: (o.order_items || []).map(oi => ({
@@ -3334,6 +3336,25 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
     }
   }
 
+  const [refundingId, setRefundingId] = useState(null);
+  async function refundOrder(o) {
+    if (refundingId) return;
+    if (!confirm(`Rembourser la commande #${o.id.slice(0, 6).toUpperCase()} (${o.total.toFixed(2)} €) sur Stripe ?\n\nLe client sera recrédité sur sa carte. Cette action est irréversible.`)) return;
+    setRefundingId(o.id);
+    try {
+      const { data, error } = await invokeWithRetry("create-stripe-refund", { order_id: o.id }, 1);
+      if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Échec du remboursement");
+      const patch = x => x.id === o.id ? { ...x, refunded: true, paid: false } : x;
+      if (storeCtx?.setOrders) storeCtx.setOrders(prev => prev.map(patch));
+      if (storeCtx?.setDoneOrders) storeCtx.setDoneOrders(prev => prev.map(patch));
+      storeCtx?.pushNotif?.("💸 Commande remboursée", "success");
+    } catch (err) {
+      storeCtx?.pushNotif?.("Erreur remboursement : " + (err.message || err), "warning");
+    } finally {
+      setRefundingId(null);
+    }
+  }
+
   return (
     <div className="fade-in">
       {!audioUnlocked && (
@@ -3404,6 +3425,13 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
               {o.status !== "served" && (
                 <button onClick={() => setEditOrder(o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, color: C.textSecondary, flexShrink: 0, ...FF }} title="Modifier la commande">✏️</button>
               )}
+              {o.payment_method !== "cash" && o.paid && !o.refunded && (
+                <button onClick={() => refundOrder(o)} disabled={refundingId === o.id}
+                  style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: refundingId === o.id ? "wait" : "pointer", fontSize: 13, color: C.accentOrange, flexShrink: 0, opacity: refundingId === o.id ? 0.5 : 1, ...FF }} title="Rembourser cette commande sur Stripe">
+                  {refundingId === o.id ? "…" : "💸"}
+                </button>
+              )}
+              {o.refunded && <Tag color={C.accentOrange}>Remboursée</Tag>}
               <button onClick={() => deleteOrder(o)} disabled={deletingId === o.id}
                 style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "4px 8px", cursor: deletingId === o.id ? "wait" : "pointer", fontSize: 13, color: C.accent, flexShrink: 0, opacity: deletingId === o.id ? 0.5 : 1, ...FF }} title="Supprimer la commande">
                 {deletingId === o.id ? "…" : "🗑️"}
@@ -6583,6 +6611,25 @@ function CaisseTab({ store, restaurant }) {
     }
   }
 
+  const [refundingId, setRefundingId] = useState(null);
+  async function refundOrder(o) {
+    if (refundingId) return;
+    if (!confirm(`Rembourser la commande #${o.id.slice(0, 6).toUpperCase()} (${o.total.toFixed(2)} €) sur Stripe ?\n\nLe client sera recrédité sur sa carte. Cette action est irréversible.`)) return;
+    setRefundingId(o.id);
+    try {
+      const { data, error } = await invokeWithRetry("create-stripe-refund", { order_id: o.id }, 1);
+      if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Échec du remboursement");
+      const patch = x => x.id === o.id ? { ...x, refunded: true, paid: false } : x;
+      if (isToday) store.setDoneOrders?.(prev => prev.map(patch));
+      else setHistOrders(prev => (prev || []).map(patch));
+      store.pushNotif?.("💸 Commande remboursée", "success");
+    } catch (err) {
+      store.pushNotif?.("Erreur remboursement : " + (err.message || err), "warning");
+    } finally {
+      setRefundingId(null);
+    }
+  }
+
   return (
     <div className="fade-in">
       {/* Date navigation */}
@@ -6702,6 +6749,14 @@ function CaisseTab({ store, restaurant }) {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                   <p style={{ fontWeight: 800, fontSize: 16, color: C.dark }}>{o.total.toFixed(2)} €</p>
                   <Tag color={pmColor}>{pm}</Tag>
+                  {o.refunded && <Tag color={C.accentOrange}>Remboursée</Tag>}
+                  {o.payment_method !== "cash" && o.paid && !o.refunded && (
+                    <button onClick={() => refundOrder(o)} disabled={refundingId === o.id}
+                      style={{ background: "none", border: "none", color: C.accentOrange, fontSize: 11, cursor: refundingId === o.id ? "wait" : "pointer", padding: "2px 0", opacity: refundingId === o.id ? 0.5 : 1, ...FF }}
+                      title="Rembourser cette commande sur Stripe">
+                      {refundingId === o.id ? "…" : "💸 Rembourser"}
+                    </button>
+                  )}
                   <button onClick={() => deleteOrder(o)} disabled={deletingId === o.id}
                     style={{ background: "none", border: "none", color: C.textTertiary, fontSize: 11, cursor: deletingId === o.id ? "wait" : "pointer", padding: "2px 0", opacity: deletingId === o.id ? 0.5 : 1, ...FF }}
                     title="Supprimer cette commande de l'historique">
@@ -7315,7 +7370,7 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
     setPaying(true); setError("");
     const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
     if (err) { setError(err.message); setPaying(false); return; }
-    if (paymentIntent?.status === "succeeded") await onSuccess("card");
+    if (paymentIntent?.status === "succeeded") await onSuccess("card", paymentIntent.id);
   }
 
   if (!ready) return (
@@ -9469,7 +9524,7 @@ function CustomerPage({ slug, tableNum }) {
   useEffect(() => {
     if (step === "payment" && total === 0 && !confirmingRef.current) confirm("free");
   }, [step, total]);
-  async function confirm(paymentMethod = "cash") {
+  async function confirm(paymentMethod = "cash", stripePaymentIntentId = null) {
     if (confirmingRef.current) return;
     confirmingRef.current = true;
     setConfirming(true); setConfirmError("");
@@ -9519,12 +9574,17 @@ function CustomerPage({ slug, tableNum }) {
       // every column named in RETURNING, so it silently failed the INSERT
       // itself, not just a later read. Requesting only "id" back keeps working
       // no matter how those columns' read privileges are configured.
-      const orderPayloadFull = { restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in" };
+      const orderPayloadFull = { restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in", stripe_payment_intent_id: stripePaymentIntentId || null };
       let { data: order, error } = await supabase.from("orders").insert(orderPayloadFull).select("id").single();
 
+      // Fallback -2: without stripe_payment_intent_id column (not migrated yet)
+      if (error && /stripe_payment_intent_id/i.test(error.message || "")) {
+        const { stripe_payment_intent_id, ...payload } = orderPayloadFull;
+        ({ data: order, error } = await supabase.from("orders").insert(payload).select("id").single());
+      }
       // Fallback -1: without customer_nif column (not migrated yet)
       if (error && /customer_nif/i.test(error.message || "")) {
-        const { customer_nif, ...payload } = orderPayloadFull;
+        const { customer_nif, stripe_payment_intent_id, ...payload } = orderPayloadFull;
         ({ data: order, error } = await supabase.from("orders").insert(payload).select("id").single());
       }
       // Fallback 0: without paid column (not migrated yet)
