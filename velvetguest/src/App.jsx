@@ -10908,6 +10908,40 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
     supabase.from("franchise_groups").select("*").eq("id", group.id).maybeSingle().then(({ data }) => {
       if (data && onGroupUpdate) onGroupUpdate(data);
     });
+
+    // Stats used to be computed once at mount and never touched again, so a
+    // franchise owner watching the dashboard saw yesterday's numbers even as
+    // orders came in live on every restaurant. Pulled into its own function so
+    // it can be re-run on a realtime event AND on a polling fallback (same
+    // belt-and-suspenders pattern as useLiveScans — websockets alone aren't
+    // trusted to never silently drop on this codebase).
+    async function loadStats(restos) {
+      if (!restos.length) { setStats([]); return; }
+      const ids = restos.map(r => r.id);
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const { data: orders, error } = await supabase.from("orders").select("restaurant_id, total, created_at")
+        .in("restaurant_id", ids).eq("status", "DONE").gte("created_at", sevenDaysAgo);
+      if (error) { console.error("[franchise] stats query failed:", error.message); return; }
+      const computed = restos.map(r => {
+        const rOrders = (orders || []).filter(o => o.restaurant_id === r.id);
+        const todayOrders = rOrders.filter(o => new Date(o.created_at) >= today);
+        const ca7j = rOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+        const caToday = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+        return {
+          restaurant_id: r.id,
+          ca_today: caToday, ca_7j: ca7j,
+          orders_today: todayOrders.length, orders_7j: rOrders.length,
+          avg_basket: rOrders.length > 0 ? ca7j / rOrders.length : 0,
+          growth: 0,
+        };
+      });
+      setStats(computed);
+    }
+
+    let restosForPoll = [];
+    let channel = null;
+    let pollId = null;
     Promise.all([
       supabase.from("restaurants").select("*").eq("owner_id", user.id).order("name"),
       supabase.from("group_campaigns").select("*").eq("group_id", group.id).order("created_at", { ascending: false }),
@@ -10917,31 +10951,30 @@ function FranchiseDashboard({ user, group, onBack, onRestaurant, onHome, onGroup
       setRestaurants(restos);
       setCampaigns(campRes.data ?? []);
       setMembers(memRes.data ?? []);
+      restosForPoll = restos;
+      loadStats(restos);
+      setLoading(false);
+
       if (restos.length > 0) {
         const ids = restos.map(r => r.id);
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        supabase.from("orders").select("restaurant_id, total, created_at")
-          .in("restaurant_id", ids).eq("status", "DONE").gte("created_at", sevenDaysAgo)
-          .then(({ data: orders }) => {
-            const computed = restos.map(r => {
-              const rOrders = (orders || []).filter(o => o.restaurant_id === r.id);
-              const todayOrders = rOrders.filter(o => new Date(o.created_at) >= today);
-              const ca7j = rOrders.reduce((s, o) => s + Number(o.total || 0), 0);
-              const caToday = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
-              return {
-                restaurant_id: r.id,
-                ca_today: caToday, ca_7j: ca7j,
-                orders_today: todayOrders.length, orders_7j: rOrders.length,
-                avg_basket: rOrders.length > 0 ? ca7j / rOrders.length : 0,
-                growth: 0,
-              };
-            });
-            setStats(computed);
-          });
+        // Realtime is per-restaurant (postgres_changes can't filter on "IN"),
+        // so open one channel per restaurant in the group — still cheap for a
+        // franchise-sized restaurant count — and refresh the whole board on
+        // any order change from any of them.
+        channel = supabase.channel(`franchise-stats-${group.id}`);
+        for (const rid of ids) {
+          channel.on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${rid}` }, () => loadStats(restosForPoll));
+        }
+        channel.subscribe();
+        // Poll every 30s as a safety net in case a websocket event is missed.
+        pollId = setInterval(() => loadStats(restosForPoll), 30000);
       }
-      setLoading(false);
     });
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+      if (pollId) clearInterval(pollId);
+    };
   }, [group, isDemo]);
 
   function getStat(restoId) {
