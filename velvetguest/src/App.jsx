@@ -722,6 +722,20 @@ function useStore(restaurantId) {
     };
     refreshDoneOrders();
 
+    // Same class of bug as the orders board: the realtime channel is the only
+    // thing keeping `customers` fresh, so a dropped websocket (dashboard left
+    // open overnight, tablet sleep, flaky wifi) freezes the CRM silently —
+    // "stuck since yesterday" with no error, because nothing ever re-fetches.
+    // Give it the same poll + resync-on-wake safety net as the orders board.
+    const refreshCustomers = async () => {
+      const { data, error } = await supabase.from("customers").select("*")
+        .eq("restaurant_id", restaurantId).order("last_visit", { ascending: false });
+      if (error) { console.error("[CRM] customers refresh failed:", error.message); setCustomersError(error.message); return; }
+      setCustomersError("");
+      setCustomers(data ?? []);
+    };
+    const customersPoll = setInterval(refreshCustomers, 20000);
+
     const ch = supabase.channel(`store-${restaurantId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
         async ({ new: row }) => {
@@ -753,10 +767,7 @@ function useStore(restaurantId) {
         }
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `restaurant_id=eq.${restaurantId}` },
-        async () => {
-          const { data } = await supabase.from("customers").select("*").eq("restaurant_id", restaurantId).order("last_visit", { ascending: false });
-          setCustomers(data ?? []);
-        }
+        () => { refreshCustomers(); }
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "promotions", filter: `restaurant_id=eq.${restaurantId}` },
         async () => {
@@ -820,6 +831,7 @@ function useStore(restaurantId) {
       if (document.visibilityState !== "visible") return;
       reconcile();
       refreshDoneOrders();
+      refreshCustomers();
     };
     document.addEventListener("visibilitychange", resync);
     window.addEventListener("focus", resync);
@@ -827,7 +839,7 @@ function useStore(restaurantId) {
 
     return () => {
       supabase.removeChannel(ch);
-      clearInterval(tick); clearInterval(poll); clearInterval(donePoll);
+      clearInterval(tick); clearInterval(poll); clearInterval(donePoll); clearInterval(customersPoll);
       document.removeEventListener("visibilitychange", resync);
       window.removeEventListener("focus", resync);
       window.removeEventListener("online", resync);
