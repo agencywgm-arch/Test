@@ -203,10 +203,16 @@ Deno.serve(async (req) => {
         // total. Vendus rejects a document whose payment doesn't reconcile
         // with its lines ("Faltam X euros"), so add one adjustment line for
         // the gap instead of forcing a wrong per-item price.
+        // Vendus treats `title` as a catalog product lookup, not a free-text
+        // label — a synthetic "Desconto"/"Extras" line fails with "product
+        // doesn't have a price" because no such product exists in the
+        // restaurant's Vendus catalog. Absorb the gap into the last real
+        // item's unit price instead of inventing a line item.
         const linesTotal = lines.reduce((s: number, l: any) => s + l.gross_price * l.qty, 0);
         const diff = Math.round((Number(existing.total) - linesTotal) * 100) / 100;
-        if (Math.abs(diff) >= 0.01) {
-          lines.push({ title: diff > 0 ? "Suplementos / Extras" : "Desconto", gross_price: diff, qty: 1, tax_id: taxCode });
+        if (Math.abs(diff) >= 0.01 && lines.length) {
+          const last = lines[lines.length - 1];
+          last.gross_price = Math.round((last.gross_price + diff / last.qty) * 100) / 100;
         }
         return lines;
       })(),
@@ -231,7 +237,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v7-reconcile-items-total",
+        fn_version: "v8-adjust-last-item-price",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
