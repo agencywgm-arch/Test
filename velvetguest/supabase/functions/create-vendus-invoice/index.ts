@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     // Load restaurant → must have vendus_enabled + a NIF configured
     const { data: resto } = await supabase
       .from("restaurants")
-      .select("id, name, nif, vendus_enabled, vendus_tax_id")
+      .select("id, name, nif, vendus_enabled, vendus_tax_id, vendus_cash_payment_id, vendus_card_payment_id")
       .eq("id", existing.restaurant_id)
       .single();
     if (!resto) return json({ error: "restaurant not found" }, 404);
@@ -102,9 +102,16 @@ Deno.serve(async (req) => {
     // (the other 3 paths 404 as unknown endpoints) — but it 400s when sent
     // BOTH the Authorization header and the api_key query param together, so
     // try each auth style on its own instead of combining them.
-    let paymentId: number | undefined;
+    const isCard = existing.payment_method && existing.payment_method !== "cash";
+
+    // Configured explicitly on the restaurant? Use that first — the lookup
+    // endpoint below 400s regardless of auth style on every account we've
+    // tested, and Vendus payment-type ids are per-account generated numbers,
+    // not small sequential ones, so there's no safe generic guess.
+    let paymentId: number | undefined =
+      (isCard ? resto.vendus_card_payment_id : resto.vendus_cash_payment_id) ?? undefined;
     const pmDebug: any = {};
-    const authVariants: Array<[string, RequestInit]> = [
+    const authVariants: Array<[string, RequestInit]> = paymentId ? [] : [
       [`${VENDUS_BASE}/payment_types/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, { headers: { "Accept": "application/json" } }],
       [`${VENDUS_BASE}/payment_types/`, { headers: { "Authorization": VENDUS_AUTH, "Accept": "application/json" } }],
     ];
@@ -120,7 +127,6 @@ Deno.serve(async (req) => {
           : Array.isArray(parsed?.paymentmethods) ? parsed.paymentmethods
           : null;
         if (list?.length) {
-          const isCard = existing.payment_method && existing.payment_method !== "cash";
           const wanted = isCard ? /multibanco|cart|card|tpa/i : /numer|dinheiro|cash|esp/i;
           const match = list.find((p: any) => wanted.test(String(p.title || p.name || p.description || "")));
           const chosen = match || list[0];
@@ -129,14 +135,15 @@ Deno.serve(async (req) => {
       } catch (e) { pmDebug[url] = { error: String(e) }; }
     }
 
-    // Every Vendus account ships with two default payment types seeded at
-    // signup — id 1 (Numerário/cash) and id 2 (Multibanco/card) — so fall back
-    // to those by convention when the lookup above didn't resolve one, rather
-    // than blocking the invoice entirely ("FS" documents require a payment).
+    // Last-resort fallback: La Gratinade's own ids (Definições → Tipos de
+    // Pagamento → editar → id in the URL — these numbers are per-account, not
+    // small sequential ones like "1"/"2", so this is NOT a safe generic
+    // default for a different restaurant's Vendus account). Every restaurant
+    // should really have vendus_cash_payment_id/vendus_card_payment_id set —
+    // this only prevents a total block if that configuration is missing.
     if (paymentId == null) {
-      const isCard = existing.payment_method && existing.payment_method !== "cash";
-      paymentId = isCard ? 2 : 1;
-      pmDebug["fallback"] = `lookup failed — defaulted to Vendus's standard seeded id (${paymentId})`;
+      paymentId = isCard ? 356589027 : 356589025;
+      pmDebug["fallback"] = `no vendus_${isCard ? "card" : "cash"}_payment_id configured and lookup failed — defaulted to La Gratinade's known id (${paymentId})`;
     }
 
     // No usable payment-method endpoint on this account/API version: emit the
@@ -209,7 +216,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v5-default-payment-id",
+        fn_version: "v6-configured-payment-ids",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
