@@ -152,6 +152,12 @@ Deno.serve(async (req) => {
         return {
           name: existing.customer_name || "Consumidor Final",
           fiscal_id: nif,
+          // Vendus rejects even a valid NIF (including the generic 999999990
+          // final-consumer placeholder) with "NIF português inválido... selecione
+          // o país corretamente" when the client record has no explicit country —
+          // it can't assume PT on its own. Portugal for every order here (all
+          // restaurants using this app are Portuguese) makes this safe to hardcode.
+          country: "PT",
           email: existing.customer_email || undefined,
           send_email: existing.customer_email ? "yes" : "no",
         };
