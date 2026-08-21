@@ -444,7 +444,7 @@ async function readFunctionErrorDetail(error) {
     // response) rather than silently falling back to the generic "vendus API
     // error" label that tells nobody anything.
     if (body.vendus_response) {
-      return `HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}`;
+      return `[${body.fn_version || "no-version"}] HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}`;
     }
     return body.error || null;
   } catch { return null; }

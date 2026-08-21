@@ -196,6 +196,10 @@ Deno.serve(async (req) => {
       return json({
         ok: false,
         error: "vendus API error",
+        // Bump this string on every deploy — the only reliable way to confirm
+        // from the app's own error banner (no Supabase dashboard needed) that
+        // this exact revision, not a stale cached one, is what actually ran.
+        fn_version: "v3-country-pt",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
