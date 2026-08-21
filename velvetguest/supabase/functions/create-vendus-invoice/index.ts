@@ -239,8 +239,13 @@ Deno.serve(async (req) => {
       ok: true,
       invoice_id: vendusJson.id,
       invoice_number: vendusJson.number,
-      invoice_url: vendusJson.link,
+      invoice_url: vendusJson.link || vendusJson.pdf_url || vendusJson.url || "",
       escpos: vendusJson.escpos || null,
+      // Temporary: the invoice number/date persisted fine but the URL came
+      // back empty, meaning none of link/pdf_url/url is the real field name
+      // Vendus uses in this response — dump the whole thing once so we can
+      // see the actual key and fix it for good instead of guessing again.
+      raw_vendus_response_debug: vendusJson,
     });
   } catch (err) {
     return json({ error: String(err) }, 500);

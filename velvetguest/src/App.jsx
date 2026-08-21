@@ -6609,7 +6609,7 @@ function CaisseTab({ store, restaurant }) {
       setOneShotResult({ ok: false, orderId, error: data?.error || error?.message || "erreur inconnue" });
       store.pushNotif?.("⚠️ Échec de la facture test — voir détail sous le bouton", "warning");
     } else {
-      setOneShotResult({ ok: true, orderId, url: data?.invoice_url });
+      setOneShotResult({ ok: true, orderId, url: data?.invoice_url, raw: data?.raw_vendus_response_debug });
       store.pushNotif?.("✅ Facture test émise", "success");
       await fiscalCheckRef.current?.();
     }
@@ -6793,7 +6793,7 @@ function CaisseTab({ store, restaurant }) {
                   color: oneShotResult.ok ? "#1E7E34" : C.accent, lineHeight: 1.5,
                 }}>
                   {oneShotResult.ok ? (
-                    <>✅ Facture créée pour la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()}.{oneShotResult.url && <> <a href={oneShotResult.url} target="_blank" rel="noreferrer" style={{ color: "#1E7E34", fontWeight: 700 }}>Voir la facture ↗</a></>}</>
+                    <>✅ Facture créée pour la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()}.{oneShotResult.url && <> <a href={oneShotResult.url} target="_blank" rel="noreferrer" style={{ color: "#1E7E34", fontWeight: 700 }}>Voir la facture ↗</a></>}{!oneShotResult.url && oneShotResult.raw && <><br /><span style={{ fontSize: 11, opacity: 0.8 }}>Pas de lien PDF trouvé — réponse brute Vendus : {JSON.stringify(oneShotResult.raw)}</span></>}</>
                   ) : (
                     <>⚠️ Échec sur la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()} : {oneShotResult.error}</>
                   )}
