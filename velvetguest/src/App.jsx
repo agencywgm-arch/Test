@@ -6533,9 +6533,8 @@ function CaisseTab({ store, restaurant }) {
     if (!ids.length || regularizing) return;
     if (!confirm(
       `Émettre les factures Vendus manquantes pour ${ids.length} commande(s) ?\n\n` +
-      `⚠️ Les factures seront datées d'AUJOURD'HUI, pas de la date de vente d'origine ` +
-      `(une facture certifiée ne peut pas être antidatée). Validez cette régularisation ` +
-      `avec votre comptable avant de continuer.`
+      `Chaque facture sera datée de la date réelle de sa commande. Validez cette ` +
+      `régularisation avec votre comptable avant de continuer.`
     )) return;
     setRegularizing({ done: 0, total: ids.length, failed: 0 });
     let failed = 0;
@@ -6551,6 +6550,29 @@ function CaisseTab({ store, restaurant }) {
       failed ? `⚠️ ${ids.length - failed}/${ids.length} factures émises — ${failed} en échec` : `✅ ${ids.length} factures émises`,
       failed ? "warning" : "success"
     );
+  }
+
+  // Emits exactly ONE missing invoice — for testing the Vendus connection
+  // safely on a single order before trusting the bulk regularization above
+  // with the whole backlog.
+  const [regularizingOne, setRegularizingOne] = useState(false);
+  const [oneShotResult, setOneShotResult] = useState(null); // { ok, orderId, error? }
+  async function regularizeOneInvoice() {
+    const ids = fiscal?.missingIds || [];
+    if (!ids.length || regularizingOne || regularizing) return;
+    setRegularizingOne(true);
+    setOneShotResult(null);
+    const orderId = ids[0];
+    const { data, error } = await invokeWithRetry("create-vendus-invoice", { order_id: orderId }, 2);
+    setRegularizingOne(false);
+    if (error || data?.ok === false) {
+      setOneShotResult({ ok: false, orderId, error: data?.error || error?.message || "erreur inconnue" });
+      store.pushNotif?.("⚠️ Échec de la facture test — voir détail sous le bouton", "warning");
+    } else {
+      setOneShotResult({ ok: true, orderId, url: data?.invoice_url });
+      store.pushNotif?.("✅ Facture test émise", "success");
+      await fiscalCheckRef.current?.();
+    }
   }
   useEffect(() => {
     if (restaurant.id === "demo") { setFiscal({ enabled: false }); return; }
@@ -6715,6 +6737,29 @@ function CaisseTab({ store, restaurant }) {
                 🧾 Émettre les {fiscal.missing} facture{fiscal.missing > 1 ? "s" : ""} Vendus manquante{fiscal.missing > 1 ? "s" : ""}
               </Btn>
             )
+          )}
+          {/* One-at-a-time test button — validate the Vendus connection on a
+              single order before trusting the bulk regularization above. */}
+          {fiscal?.enabled && fiscal.missing > 0 && !regularizing && (
+            <>
+              <Btn variant="ghost" full onClick={regularizeOneInvoice} disabled={regularizingOne} style={{ marginBottom: oneShotResult ? 8 : 10 }}>
+                {regularizingOne ? "Émission en cours…" : "🧪 Tester sur 1 seule facture"}
+              </Btn>
+              {oneShotResult && (
+                <div style={{
+                  background: oneShotResult.ok ? C.accentGreen + "12" : C.accent + "12",
+                  border: `1.5px solid ${(oneShotResult.ok ? C.accentGreen : C.accent)}40`,
+                  borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12,
+                  color: oneShotResult.ok ? "#1E7E34" : C.accent, lineHeight: 1.5,
+                }}>
+                  {oneShotResult.ok ? (
+                    <>✅ Facture créée pour la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()}.{oneShotResult.url && <> <a href={oneShotResult.url} target="_blank" rel="noreferrer" style={{ color: "#1E7E34", fontWeight: 700 }}>Voir la facture ↗</a></>}</>
+                  ) : (
+                    <>⚠️ Échec sur la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()} : {oneShotResult.error}</>
+                  )}
+                </div>
+              )}
+            </>
           )}
           {orders.length === 0 && !histLoading && (
             <p style={{ color: C.textTertiary, fontSize: 13, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
