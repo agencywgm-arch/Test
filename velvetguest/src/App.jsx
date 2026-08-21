@@ -438,7 +438,15 @@ function useSilencedOrders() {
 async function readFunctionErrorDetail(error) {
   try {
     const body = await error?.context?.json?.();
-    return body?.vendus_response?.error?.message || body?.error || null;
+    if (!body) return null;
+    // The Vendus API doesn't have one consistent error shape across endpoints,
+    // so don't guess a specific path — show the whole thing (status + raw
+    // response) rather than silently falling back to the generic "vendus API
+    // error" label that tells nobody anything.
+    if (body.vendus_response) {
+      return `HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}`;
+    }
+    return body.error || null;
   } catch { return null; }
 }
 
