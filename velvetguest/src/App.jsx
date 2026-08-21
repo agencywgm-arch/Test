@@ -444,7 +444,8 @@ async function readFunctionErrorDetail(error) {
     // response) rather than silently falling back to the generic "vendus API
     // error" label that tells nobody anything.
     if (body.vendus_response) {
-      return `[${body.fn_version || "no-version"}] HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}`;
+      const pmNote = ` | payment_id_used=${body.payment_id_used ?? "none"} | pm_debug=${JSON.stringify(body.vendus_paymentmethods_debug || {}).slice(0, 600)}`;
+      return `[${body.fn_version || "no-version"}] HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}${pmNote}`;
     }
     return body.error || null;
   } catch { return null; }
