@@ -6629,7 +6629,13 @@ function CaisseTab({ store, restaurant }) {
       if (cancelled) return;
       if (error) { setFiscal({ enabled: true, error: error.message }); return; }
       const paidOrders = data || [];
-      const missing = paidOrders.filter(o => !o.vendus_invoice_id);
+      // Vendus enforces strictly chronological document dates — it rejects an
+      // invoice dated earlier than the last one already issued on the account
+      // ("data do documento não pode ser anterior..."). Regularizing out of
+      // order (or even one out-of-order test invoice) permanently blocks every
+      // older missing order behind it, so always process oldest-first.
+      const missing = paidOrders.filter(o => !o.vendus_invoice_id)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       setFiscal({
         enabled: true, nif: resto.nif,
         paid: paidOrders.length,
