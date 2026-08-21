@@ -438,7 +438,7 @@ function useSilencedOrders() {
 async function readFunctionErrorDetail(error) {
   try {
     const body = await error?.context?.json?.();
-    return body?.error || body?.vendus_response?.error?.message || null;
+    return body?.vendus_response?.error?.message || body?.error || null;
   } catch { return null; }
 }
 
