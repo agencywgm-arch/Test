@@ -143,10 +143,11 @@ Deno.serve(async (req) => {
       // misstate when that revenue actually happened for VAT/SAF-T purposes.
       date: new Date(existing.created_at).toISOString().split("T")[0], // YYYY-MM-DD
       client: (() => {
-        // Use the customer's real NIF when they provided a valid 9-digit one
-        // (fatura "com contribuinte"); otherwise fall back to the generic final
-        // consumer NIF (999999990).
-        const nif = typeof existing.customer_nif === "string" && /^\d{9}$/.test(existing.customer_nif)
+        // Use the customer's real NIF when it passes the actual Portuguese
+        // checksum (fatura "com contribuinte"); otherwise fall back to the
+        // generic final consumer NIF (999999990) rather than let an invalid
+        // one block the whole invoice.
+        const nif = typeof existing.customer_nif === "string" && isValidPortugueseNif(existing.customer_nif)
           ? existing.customer_nif : "999999990";
         return {
           name: existing.customer_name || "Consumidor Final",
@@ -221,4 +222,19 @@ Deno.serve(async (req) => {
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
+}
+
+// A Portuguese NIF isn't just "9 digits" — the 9th digit is a checksum over
+// the first 8 (mod 11). We used to only check length/digits, so a customer
+// typo'd or made-up 9-digit number (common — the field is optional at
+// checkout and unvalidated there) would pass our check but get rejected by
+// Vendus as "NIF português inválido", blocking the whole invoice instead of
+// just falling back to the generic consumer NIF like it should.
+function isValidPortugueseNif(nif: string): boolean {
+  if (!/^\d{9}$/.test(nif)) return false;
+  const digits = nif.split("").map(Number);
+  const sum = digits.slice(0, 8).reduce((acc, d, i) => acc + d * (9 - i), 0);
+  const checkDigit = 11 - (sum % 11);
+  const expected = checkDigit >= 10 ? 0 : checkDigit;
+  return expected === digits[8];
 }

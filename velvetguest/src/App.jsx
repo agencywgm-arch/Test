@@ -450,6 +450,20 @@ async function readFunctionErrorDetail(error) {
   } catch { return null; }
 }
 
+// A Portuguese NIF isn't just "9 digits" — the 9th digit is a checksum over
+// the first 8 (mod 11). Checking length only let customers save NIFs that
+// looked valid but weren't, which then blocked fiscal invoice emission
+// server-side with "NIF português inválido" (see create-vendus-invoice).
+// Catching it here means the customer gets told immediately at checkout.
+function isValidPortugueseNif(nif) {
+  if (!/^\d{9}$/.test(nif)) return false;
+  const digits = nif.split("").map(Number);
+  const sum = digits.slice(0, 8).reduce((acc, d, i) => acc + d * (9 - i), 0);
+  const checkDigit = 11 - (sum % 11);
+  const expected = checkDigit >= 10 ? 0 : checkDigit;
+  return expected === digits[8];
+}
+
 async function invokeWithRetry(fnName, body, attempts = 3) {
   let lastErr = null;
   for (let i = 0; i < attempts; i++) {
@@ -9648,7 +9662,7 @@ function CustomerPage({ slug, tableNum }) {
         }
       }
 
-      const nif = customerNif && customerNif.length === 9 ? customerNif : null;
+      const nif = customerNif && isValidPortugueseNif(customerNif) ? customerNif : null;
       // IMPORTANT: only ever ask PostgREST to return `id` (via RETURNING) here.
       // A past migration revoked anonymous SELECT on the personal-data columns
       // (customer_name, customer_email, note, customer_nif) — a bare `.select()`
@@ -10164,8 +10178,9 @@ function CustomerPage({ slug, tableNum }) {
               <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>NIF <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel — pour facture avec contribuinte)</span></label>
               <input inputMode="numeric" value={customerNif}
                 onChange={e => setCustomerNif(e.target.value.replace(/\D/g, "").slice(0, 9))}
-                placeholder="9 chiffres" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${customerNif && customerNif.length !== 9 ? C.accent : C.border}`, fontSize: 16, outline: "none", ...FF }} />
+                placeholder="9 chiffres" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${customerNif.length === 9 && !isValidPortugueseNif(customerNif) ? C.accent : C.border}`, fontSize: 16, outline: "none", ...FF }} />
               {customerNif && customerNif.length !== 9 && <p style={{ fontSize: 11, color: C.accent, marginTop: 5 }}>Le NIF doit contenir 9 chiffres.</p>}
+              {customerNif.length === 9 && !isValidPortugueseNif(customerNif) && <p style={{ fontSize: 11, color: C.accent, marginTop: 5 }}>Ce NIF ne semble pas valide — vérifiez les chiffres.</p>}
             </div>
           )}
           <button
