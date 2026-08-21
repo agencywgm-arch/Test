@@ -430,12 +430,29 @@ function useSilencedOrders() {
 // up. Receipt emails and fiscal invoices are important enough that a single
 // transient network/cold-start hiccup should never be the reason one never
 // goes out — this is deliberately used everywhere those two are triggered.
+// On a non-2xx response, supabase-js only gives a generic "Edge Function
+// returned a non-2xx status code" — the actual JSON body our functions send
+// back (the real Stripe/Vendus error message) is on error.context, a Response
+// object that has to be read separately. Without this, every failure looks
+// identical and undebuggable from the UI.
+async function readFunctionErrorDetail(error) {
+  try {
+    const body = await error?.context?.json?.();
+    return body?.error || body?.vendus_response?.error?.message || null;
+  } catch { return null; }
+}
+
 async function invokeWithRetry(fnName, body, attempts = 3) {
   let lastErr = null;
   for (let i = 0; i < attempts; i++) {
     const { data, error } = await supabase.functions.invoke(fnName, { body });
     if (!error && !data?.error) return { data, error: null };
-    lastErr = error || new Error(data?.error || "unknown error");
+    if (error) {
+      const detail = await readFunctionErrorDetail(error);
+      lastErr = detail ? new Error(detail) : error;
+    } else {
+      lastErr = new Error(data?.error || "unknown error");
+    }
     if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
   }
   return { data: null, error: lastErr };
