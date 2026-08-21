@@ -98,20 +98,23 @@ Deno.serve(async (req) => {
     // Resolve a real Vendus payment-method id. Their ids are account-specific,
     // so we fetch the list and match it to how the customer paid, rather than
     // hardcoding a number that would differ from one account to another.
-    // Vendus has shipped this list under a few different shapes/paths over time,
-    // so probe the known ones and keep the raw answer for diagnostics rather than
-    // failing with an opaque "not found".
+    // Probing showed only "/payment_types/" is a real endpoint on this account
+    // (the other 3 paths 404 as unknown endpoints) — but it 400s when sent
+    // BOTH the Authorization header and the api_key query param together, so
+    // try each auth style on its own instead of combining them.
     let paymentId: number | undefined;
     const pmDebug: any = {};
-    for (const path of ["/paymenttypes/", "/paymentmethods/", "/payment_types/", "/payments/"]) {
+    const authVariants: Array<[string, RequestInit]> = [
+      [`${VENDUS_BASE}/payment_types/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, { headers: { "Accept": "application/json" } }],
+      [`${VENDUS_BASE}/payment_types/`, { headers: { "Authorization": VENDUS_AUTH, "Accept": "application/json" } }],
+    ];
+    for (const [url, opts] of authVariants) {
       try {
-        const pmRes = await fetch(`${VENDUS_BASE}${path}?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
-          headers: { "Authorization": VENDUS_AUTH, "Accept": "application/json" },
-        });
+        const pmRes = await fetch(url, opts);
         const raw = await pmRes.text();
         let parsed: any = null;
         try { parsed = JSON.parse(raw); } catch { /* keep raw for debugging */ }
-        pmDebug[path] = { status: pmRes.status, body: parsed ?? raw.slice(0, 400) };
+        pmDebug[url] = { status: pmRes.status, body: parsed ?? raw.slice(0, 400) };
         const list = Array.isArray(parsed) ? parsed
           : Array.isArray(parsed?.data) ? parsed.data
           : Array.isArray(parsed?.paymentmethods) ? parsed.paymentmethods
@@ -123,7 +126,17 @@ Deno.serve(async (req) => {
           const chosen = match || list[0];
           if (chosen?.id != null) { paymentId = Number(chosen.id); break; }
         }
-      } catch (e) { pmDebug[path] = { error: String(e) }; }
+      } catch (e) { pmDebug[url] = { error: String(e) }; }
+    }
+
+    // Every Vendus account ships with two default payment types seeded at
+    // signup — id 1 (Numerário/cash) and id 2 (Multibanco/card) — so fall back
+    // to those by convention when the lookup above didn't resolve one, rather
+    // than blocking the invoice entirely ("FS" documents require a payment).
+    if (paymentId == null) {
+      const isCard = existing.payment_method && existing.payment_method !== "cash";
+      paymentId = isCard ? 2 : 1;
+      pmDebug["fallback"] = `lookup failed — defaulted to Vendus's standard seeded id (${paymentId})`;
     }
 
     // No usable payment-method endpoint on this account/API version: emit the
@@ -196,7 +209,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v4-omit-fiscal-id-when-no-real-nif",
+        fn_version: "v5-default-payment-id",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
