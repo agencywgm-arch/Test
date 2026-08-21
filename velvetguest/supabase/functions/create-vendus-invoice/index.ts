@@ -143,21 +143,18 @@ Deno.serve(async (req) => {
       // misstate when that revenue actually happened for VAT/SAF-T purposes.
       date: new Date(existing.created_at).toISOString().split("T")[0], // YYYY-MM-DD
       client: (() => {
-        // Use the customer's real NIF when it passes the actual Portuguese
-        // checksum (fatura "com contribuinte"); otherwise fall back to the
-        // generic final consumer NIF (999999990) rather than let an invalid
-        // one block the whole invoice.
-        const nif = typeof existing.customer_nif === "string" && isValidPortugueseNif(existing.customer_nif)
-          ? existing.customer_nif : "999999990";
+        // Adding "country: PT" alongside the generic 999999990 placeholder
+        // still got "NIF português inválido" from Vendus — the field/value it
+        // actually wants for that combination isn't documented consistently
+        // enough to keep guessing. Simplest fix that can't fail this way: only
+        // send a fiscal_id at all when we have a REAL, checksum-valid customer
+        // NIF. For everyone else, send just a name and let Vendus apply its
+        // own default "Consumidor Final" handling — that's exactly what it's
+        // built to do when no client is specified.
+        const hasRealNif = typeof existing.customer_nif === "string" && isValidPortugueseNif(existing.customer_nif);
         return {
           name: existing.customer_name || "Consumidor Final",
-          fiscal_id: nif,
-          // Vendus rejects even a valid NIF (including the generic 999999990
-          // final-consumer placeholder) with "NIF português inválido... selecione
-          // o país corretamente" when the client record has no explicit country —
-          // it can't assume PT on its own. Portugal for every order here (all
-          // restaurants using this app are Portuguese) makes this safe to hardcode.
-          country: "PT",
+          ...(hasRealNif ? { fiscal_id: existing.customer_nif, country: "PT" } : {}),
           email: existing.customer_email || undefined,
           send_email: existing.customer_email ? "yes" : "no",
         };
@@ -199,7 +196,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v3-country-pt",
+        fn_version: "v4-omit-fiscal-id-when-no-real-nif",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
