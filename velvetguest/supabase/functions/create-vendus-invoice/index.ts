@@ -179,22 +179,37 @@ Deno.serve(async (req) => {
           send_email: existing.customer_email ? "yes" : "no",
         };
       })(),
-      items: items.map((it: any) => {
-        const name = it.menu_items?.name || "Artigo";
-        const unitPrice = Number(it.menu_items?.price || 0);
-        const title = it.detail ? `${name} (${it.detail})` : name;
-        return {
-          title: title.substring(0, 100),
-          gross_price: unitPrice,
-          qty: it.quantity,
-          // Vendus expects a Portuguese VAT code, not a numeric id:
-          //   NOR = normal (23%) · INT = intermédia (13%) · RED = reduzida (6%)
-          //   ISE = isenta · OUT = outra · NS = não sujeito
-          // Configurable per restaurant because the correct rate is a fiscal
-          // decision (dine-in vs takeaway vs drinks), not a technical one.
-          tax_id: taxCode,
-        };
-      }),
+      items: (() => {
+        const lines = items.map((it: any) => {
+          const name = it.menu_items?.name || "Artigo";
+          const unitPrice = Number(it.menu_items?.price || 0);
+          const title = it.detail ? `${name} (${it.detail})` : name;
+          return {
+            title: title.substring(0, 100),
+            gross_price: unitPrice,
+            qty: it.quantity,
+            // Vendus expects a Portuguese VAT code, not a numeric id:
+            //   NOR = normal (23%) · INT = intermédia (13%) · RED = reduzida (6%)
+            //   ISE = isenta · OUT = outra · NS = não sujeito
+            // Configurable per restaurant because the correct rate is a fiscal
+            // decision (dine-in vs takeaway vs drinks), not a technical one.
+            tax_id: taxCode,
+          };
+        });
+        // gross_price only reflects the base menu item — extras/toppings
+        // chosen on the order (priced separately, only recorded as free text
+        // in `detail`) and promo discounts aren't in that number, so the item
+        // lines can legitimately sum to less (or more) than the order's real
+        // total. Vendus rejects a document whose payment doesn't reconcile
+        // with its lines ("Faltam X euros"), so add one adjustment line for
+        // the gap instead of forcing a wrong per-item price.
+        const linesTotal = lines.reduce((s: number, l: any) => s + l.gross_price * l.qty, 0);
+        const diff = Math.round((Number(existing.total) - linesTotal) * 100) / 100;
+        if (Math.abs(diff) >= 0.01) {
+          lines.push({ title: diff > 0 ? "Suplementos / Extras" : "Desconto", gross_price: diff, qty: 1, tax_id: taxCode });
+        }
+        return lines;
+      })(),
       // Only sent when we actually resolved a real payment-method id — Vendus
       // rejects a placeholder ("Missing payment ID"), but accepts the document
       // with no payments block at all and falls back to the register default.
@@ -216,7 +231,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v6-configured-payment-ids",
+        fn_version: "v7-reconcile-items-total",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
