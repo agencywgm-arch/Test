@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
     // cashier double-click, etc.) — which would be a legal problem in Portugal.
     const { data: existing } = await supabase
       .from("orders")
-      .select("id, vendus_invoice_id, vendus_invoice_number, vendus_invoice_url, restaurant_id, total, customer_name, customer_email, customer_nif, payment_method")
+      .select("id, vendus_invoice_id, vendus_invoice_number, vendus_invoice_url, restaurant_id, total, customer_name, customer_email, customer_nif, payment_method, created_at")
       .eq("id", order_id)
       .single();
     if (!existing) return json({ error: "order not found" }, 404);
@@ -137,7 +137,11 @@ Deno.serve(async (req) => {
     // - "Consumidor Final" NIF is the standard placeholder for anonymous customers.
     const payload = {
       type: "FS",
-      date: new Date().toISOString().split("T")[0], // YYYY-MM-DD
+      // The order's own date, not "today" — this function is also used to
+      // backfill invoices for orders that are days/weeks old (regularize
+      // missing-invoices flow), and dating every one of them "today" would
+      // misstate when that revenue actually happened for VAT/SAF-T purposes.
+      date: new Date(existing.created_at).toISOString().split("T")[0], // YYYY-MM-DD
       client: (() => {
         // Use the customer's real NIF when they provided a valid 9-digit one
         // (fatura "com contribuinte"); otherwise fall back to the generic final
