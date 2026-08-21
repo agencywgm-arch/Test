@@ -5,6 +5,10 @@
 -- the integration on/off independently)
 alter table restaurants add column if not exists nif text;
 alter table restaurants add column if not exists vendus_enabled boolean not null default false;
+-- VAT code override (NOR/INT/RED/ISE/OUT/NS) read by create-vendus-invoice.
+-- Without this column the function's restaurant lookup errors on the missing
+-- column and every invoice attempt fails with "restaurant not found".
+alter table restaurants add column if not exists vendus_tax_id text;
 
 -- Vendus fiscal invoice info attached to each order (populated by the Edge Function
 -- after the invoice is successfully created via the Vendus API)
