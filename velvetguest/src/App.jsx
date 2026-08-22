@@ -6925,6 +6925,7 @@ function useLiveOrders(restaurantId, pushNotif) {
     table: o.tables?.number ?? "?",
     customerName: o.customer_name || "",
     note: o.note || "",
+    order_type: o.order_type || "dine_in",
     status: o.status === "PENDING" ? "new" : o.status === "PREPARING" ? "cooking" : o.status === "READY" ? "ready" : "served",
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
     items: (o.order_items || []).map(oi => ({
