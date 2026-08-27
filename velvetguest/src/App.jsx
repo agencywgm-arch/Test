@@ -9084,6 +9084,7 @@ const CT = {
     orderTypeTitle: "Comment souhaitez-vous consommer ?",
     dineIn: "Sur place", dineInSub: "Je mange ici",
     takeaway: "À emporter", takeawaySub: "Je repars avec ma commande",
+    delivery: "Livraison", deliverySub: "Commander via Uber Eats",
     orderTypeConfirm: "Continuer →",
   },
   en: {
@@ -9104,6 +9105,7 @@ const CT = {
     orderTypeTitle: "How would you like your order?",
     dineIn: "Dine in", dineInSub: "I'm eating here",
     takeaway: "Takeaway", takeawaySub: "I'll take it with me",
+    delivery: "Delivery", deliverySub: "Order via Uber Eats",
     orderTypeConfirm: "Continue →",
   },
   ar: {
@@ -9124,6 +9126,7 @@ const CT = {
     orderTypeTitle: "كيف تريد تناول طلبك؟",
     dineIn: "في المكان", dineInSub: "سآكل هنا",
     takeaway: "للأخذ", takeawaySub: "سآخذه معي",
+    delivery: "توصيل", deliverySub: "اطلب عبر Uber Eats",
     orderTypeConfirm: "متابعة ←",
   },
   es: {
@@ -9141,6 +9144,11 @@ const CT = {
     addCart: "🛒 Añadir al carro", next: "Siguiente →", prev: "← Paso anterior",
     extrasTitle: "Extras", extrasDesc: "Opcional · Añade extras",
     table: "Mesa",
+    orderTypeTitle: "¿Cómo deseas consumir tu pedido?",
+    dineIn: "Comer aquí", dineInSub: "Como aquí",
+    takeaway: "Para llevar", takeawaySub: "Me lo llevo",
+    delivery: "Entrega a domicilio", deliverySub: "Pedir a través de Uber Eats",
+    orderTypeConfirm: "Continuar →",
   },
   pt: {
     all: "Tudo", cart: "Cesto", add: "Adicionar", addMore: "+", popular: "⭐ Popular", menuBadge: "🍽️+🥤 Menu",
@@ -9157,6 +9165,11 @@ const CT = {
     addCart: "🛒 Adicionar ao cesto", next: "Próximo →", prev: "← Etapa anterior",
     extrasTitle: "Extras", extrasDesc: "Opcional · Adicione extras",
     table: "Mesa",
+    orderTypeTitle: "Como deseja consumir o seu pedido?",
+    dineIn: "Comer no local", dineInSub: "Vou comer aqui",
+    takeaway: "Para levar", takeawaySub: "Vou levar comigo",
+    delivery: "Entrega", deliverySub: "Encomendar via Uber Eats",
+    orderTypeConfirm: "Continuar →",
   },
 };
 
@@ -9937,14 +9950,20 @@ function CustomerPage({ slug, tableNum }) {
             {[
               { key: "dine_in", icon: "🍽️", label: L.dineIn, sub: L.dineInSub },
               { key: "takeaway", icon: "🥡", label: L.takeaway, sub: L.takeawaySub },
+              // Delivery isn't fulfilled by our own ordering flow — the
+              // restaurant hands that off entirely to Uber Eats, so this
+              // option only appears once a link is configured, and clicking
+              // it leaves the app instead of continuing to our menu/cart.
+              ...(restaurant?.uber_eats_url ? [{ key: "delivery", icon: "🛵", label: L.delivery, sub: L.deliverySub, external: restaurant.uber_eats_url }] : []),
             ].map(opt => (
-              <button key={opt.key} onClick={() => setOrderType(opt.key)}
+              <button key={opt.key} onClick={() => opt.external ? window.open(opt.external, "_blank", "noopener,noreferrer") : setOrderType(opt.key)}
                 style={{ display: "flex", alignItems: "center", gap: 16, padding: "20px 22px", background: orderType === opt.key ? C.dark : C.white, border: `2px solid ${orderType === opt.key ? C.dark : C.border}`, borderRadius: 18, cursor: "pointer", textAlign: "left", transition: "all 0.15s", ...FF }}>
                 <span style={{ fontSize: 32 }}>{opt.icon}</span>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: orderType === opt.key ? C.white : C.dark }}>{opt.label}</div>
                   <div style={{ fontSize: 13, color: orderType === opt.key ? "rgba(255,255,255,0.7)" : C.textSecondary, marginTop: 2 }}>{opt.sub}</div>
                 </div>
+                {opt.external && <span style={{ marginLeft: "auto", fontSize: 18, color: C.textTertiary }}>↗</span>}
               </button>
             ))}
           </div>
