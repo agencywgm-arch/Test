@@ -16,6 +16,13 @@ alter table restaurants add column if not exists vendus_tax_id text;
 -- to attach a valid payment to every "FS" document (Vendus requires one).
 alter table restaurants add column if not exists vendus_cash_payment_id bigint;
 alter table restaurants add column if not exists vendus_card_payment_id bigint;
+-- Optional: a dedicated Vendus invoicing series to use for backlog/backdated
+-- invoices. Vendus enforces chronological document dates WITHIN a series but
+-- each series has its own independent date history, so once the default
+-- series has a document dated "today" it can no longer backdate anything —
+-- routing the backlog through a separate series avoids that. Leave null to
+-- keep using the account's default series.
+alter table restaurants add column if not exists vendus_series text;
 
 -- Vendus fiscal invoice info attached to each order (populated by the Edge Function
 -- after the invoice is successfully created via the Vendus API)

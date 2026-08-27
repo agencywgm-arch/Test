@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     // Load restaurant → must have vendus_enabled + a NIF configured
     const { data: resto } = await supabase
       .from("restaurants")
-      .select("id, name, nif, vendus_enabled, vendus_tax_id, vendus_cash_payment_id, vendus_card_payment_id")
+      .select("id, name, nif, vendus_enabled, vendus_tax_id, vendus_cash_payment_id, vendus_card_payment_id, vendus_series")
       .eq("id", existing.restaurant_id)
       .single();
     if (!resto) return json({ error: "restaurant not found" }, 404);
@@ -162,6 +162,16 @@ Deno.serve(async (req) => {
       // missing-invoices flow), and dating every one of them "today" would
       // misstate when that revenue actually happened for VAT/SAF-T purposes.
       date: new Date(existing.created_at).toISOString().split("T")[0], // YYYY-MM-DD
+      // Vendus enforces chronological dates WITHIN a series, but each series
+      // has its own independent date history. The default series got "stuck"
+      // at 2026-08-21 by an early test document, so backdated/backlog
+      // invoices route through a separate series (created for this purpose in
+      // the Vendus dashboard) that has no such constraint yet.
+      // NOTE: "mode" is our best guess at Vendus's field name for selecting a
+      // series on document creation — unconfirmed. If it's wrong, the
+      // fn_version-tagged error banner from the test button will show
+      // Vendus's real complaint and we fix the key name from that.
+      ...(resto.vendus_series ? { mode: resto.vendus_series } : {}),
       client: (() => {
         // Adding "country: PT" alongside the generic 999999990 placeholder
         // still got "NIF português inválido" from Vendus — the field/value it
@@ -237,7 +247,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v8-adjust-last-item-price",
+        fn_version: "v9-series-for-backlog",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
