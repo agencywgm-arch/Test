@@ -6606,7 +6606,7 @@ function CaisseTab({ store, restaurant }) {
         store.pushNotif?.("⛔ Arrêt automatique — 5 échecs consécutifs, probablement un problème général. Vérifiez avant de relancer.", "warning");
         break;
       }
-      await new Promise(r => setTimeout(r, 400)); // stay well under Vendus rate limits
+      await new Promise(r => setTimeout(r, 1500)); // wide margin under Vendus rate limits for a large backlog run
     }
     await fiscalCheckRef.current?.();
     const stopped = regularizeStopRef.current;
