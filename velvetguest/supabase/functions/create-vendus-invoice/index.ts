@@ -183,21 +183,42 @@ Deno.serve(async (req) => {
       // it's wrong, the fn_version-tagged error banner from the test button
       // will show Vendus's real complaint and we fix the key name from that.
       ...(use_backlog_register && resto.vendus_register_id ? { register_id: resto.vendus_register_id } : {}),
-      client: (() => {
-        // Adding "country: PT" alongside the generic 999999990 placeholder
-        // still got "NIF português inválido" from Vendus — the field/value it
-        // actually wants for that combination isn't documented consistently
-        // enough to keep guessing. Simplest fix that can't fail this way: only
-        // send a fiscal_id at all when we have a REAL, checksum-valid customer
-        // NIF. For everyone else, send just a name and let Vendus apply its
-        // own default "Consumidor Final" handling — that's exactly what it's
-        // built to do when no client is specified.
+      // Adding "country: PT" alongside the generic 999999990 placeholder
+      // still got "NIF português inválido" from Vendus — the field/value it
+      // actually wants for that combination isn't documented consistently
+      // enough to keep guessing. Simplest fix that can't fail this way: only
+      // send a fiscal_id at all when we have a REAL, checksum-valid customer
+      // NIF. For everyone else, omit `client` entirely and let Vendus apply
+      // its own default "Consumidor Final" handling — that's exactly what
+      // it's built to do when no client is specified.
+      //
+      // Vendus turned out to reject the client object for other reasons the
+      // backlog surfaced in bulk: a `client` with only a `name` and neither
+      // fiscal_id/email/id/external_reference is rejected outright ("must
+      // have an id, a fiscal_id, an external_reference or an email"); a name
+      // under 3 characters is rejected too short; and a malformed email
+      // (typo'd at checkout, where it's free-text and unvalidated) is
+      // rejected as invalid. None of these are our data to fix retroactively
+      // for old orders, so validate each field and drop the whole client
+      // object rather than send Vendus something it will bounce.
+      ...(() => {
         const hasRealNif = typeof existing.customer_nif === "string" && isValidPortugueseNif(existing.customer_nif);
+        const rawName = typeof existing.customer_name === "string" ? existing.customer_name.trim() : "";
+        const hasValidName = rawName.length >= 3;
+        const rawEmail = typeof existing.customer_email === "string" ? existing.customer_email.trim() : "";
+        const hasValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail);
+
+        // Nothing that would let Vendus identify a client at all — omit the
+        // field entirely (this is the exact case that produced the "must
+        // have an id/fiscal_id/external_reference/email" error).
+        if (!hasRealNif && !hasValidEmail) return {};
+
         return {
-          name: existing.customer_name || "Consumidor Final",
-          ...(hasRealNif ? { fiscal_id: existing.customer_nif, country: "PT" } : {}),
-          email: existing.customer_email || undefined,
-          send_email: existing.customer_email ? "yes" : "no",
+          client: {
+            name: hasValidName ? rawName : "Consumidor Final",
+            ...(hasRealNif ? { fiscal_id: existing.customer_nif, country: "PT" } : {}),
+            ...(hasValidEmail ? { email: rawEmail, send_email: "yes" } : {}),
+          },
         };
       })(),
       items: (() => {
@@ -258,7 +279,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v10-register-id-for-backlog",
+        fn_version: "v11-robust-client-validation",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
