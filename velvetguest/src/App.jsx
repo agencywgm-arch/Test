@@ -6587,11 +6587,12 @@ function CaisseTab({ store, restaurant }) {
   async function runRegularizeBatch(ids, { retryLabel } = {}) {
     if (!ids.length || regularizing) return;
     regularizeStopRef.current = false;
-    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0, dateAdjusted: 0 });
+    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0, dateAdjusted: 0, clientDropped: 0 });
     setLastRunFailures([]);
     let failed = 0;
     let skipped = 0; // orders with no items — nothing to invoice, not a failure
     let dateAdjusted = 0; // real date was unreachable, invoice dated today instead
+    let clientDropped = 0; // customer info unusable, invoiced anonymously instead
     let consecutiveFailures = 0;
     const failures = [];
     for (let i = 0; i < ids.length; i++) {
@@ -6609,9 +6610,10 @@ function CaisseTab({ store, restaurant }) {
         failures.push({ id: ids[i], message: error.message || "erreur inconnue" });
       } else {
         if (data?.date_adjusted_to_today) dateAdjusted++;
+        if (data?.client_dropped) clientDropped++;
         consecutiveFailures = 0;
       }
-      setRegularizing({ done: i + 1, total: ids.length, failed, skipped, dateAdjusted });
+      setRegularizing({ done: i + 1, total: ids.length, failed, skipped, dateAdjusted, clientDropped });
       setLastRunFailures([...failures]);
       // 5 REAL failures in a row almost always means a systemic problem
       // (wrong register id, Vendus outage, quota hit) rather than 5
@@ -6630,8 +6632,9 @@ function CaisseTab({ store, restaurant }) {
     if (!stopped && consecutiveFailures < 5) {
       const skippedNote = skipped ? ` (+ ${skipped} commande(s) vide(s) ignorée(s), rien à facturer)` : "";
       const dateNote = dateAdjusted ? ` (dont ${dateAdjusted} datée(s) d'aujourd'hui au lieu de leur date réelle, déjà dépassée sur cette caisse)` : "";
+      const clientNote = clientDropped ? ` (dont ${clientDropped} émise(s) anonyme(s), infos client refusées par Vendus)` : "";
       store.pushNotif?.(
-        failed ? `⚠️ ${retryLabel || "Terminé"} avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote}${dateNote} — détail affiché sous le bouton` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}${dateNote}`,
+        failed ? `⚠️ ${retryLabel || "Terminé"} avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote}${dateNote}${clientNote} — détail affiché sous le bouton` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}${dateNote}${clientNote}`,
         failed ? "warning" : "success"
       );
     } else if (stopped) {
@@ -6846,6 +6849,7 @@ function CaisseTab({ store, restaurant }) {
                   {regularizing.failed > 0 && ` · ${regularizing.failed} vraie(s) erreur(s)`}
                   {regularizing.skipped > 0 && ` · ${regularizing.skipped} vide(s) ignorée(s)`}
                   {regularizing.dateAdjusted > 0 && ` · ${regularizing.dateAdjusted} datée(s) aujourd'hui`}
+                  {regularizing.clientDropped > 0 && ` · ${regularizing.clientDropped} anonyme(s)`}
                 </p>
                 <div style={{ height: 6, background: C.bg, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                   <div style={{ height: "100%", width: `${(regularizing.done / regularizing.total) * 100}%`, background: regularizing.failed > 0 ? C.accentOrange : C.accentGreen, transition: "width 0.2s" }} />

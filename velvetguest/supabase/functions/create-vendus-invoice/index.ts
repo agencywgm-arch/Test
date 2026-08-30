@@ -277,6 +277,23 @@ Deno.serve(async (req) => {
 
     let { res: vendusRes, j: vendusJson } = await postDocument(payload);
     let dateWasAdjusted = false;
+    let clientWasDropped = false;
+
+    // Old backlog orders keep surfacing new client-data quirks Vendus itself
+    // can't resolve — an invalid email format their validator is stricter
+    // about than ours, or (surprising but real) an account with two existing
+    // "client" records sharing the same email, which Vendus can't
+    // disambiguate on its own. There's no reliable way to predict every such
+    // case from our side, so rather than chase each new message individually,
+    // any client-related rejection gets ONE retry with the client omitted
+    // entirely — a fully anonymous "Consumidor Final" invoice always succeeds
+    // where a specific client can't be resolved.
+    const errText = () => JSON.stringify(vendusJson?.errors || vendusJson);
+    if (!vendusRes.ok && (payload as any).client && /client/i.test(errText())) {
+      const { client, ...withoutClient } = payload as any;
+      ({ res: vendusRes, j: vendusJson } = await postDocument(withoutClient));
+      clientWasDropped = vendusRes.ok;
+    }
 
     // A backlog order can get skipped past on a run (a transient error, a
     // data issue since fixed) while later, correctly-dated orders on the
@@ -287,10 +304,9 @@ Deno.serve(async (req) => {
     // today's date so the legally-required invoice still gets issued; the
     // response flags this so it's never silently misrepresented as a clean
     // backdate.
-    const dateBlocked = !vendusRes.ok &&
-      /não pode ser anterior/i.test(JSON.stringify(vendusJson?.errors || vendusJson));
-    if (dateBlocked) {
-      const retryPayload = { ...payload, date: new Date().toISOString().split("T")[0] };
+    if (!vendusRes.ok && /não pode ser anterior/i.test(errText())) {
+      const basePayload = clientWasDropped ? (() => { const { client, ...rest } = payload as any; return rest; })() : payload;
+      const retryPayload = { ...basePayload, date: new Date().toISOString().split("T")[0] };
       ({ res: vendusRes, j: vendusJson } = await postDocument(retryPayload));
       dateWasAdjusted = vendusRes.ok;
     }
@@ -302,7 +318,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v12-date-fallback-when-blocked",
+        fn_version: "v13-client-fallback-when-blocked",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
@@ -335,6 +351,10 @@ Deno.serve(async (req) => {
       // this register (an earlier order skipped it, later ones advanced the
       // date floor past it) and the invoice had to be dated today instead.
       date_adjusted_to_today: dateWasAdjusted,
+      // True when Vendus couldn't be given this order's customer info (bad
+      // email format, ambiguous duplicate client record, etc.) and the
+      // invoice had to be issued anonymously ("Consumidor Final") instead.
+      client_dropped: clientWasDropped,
     });
   } catch (err) {
     return json({ error: String(err) }, 500);
