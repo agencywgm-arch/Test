@@ -6578,22 +6578,21 @@ function CaisseTab({ store, restaurant }) {
   // wherever it left off — nothing already emitted gets duplicated or redone.
   const regularizeStopRef = useRef(false);
   function stopRegularizing() { regularizeStopRef.current = true; }
-  async function regularizeInvoices() {
-    const ids = fiscal?.missingIds || [];
+  // Kept after a run finishes (not cleared like `regularizing`) so the list of
+  // exactly-what-failed-and-why stays on screen for review, instead of only
+  // ever showing a bare count — that's what left the last run's 22 failures
+  // completely unexplained.
+  const [lastRunFailures, setLastRunFailures] = useState([]); // [{id, message}]
+
+  async function runRegularizeBatch(ids, { retryLabel } = {}) {
     if (!ids.length || regularizing) return;
-    if (!confirm(
-      `Émettre les factures Vendus manquantes pour ${ids.length} commande(s) ?\n\n` +
-      `Chaque facture sera datée de la date réelle de sa commande. Validez cette ` +
-      `régularisation avec votre comptable avant de continuer.\n\n` +
-      `Vous pourrez interrompre à tout moment avec le bouton "Arrêter" — rien n'est ` +
-      `perdu, relancer reprend exactement là où ça s'est arrêté.`
-    )) return;
     regularizeStopRef.current = false;
-    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0, failedIds: [] });
+    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0 });
+    setLastRunFailures([]);
     let failed = 0;
     let skipped = 0; // orders with no items — nothing to invoice, not a failure
     let consecutiveFailures = 0;
-    const failedIds = [];
+    const failures = [];
     for (let i = 0; i < ids.length; i++) {
       if (regularizeStopRef.current) break;
       const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
@@ -6606,11 +6605,12 @@ function CaisseTab({ store, restaurant }) {
       } else if (error) {
         failed++;
         consecutiveFailures++;
-        failedIds.push(ids[i]);
+        failures.push({ id: ids[i], message: error.message || "erreur inconnue" });
       } else {
         consecutiveFailures = 0;
       }
-      setRegularizing({ done: i + 1, total: ids.length, failed, skipped, failedIds: [...failedIds] });
+      setRegularizing({ done: i + 1, total: ids.length, failed, skipped });
+      setLastRunFailures([...failures]);
       // 5 REAL failures in a row almost always means a systemic problem
       // (wrong register id, Vendus outage, quota hit) rather than 5
       // unrelated bad orders — auto-stop instead of silently burning through
@@ -6628,12 +6628,31 @@ function CaisseTab({ store, restaurant }) {
     if (!stopped && consecutiveFailures < 5) {
       const skippedNote = skipped ? ` (+ ${skipped} commande(s) vide(s) ignorée(s), rien à facturer)` : "";
       store.pushNotif?.(
-        failed ? `⚠️ Terminé avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote} — voir détail` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}`,
+        failed ? `⚠️ ${retryLabel || "Terminé"} avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote} — détail affiché sous le bouton` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}`,
         failed ? "warning" : "success"
       );
     } else if (stopped) {
       store.pushNotif?.(`⏸️ Régularisation interrompue — relancez pour reprendre là où ça s'est arrêté.`, "warning");
     }
+  }
+
+  async function regularizeInvoices() {
+    const ids = fiscal?.missingIds || [];
+    if (!ids.length || regularizing) return;
+    if (!confirm(
+      `Émettre les factures Vendus manquantes pour ${ids.length} commande(s) ?\n\n` +
+      `Chaque facture sera datée de la date réelle de sa commande. Validez cette ` +
+      `régularisation avec votre comptable avant de continuer.\n\n` +
+      `Vous pourrez interrompre à tout moment avec le bouton "Arrêter" — rien n'est ` +
+      `perdu, relancer reprend exactement là où ça s'est arrêté.`
+    )) return;
+    await runRegularizeBatch(ids);
+  }
+
+  async function retryFailedInvoices() {
+    const ids = lastRunFailures.map(f => f.id);
+    if (!ids.length) return;
+    await runRegularizeBatch(ids, { retryLabel: "Nouvel essai" });
   }
 
   // Emits exactly ONE missing invoice — for testing the Vendus connection
@@ -6832,9 +6851,28 @@ function CaisseTab({ store, restaurant }) {
                 </Btn>
               </div>
             ) : (
-              <Btn variant="ghost" full onClick={regularizeInvoices} style={{ marginBottom: 10 }}>
-                🧾 Émettre les {fiscal.missing} facture{fiscal.missing > 1 ? "s" : ""} Vendus manquante{fiscal.missing > 1 ? "s" : ""}
-              </Btn>
+              <>
+                <Btn variant="ghost" full onClick={regularizeInvoices} style={{ marginBottom: lastRunFailures.length ? 8 : 10 }}>
+                  🧾 Émettre les {fiscal.missing} facture{fiscal.missing > 1 ? "s" : ""} Vendus manquante{fiscal.missing > 1 ? "s" : ""}
+                </Btn>
+                {lastRunFailures.length > 0 && (
+                  <div style={{ background: C.accent + "0d", border: `1.5px solid ${C.accent}30`, borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, marginBottom: 6 }}>
+                      ⚠️ {lastRunFailures.length} facture{lastRunFailures.length > 1 ? "s ont" : " a"} échoué au dernier essai :
+                    </p>
+                    <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 8 }}>
+                      {lastRunFailures.map(f => (
+                        <p key={f.id} style={{ fontSize: 11, color: "#8A2036", marginBottom: 4, lineHeight: 1.4 }}>
+                          #{f.id.slice(0, 6).toUpperCase()} — {f.message}
+                        </p>
+                      ))}
+                    </div>
+                    <Btn variant="ghost" full onClick={retryFailedInvoices} style={{ borderColor: C.accent, color: C.accent }}>
+                      🔁 Réessayer ces {lastRunFailures.length} échec{lastRunFailures.length > 1 ? "s" : ""}
+                    </Btn>
+                  </div>
+                )}
+              </>
             )
           )}
           {/* One-at-a-time test button — validate the Vendus connection on a
