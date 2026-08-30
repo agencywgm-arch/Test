@@ -6661,6 +6661,19 @@ function CaisseTab({ store, restaurant }) {
     await runRegularizeBatch(ids, { retryLabel: "Nouvel essai" });
   }
 
+  // For an order Vendus genuinely can't invoice no matter what we send it —
+  // marks it as deliberately skipped (not a fabricated invoice) so it stops
+  // showing up as "missing" forever, without touching the order's own sales
+  // data (total, items, revenue history all stay exactly as they are).
+  async function hideFailedInvoice(orderId) {
+    if (!confirm("Marquer cette commande comme \"pas de facture Vendus\" ? Elle ne sera plus jamais comptée comme manquante — les données de la commande elle-même ne sont pas touchées.")) return;
+    const { error } = await supabase.from("orders").update({ vendus_invoice_id: "SKIPPED_MANUALLY", vendus_invoice_number: "—" }).eq("id", orderId);
+    if (error) { store.pushNotif?.("Erreur : " + error.message, "warning"); return; }
+    setLastRunFailures(prev => prev.filter(f => f.id !== orderId));
+    await fiscalCheckRef.current?.();
+    store.pushNotif?.("Commande masquée — elle ne sera plus signalée.", "success");
+  }
+
   // Emits exactly ONE missing invoice — for testing the Vendus connection
   // safely on a single order before trusting the bulk regularization above
   // with the whole backlog.
@@ -6870,9 +6883,15 @@ function CaisseTab({ store, restaurant }) {
                     </p>
                     <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 8 }}>
                       {lastRunFailures.map(f => (
-                        <p key={f.id} style={{ fontSize: 11, color: "#8A2036", marginBottom: 4, lineHeight: 1.4 }}>
-                          #{f.id.slice(0, 6).toUpperCase()} — {f.message}
-                        </p>
+                        <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <p style={{ fontSize: 11, color: "#8A2036", lineHeight: 1.4, flex: 1, margin: 0 }}>
+                            #{f.id.slice(0, 6).toUpperCase()} — {f.message}
+                          </p>
+                          <button onClick={() => hideFailedInvoice(f.id)}
+                            style={{ flexShrink: 0, background: "none", border: `1px solid ${C.accent}50`, borderRadius: 6, padding: "2px 8px", fontSize: 10, color: C.accent, cursor: "pointer", ...FF }}>
+                            Masquer
+                          </button>
+                        </div>
                       ))}
                     </div>
                     <Btn variant="ghost" full onClick={retryFailedInvoices} style={{ borderColor: C.accent, color: C.accent }}>

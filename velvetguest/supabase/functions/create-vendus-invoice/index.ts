@@ -284,12 +284,15 @@ Deno.serve(async (req) => {
     // about than ours, or (surprising but real) an account with two existing
     // "client" records sharing the same email, which Vendus can't
     // disambiguate on its own. There's no reliable way to predict every such
-    // case from our side, so rather than chase each new message individually,
-    // any client-related rejection gets ONE retry with the client omitted
-    // entirely — a fully anonymous "Consumidor Final" invoice always succeeds
-    // where a specific client can't be resolved.
+    // case from our side (or even reliably pattern-match every message shape
+    // Vendus might use for it), so this is unconditional: any failure at all
+    // when we sent a client gets ONE retry with the client omitted entirely —
+    // a fully anonymous "Consumidor Final" invoice always succeeds where a
+    // specific client can't be resolved, and if the client wasn't the actual
+    // problem, this retry just fails again with the real underlying error
+    // (which the response still reports).
     const errText = () => JSON.stringify(vendusJson?.errors || vendusJson);
-    if (!vendusRes.ok && (payload as any).client && /client/i.test(errText())) {
+    if (!vendusRes.ok && (payload as any).client) {
       const { client, ...withoutClient } = payload as any;
       ({ res: vendusRes, j: vendusJson } = await postDocument(withoutClient));
       clientWasDropped = vendusRes.ok;
@@ -318,7 +321,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v13-client-fallback-when-blocked",
+        fn_version: "v14-unconditional-client-drop",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
