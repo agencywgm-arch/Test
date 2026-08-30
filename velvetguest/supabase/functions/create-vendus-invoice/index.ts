@@ -277,13 +277,12 @@ Deno.serve(async (req) => {
       ok: true,
       invoice_id: vendusJson.id,
       invoice_number: vendusJson.number,
+      // Vendus's create-document response doesn't include a hosted PDF link —
+      // only raw ESC/POS printer bytes (`output`). The invoice is still fully
+      // valid and viewable from the Vendus dashboard under Documentos; there's
+      // just no URL to show here.
       invoice_url: vendusJson.link || vendusJson.pdf_url || vendusJson.url || "",
       escpos: vendusJson.escpos || null,
-      // Temporary: the invoice number/date persisted fine but the URL came
-      // back empty, meaning none of link/pdf_url/url is the real field name
-      // Vendus uses in this response — dump the whole thing once so we can
-      // see the actual key and fix it for good instead of guessing again.
-      raw_vendus_response_debug: vendusJson,
     });
   } catch (err) {
     return json({ error: String(err) }, 500);
