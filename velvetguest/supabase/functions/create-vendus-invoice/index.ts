@@ -265,12 +265,35 @@ Deno.serve(async (req) => {
       output: "escpos", // ask Vendus to also return an ESC/POS payload we can push to the printer later
     };
 
-    const vendusRes = await fetch(`${VENDUS_BASE}/documents/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
-      method: "POST",
-      headers: { "Authorization": VENDUS_AUTH, "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, api_key: VENDUS_API_KEY }),
-    });
-    const vendusJson: any = await vendusRes.json().catch(() => ({}));
+    const postDocument = async (p: Record<string, unknown>) => {
+      const res = await fetch(`${VENDUS_BASE}/documents/?api_key=${encodeURIComponent(VENDUS_API_KEY)}`, {
+        method: "POST",
+        headers: { "Authorization": VENDUS_AUTH, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p, api_key: VENDUS_API_KEY }),
+      });
+      const j: any = await res.json().catch(() => ({}));
+      return { res, j };
+    };
+
+    let { res: vendusRes, j: vendusJson } = await postDocument(payload);
+    let dateWasAdjusted = false;
+
+    // A backlog order can get skipped past on a run (a transient error, a
+    // data issue since fixed) while later, correctly-dated orders on the
+    // same register go through and advance its date floor. Retrying the
+    // skipped one afterwards then hits this exact "date antérieure" error
+    // even on the backlog register — there is no way left to give it its
+    // true original date. Rather than block it forever, fall back once to
+    // today's date so the legally-required invoice still gets issued; the
+    // response flags this so it's never silently misrepresented as a clean
+    // backdate.
+    const dateBlocked = !vendusRes.ok &&
+      /não pode ser anterior/i.test(JSON.stringify(vendusJson?.errors || vendusJson));
+    if (dateBlocked) {
+      const retryPayload = { ...payload, date: new Date().toISOString().split("T")[0] };
+      ({ res: vendusRes, j: vendusJson } = await postDocument(retryPayload));
+      dateWasAdjusted = vendusRes.ok;
+    }
 
     if (!vendusRes.ok) {
       return json({
@@ -279,7 +302,7 @@ Deno.serve(async (req) => {
         // Bump this string on every deploy — the only reliable way to confirm
         // from the app's own error banner (no Supabase dashboard needed) that
         // this exact revision, not a stale cached one, is what actually ran.
-        fn_version: "v11-robust-client-validation",
+        fn_version: "v12-date-fallback-when-blocked",
         status: vendusRes.status,
         vendus_response: vendusJson,
         // Helps tell "wrong key" apart from "key not transmitted".
@@ -308,6 +331,10 @@ Deno.serve(async (req) => {
       // just no URL to show here.
       invoice_url: vendusJson.link || vendusJson.pdf_url || vendusJson.url || "",
       escpos: vendusJson.escpos || null,
+      // True when this specific order's real date was already unreachable on
+      // this register (an earlier order skipped it, later ones advanced the
+      // date floor past it) and the invoice had to be dated today instead.
+      date_adjusted_to_today: dateWasAdjusted,
     });
   } catch (err) {
     return json({ error: String(err) }, 500);

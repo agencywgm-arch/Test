@@ -6587,15 +6587,16 @@ function CaisseTab({ store, restaurant }) {
   async function runRegularizeBatch(ids, { retryLabel } = {}) {
     if (!ids.length || regularizing) return;
     regularizeStopRef.current = false;
-    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0 });
+    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0, dateAdjusted: 0 });
     setLastRunFailures([]);
     let failed = 0;
     let skipped = 0; // orders with no items — nothing to invoice, not a failure
+    let dateAdjusted = 0; // real date was unreachable, invoice dated today instead
     let consecutiveFailures = 0;
     const failures = [];
     for (let i = 0; i < ids.length; i++) {
       if (regularizeStopRef.current) break;
-      const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
+      const { data, error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
       if (error?.code === "no_items") {
         // An empty order can never be invoiced — that's a data fact about
         // this specific order, not a sign anything is broken, so it must
@@ -6607,9 +6608,10 @@ function CaisseTab({ store, restaurant }) {
         consecutiveFailures++;
         failures.push({ id: ids[i], message: error.message || "erreur inconnue" });
       } else {
+        if (data?.date_adjusted_to_today) dateAdjusted++;
         consecutiveFailures = 0;
       }
-      setRegularizing({ done: i + 1, total: ids.length, failed, skipped });
+      setRegularizing({ done: i + 1, total: ids.length, failed, skipped, dateAdjusted });
       setLastRunFailures([...failures]);
       // 5 REAL failures in a row almost always means a systemic problem
       // (wrong register id, Vendus outage, quota hit) rather than 5
@@ -6627,8 +6629,9 @@ function CaisseTab({ store, restaurant }) {
     setRegularizing(null);
     if (!stopped && consecutiveFailures < 5) {
       const skippedNote = skipped ? ` (+ ${skipped} commande(s) vide(s) ignorée(s), rien à facturer)` : "";
+      const dateNote = dateAdjusted ? ` (dont ${dateAdjusted} datée(s) d'aujourd'hui au lieu de leur date réelle, déjà dépassée sur cette caisse)` : "";
       store.pushNotif?.(
-        failed ? `⚠️ ${retryLabel || "Terminé"} avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote} — détail affiché sous le bouton` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}`,
+        failed ? `⚠️ ${retryLabel || "Terminé"} avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote}${dateNote} — détail affiché sous le bouton` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}${dateNote}`,
         failed ? "warning" : "success"
       );
     } else if (stopped) {
@@ -6672,7 +6675,7 @@ function CaisseTab({ store, restaurant }) {
       setOneShotResult({ ok: false, orderId, error: data?.error || error?.message || "erreur inconnue" });
       store.pushNotif?.("⚠️ Échec de la facture test — voir détail sous le bouton", "warning");
     } else {
-      setOneShotResult({ ok: true, orderId, url: data?.invoice_url, raw: data?.raw_vendus_response_debug });
+      setOneShotResult({ ok: true, orderId, url: data?.invoice_url, dateAdjusted: data?.date_adjusted_to_today });
       store.pushNotif?.("✅ Facture test émise", "success");
       await fiscalCheckRef.current?.();
     }
@@ -6842,6 +6845,7 @@ function CaisseTab({ store, restaurant }) {
                   Émission des factures… {regularizing.done}/{regularizing.total}
                   {regularizing.failed > 0 && ` · ${regularizing.failed} vraie(s) erreur(s)`}
                   {regularizing.skipped > 0 && ` · ${regularizing.skipped} vide(s) ignorée(s)`}
+                  {regularizing.dateAdjusted > 0 && ` · ${regularizing.dateAdjusted} datée(s) aujourd'hui`}
                 </p>
                 <div style={{ height: 6, background: C.bg, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                   <div style={{ height: "100%", width: `${(regularizing.done / regularizing.total) * 100}%`, background: regularizing.failed > 0 ? C.accentOrange : C.accentGreen, transition: "width 0.2s" }} />
@@ -6890,7 +6894,7 @@ function CaisseTab({ store, restaurant }) {
                   color: oneShotResult.ok ? "#1E7E34" : C.accent, lineHeight: 1.5,
                 }}>
                   {oneShotResult.ok ? (
-                    <>✅ Facture créée pour la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()}.{oneShotResult.url && <> <a href={oneShotResult.url} target="_blank" rel="noreferrer" style={{ color: "#1E7E34", fontWeight: 700 }}>Voir la facture ↗</a></>}{!oneShotResult.url && oneShotResult.raw && <><br /><span style={{ fontSize: 11, opacity: 0.8 }}>Pas de lien PDF trouvé — réponse brute Vendus : {JSON.stringify(oneShotResult.raw)}</span></>}</>
+                    <>✅ Facture créée pour la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()}.{oneShotResult.url && <> <a href={oneShotResult.url} target="_blank" rel="noreferrer" style={{ color: "#1E7E34", fontWeight: 700 }}>Voir la facture ↗</a></>}{oneShotResult.dateAdjusted && <><br /><span style={{ fontSize: 11, opacity: 0.85 }}>⚠️ Datée d'aujourd'hui — sa date réelle était déjà dépassée sur cette caisse.</span></>}</>
                   ) : (
                     <>⚠️ Échec sur la commande #{oneShotResult.orderId.slice(0, 6).toUpperCase()} : {oneShotResult.error}</>
                   )}
