@@ -6579,7 +6579,7 @@ function CaisseTab({ store, restaurant }) {
     setRegularizing({ done: 0, total: ids.length, failed: 0 });
     let failed = 0;
     for (let i = 0; i < ids.length; i++) {
-      const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i] }, 2);
+      const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
       if (error) failed++;
       setRegularizing({ done: i + 1, total: ids.length, failed });
       await new Promise(r => setTimeout(r, 400)); // stay well under Vendus rate limits
@@ -6603,7 +6603,7 @@ function CaisseTab({ store, restaurant }) {
     setRegularizingOne(true);
     setOneShotResult(null);
     const orderId = ids[0];
-    const { data, error } = await invokeWithRetry("create-vendus-invoice", { order_id: orderId }, 2);
+    const { data, error } = await invokeWithRetry("create-vendus-invoice", { order_id: orderId, use_backlog_register: true }, 2);
     setRegularizingOne(false);
     if (error || data?.ok === false) {
       setOneShotResult({ ok: false, orderId, error: data?.error || error?.message || "erreur inconnue" });
