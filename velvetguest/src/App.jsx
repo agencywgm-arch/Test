@@ -6567,29 +6567,58 @@ function CaisseTab({ store, restaurant }) {
 
   // Re-triggers invoice emission for every paid order that has none. The Edge
   // Function is idempotent (it returns the existing invoice instead of issuing
-  // a second one), so this is safe to run more than once.
+  // a second one), so re-running after a stop/interruption just resumes from
+  // wherever it left off — nothing already emitted gets duplicated or redone.
+  const regularizeStopRef = useRef(false);
+  function stopRegularizing() { regularizeStopRef.current = true; }
   async function regularizeInvoices() {
     const ids = fiscal?.missingIds || [];
     if (!ids.length || regularizing) return;
     if (!confirm(
       `Émettre les factures Vendus manquantes pour ${ids.length} commande(s) ?\n\n` +
       `Chaque facture sera datée de la date réelle de sa commande. Validez cette ` +
-      `régularisation avec votre comptable avant de continuer.`
+      `régularisation avec votre comptable avant de continuer.\n\n` +
+      `Vous pourrez interrompre à tout moment avec le bouton "Arrêter" — rien n'est ` +
+      `perdu, relancer reprend exactement là où ça s'est arrêté.`
     )) return;
-    setRegularizing({ done: 0, total: ids.length, failed: 0 });
+    regularizeStopRef.current = false;
+    setRegularizing({ done: 0, total: ids.length, failed: 0, failedIds: [] });
     let failed = 0;
+    let consecutiveFailures = 0;
+    const failedIds = [];
     for (let i = 0; i < ids.length; i++) {
+      if (regularizeStopRef.current) break;
       const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
-      if (error) failed++;
-      setRegularizing({ done: i + 1, total: ids.length, failed });
+      if (error) {
+        failed++;
+        consecutiveFailures++;
+        failedIds.push(ids[i]);
+      } else {
+        consecutiveFailures = 0;
+      }
+      setRegularizing({ done: i + 1, total: ids.length, failed, failedIds: [...failedIds] });
+      // 5 failures in a row almost always means a systemic problem (wrong
+      // register id, Vendus outage, quota hit) rather than 5 unrelated bad
+      // orders — auto-stop instead of silently burning through the rest of
+      // the backlog with the same error, which would just create more
+      // cleanup work than it saves.
+      if (consecutiveFailures >= 5) {
+        store.pushNotif?.("⛔ Arrêt automatique — 5 échecs consécutifs, probablement un problème général. Vérifiez avant de relancer.", "warning");
+        break;
+      }
       await new Promise(r => setTimeout(r, 400)); // stay well under Vendus rate limits
     }
     await fiscalCheckRef.current?.();
+    const stopped = regularizeStopRef.current;
     setRegularizing(null);
-    store.pushNotif?.(
-      failed ? `⚠️ ${ids.length - failed}/${ids.length} factures émises — ${failed} en échec` : `✅ ${ids.length} factures émises`,
-      failed ? "warning" : "success"
-    );
+    if (!stopped && consecutiveFailures < 5) {
+      store.pushNotif?.(
+        failed ? `⚠️ Terminé avec ${failed} échec(s) sur ${ids.length} — voir détail` : `✅ ${ids.length} factures émises`,
+        failed ? "warning" : "success"
+      );
+    } else if (stopped) {
+      store.pushNotif?.(`⏸️ Régularisation interrompue — relancez pour reprendre là où ça s'est arrêté.`, "warning");
+    }
   }
 
   // Emits exactly ONE missing invoice — for testing the Vendus connection
@@ -6774,10 +6803,18 @@ function CaisseTab({ store, restaurant }) {
               available now that the alert banner is gone. */}
           {fiscal?.enabled && fiscal.missing > 0 && (
             regularizing ? (
-              <p style={{ fontSize: 12, color: C.textSecondary, textAlign: "center", marginBottom: 10 }}>
-                Émission des factures… {regularizing.done}/{regularizing.total}
-                {regularizing.failed > 0 && ` · ${regularizing.failed} en échec`}
-              </p>
+              <div style={{ marginBottom: 10 }}>
+                <p style={{ fontSize: 12, color: C.textSecondary, textAlign: "center", marginBottom: 6 }}>
+                  Émission des factures… {regularizing.done}/{regularizing.total}
+                  {regularizing.failed > 0 && ` · ${regularizing.failed} en échec`}
+                </p>
+                <div style={{ height: 6, background: C.bg, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                  <div style={{ height: "100%", width: `${(regularizing.done / regularizing.total) * 100}%`, background: regularizing.failed > 0 ? C.accentOrange : C.accentGreen, transition: "width 0.2s" }} />
+                </div>
+                <Btn variant="ghost" full onClick={stopRegularizing} style={{ borderColor: C.accent, color: C.accent }}>
+                  ⏸️ Arrêter (reprendra où ça s'est arrêté)
+                </Btn>
+              </div>
             ) : (
               <Btn variant="ghost" full onClick={regularizeInvoices} style={{ marginBottom: 10 }}>
                 🧾 Émettre les {fiscal.missing} facture{fiscal.missing > 1 ? "s" : ""} Vendus manquante{fiscal.missing > 1 ? "s" : ""}
