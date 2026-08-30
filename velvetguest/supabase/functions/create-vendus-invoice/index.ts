@@ -92,7 +92,11 @@ Deno.serve(async (req) => {
       .from("order_items")
       .select("quantity, detail, menu_items(name, price)")
       .eq("order_id", order_id);
-    if (!items?.length) return json({ error: "no items on order" }, 400);
+    // An empty order (deleted items, corrupted historical row) has nothing to
+    // put on an invoice — that's a data fact, not a Vendus/API problem, so it
+    // gets its own code the frontend can treat as an expected skip rather
+    // than a failure that should ever halt the backlog run.
+    if (!items?.length) return json({ ok: false, code: "no_items", error: "no items on order" }, 400);
 
     // Default to NOR (23%): over-declaring VAT is recoverable, under-declaring
     // is a tax liability. Override per restaurant once validated with the accountant.

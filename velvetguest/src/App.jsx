@@ -445,9 +445,9 @@ async function readFunctionErrorDetail(error) {
     // error" label that tells nobody anything.
     if (body.vendus_response) {
       const pmNote = ` | payment_id_used=${body.payment_id_used ?? "none"} | pm_debug=${JSON.stringify(body.vendus_paymentmethods_debug || {}).slice(0, 600)}`;
-      return `[${body.fn_version || "no-version"}] HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}${pmNote}`;
+      return { message: `[${body.fn_version || "no-version"}] HTTP ${body.status ?? "?"} — ${JSON.stringify(body.vendus_response)}${pmNote}`, code: body.code || null };
     }
-    return body.error || null;
+    return { message: body.error || null, code: body.code || null };
   } catch { return null; }
 }
 
@@ -472,9 +472,16 @@ async function invokeWithRetry(fnName, body, attempts = 3) {
     if (!error && !data?.error) return { data, error: null };
     if (error) {
       const detail = await readFunctionErrorDetail(error);
-      lastErr = detail ? new Error(detail) : error;
+      lastErr = detail?.message ? new Error(detail.message) : error;
+      if (lastErr && detail?.code) lastErr.code = detail.code;
+      // A permanently-empty order (no items) will never succeed no matter
+      // how many times we retry — stop immediately instead of wasting the
+      // retry delays on something retrying can't fix.
+      if (detail?.code === "no_items") break;
     } else {
       lastErr = new Error(data?.error || "unknown error");
+      if (data?.code) lastErr.code = data.code;
+      if (data?.code === "no_items") break;
     }
     if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
   }
@@ -6582,28 +6589,35 @@ function CaisseTab({ store, restaurant }) {
       `perdu, relancer reprend exactement là où ça s'est arrêté.`
     )) return;
     regularizeStopRef.current = false;
-    setRegularizing({ done: 0, total: ids.length, failed: 0, failedIds: [] });
+    setRegularizing({ done: 0, total: ids.length, failed: 0, skipped: 0, failedIds: [] });
     let failed = 0;
+    let skipped = 0; // orders with no items — nothing to invoice, not a failure
     let consecutiveFailures = 0;
     const failedIds = [];
     for (let i = 0; i < ids.length; i++) {
       if (regularizeStopRef.current) break;
       const { error } = await invokeWithRetry("create-vendus-invoice", { order_id: ids[i], use_backlog_register: true }, 2);
-      if (error) {
+      if (error?.code === "no_items") {
+        // An empty order can never be invoiced — that's a data fact about
+        // this specific order, not a sign anything is broken, so it must
+        // never count toward the consecutive-failure auto-stop.
+        skipped++;
+        consecutiveFailures = 0;
+      } else if (error) {
         failed++;
         consecutiveFailures++;
         failedIds.push(ids[i]);
       } else {
         consecutiveFailures = 0;
       }
-      setRegularizing({ done: i + 1, total: ids.length, failed, failedIds: [...failedIds] });
-      // 5 failures in a row almost always means a systemic problem (wrong
-      // register id, Vendus outage, quota hit) rather than 5 unrelated bad
-      // orders — auto-stop instead of silently burning through the rest of
-      // the backlog with the same error, which would just create more
-      // cleanup work than it saves.
+      setRegularizing({ done: i + 1, total: ids.length, failed, skipped, failedIds: [...failedIds] });
+      // 5 REAL failures in a row almost always means a systemic problem
+      // (wrong register id, Vendus outage, quota hit) rather than 5
+      // unrelated bad orders — auto-stop instead of silently burning through
+      // the rest of the backlog with the same error, which would just create
+      // more cleanup work than it saves.
       if (consecutiveFailures >= 5) {
-        store.pushNotif?.("⛔ Arrêt automatique — 5 échecs consécutifs, probablement un problème général. Vérifiez avant de relancer.", "warning");
+        store.pushNotif?.("⛔ Arrêt automatique — 5 vraies erreurs consécutives, probablement un problème général. Vérifiez avant de relancer.", "warning");
         break;
       }
       await new Promise(r => setTimeout(r, 1500)); // wide margin under Vendus rate limits for a large backlog run
@@ -6612,8 +6626,9 @@ function CaisseTab({ store, restaurant }) {
     const stopped = regularizeStopRef.current;
     setRegularizing(null);
     if (!stopped && consecutiveFailures < 5) {
+      const skippedNote = skipped ? ` (+ ${skipped} commande(s) vide(s) ignorée(s), rien à facturer)` : "";
       store.pushNotif?.(
-        failed ? `⚠️ Terminé avec ${failed} échec(s) sur ${ids.length} — voir détail` : `✅ ${ids.length} factures émises`,
+        failed ? `⚠️ Terminé avec ${failed} vraie(s) erreur(s) sur ${ids.length}${skippedNote} — voir détail` : `✅ ${ids.length - skipped} facture(s) émise(s)${skippedNote}`,
         failed ? "warning" : "success"
       );
     } else if (stopped) {
@@ -6806,7 +6821,8 @@ function CaisseTab({ store, restaurant }) {
               <div style={{ marginBottom: 10 }}>
                 <p style={{ fontSize: 12, color: C.textSecondary, textAlign: "center", marginBottom: 6 }}>
                   Émission des factures… {regularizing.done}/{regularizing.total}
-                  {regularizing.failed > 0 && ` · ${regularizing.failed} en échec`}
+                  {regularizing.failed > 0 && ` · ${regularizing.failed} vraie(s) erreur(s)`}
+                  {regularizing.skipped > 0 && ` · ${regularizing.skipped} vide(s) ignorée(s)`}
                 </p>
                 <div style={{ height: 6, background: C.bg, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                   <div style={{ height: "100%", width: `${(regularizing.done / regularizing.total) * 100}%`, background: regularizing.failed > 0 ? C.accentOrange : C.accentGreen, transition: "width 0.2s" }} />
