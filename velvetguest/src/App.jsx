@@ -3037,6 +3037,7 @@ function useLiveScans(restaurantId) {
 
 function OverviewTab({ store, restaurant, onCuisine, onClient }) {
   const [weeklyRev, setWeeklyRev] = useState(Array(7).fill(0));
+  const [monthlyRev, setMonthlyRev] = useState(null);
   const isMobile = useIsMobile();
   const liveScans = useLiveScans(restaurant.id);
 
@@ -3069,6 +3070,14 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
         });
         // Only update if we got real data, else keep the _realStats estimate
         if ((data ?? []).length > 0 || !restaurant._realStats) setWeeklyRev(totals);
+      });
+
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    supabase.from("orders").select("total")
+      .eq("restaurant_id", restaurant.id).eq("status", "DONE")
+      .gte("created_at", monthStart.toISOString())
+      .then(({ data }) => {
+        setMonthlyRev((data ?? []).reduce((s, o) => s + Number(o.total || 0), 0));
       });
   }, [restaurant.id]);
 
@@ -3117,6 +3126,9 @@ function OverviewTab({ store, restaurant, onCuisine, onClient }) {
             <div>
               <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 4, fontWeight: 500 }}>Revenus 7 derniers jours</p>
               <p style={{ fontSize: 26, fontWeight: 800, color: C.dark, letterSpacing: "-0.04em" }}>{totalWeek.toFixed(2)} €</p>
+              <p style={{ fontSize: 12, color: C.textTertiary, marginTop: 6 }}>
+                {new Date().toLocaleDateString("fr-FR", { month: "long" })} : {monthlyRev == null ? "…" : `${monthlyRev.toFixed(2)} €`}
+              </p>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
