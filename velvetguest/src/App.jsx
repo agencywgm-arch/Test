@@ -6352,8 +6352,8 @@ function exportScansCSV(scanRows, restaurant) {
   setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
 }
 
-function exportCSV(orders, restaurant) {
-  const dateStr = new Date().toLocaleDateString("fr-FR");
+function exportCSV(orders, restaurant, periodLabel) {
+  const dateStr = periodLabel || new Date().toLocaleDateString("fr-FR");
   const headers = [
     "Date", "Heure", "N° Commande", "Table", "Client",
     "Article", "Quantité", "Prix unitaire HT (€)", "TVA 10% (€)", "Prix unitaire TTC (€)", "Total ligne TTC (€)",
@@ -6398,8 +6398,8 @@ function exportCSV(orders, restaurant) {
   const totalTVA = revenue - totalHT;
   const byMethod = orders.reduce((acc, o) => { const m = pmLabel(o.payment_method); acc[m] = (acc[m] || 0) + o.total; return acc; }, {});
   rows.push(Array(headers.length).fill(""));
-  rows.push(["=== RÉCAPITULATIF JOURNALIER ===", ...Array(headers.length - 1).fill("")]);
-  rows.push([`Restaurant : ${restaurant.name}`, `Date : ${dateStr}`, `Nb commandes : ${orders.length}`, ...Array(headers.length - 3).fill("")]);
+  rows.push([`=== RÉCAPITULATIF — ${dateStr} ===`, ...Array(headers.length - 1).fill("")]);
+  rows.push([`Restaurant : ${restaurant.name}`, `Période : ${dateStr}`, `Nb commandes : ${orders.length}`, ...Array(headers.length - 3).fill("")]);
   rows.push([`CA TTC : ${revenue.toFixed(2)} €`, `CA HT : ${totalHT.toFixed(2)} €`, `TVA 10% : ${totalTVA.toFixed(2)} €`, ...Array(headers.length - 3).fill("")]);
   Object.entries(byMethod).forEach(([m, v]) => rows.push([`${m} : ${v.toFixed(2)} €`, ...Array(headers.length - 1).fill("")]));
 
@@ -6408,7 +6408,7 @@ function exportCSV(orders, restaurant) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `caisse-${restaurant.name.replace(/\s+/g, "-")}-${dateStr.replace(/\//g, "-")}.csv`;
+  a.download = `caisse-${restaurant.name.replace(/\s+/g, "-")}-${dateStr.replace(/[\s/]+/g, "-")}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -6575,6 +6575,32 @@ function CaisseTab({ store, restaurant }) {
     acc[m] = (acc[m] || 0) + o.total;
     return acc;
   }, {});
+
+  // Monthly CSV export — the full 1st-to-last-day of whichever month is
+  // picked, independent of the daily "Journal" view above. Fetched fresh
+  // rather than reusing `orders`, since that only ever holds one day.
+  const [exportMonth, setExportMonth] = useState(selectedDate.slice(0, 7)); // "YYYY-MM"
+  const [exportingMonth, setExportingMonth] = useState(false);
+  async function exportMonthCSV() {
+    setExportingMonth(true);
+    try {
+      const [y, m] = exportMonth.split("-").map(Number);
+      const monthStart = new Date(y, m - 1, 1, 0, 0, 0);
+      const monthEnd = new Date(y, m, 0, 23, 59, 59, 999); // day 0 of next month = last day of this one
+      const { data, error } = await supabase.from("orders").select(ORDER_QUERY)
+        .eq("restaurant_id", restaurant.id).eq("status", "DONE")
+        .gte("created_at", monthStart.toISOString()).lte("created_at", monthEnd.toISOString())
+        .order("created_at", { ascending: true });
+      if (error) { store.pushNotif?.("Erreur export : " + error.message, "warning"); return; }
+      const monthOrders = (data ?? []).map(fmtOrder);
+      if (!monthOrders.length) { store.pushNotif?.("Aucune commande clôturée ce mois-là.", "warning"); return; }
+      const label = monthStart.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+      exportCSV(monthOrders, restaurant, label);
+      store.pushNotif?.(`✅ Export de ${label} — ${monthOrders.length} commande(s)`, "success");
+    } finally {
+      setExportingMonth(false);
+    }
+  }
 
   // ── Fiscal compliance monitor ────────────────────────────────────────────
   // Continuously checks that every paid order actually produced a certified
@@ -6864,6 +6890,14 @@ function CaisseTab({ store, restaurant }) {
           <Btn variant="ghost" full onClick={() => exportRapportZ(orders, restaurant)} style={{ marginBottom: 10 }}>
             🖨️ Rapport Z — impression / PDF
           </Btn>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <input type="month" value={exportMonth} max={todayStr.slice(0, 7)}
+              onChange={e => e.target.value && setExportMonth(e.target.value)}
+              style={{ flex: 1, fontSize: 13, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", background: C.white, ...FF }} />
+            <Btn variant="ghost" onClick={exportMonthCSV} disabled={exportingMonth} style={{ flexShrink: 0 }}>
+              {exportingMonth ? "…" : "📅 Exporter le mois"}
+            </Btn>
+          </div>
           {/* Discreet entry point for issuing missing fiscal invoices, kept
               available now that the alert banner is gone. */}
           {fiscal?.enabled && fiscal.missing > 0 && (
