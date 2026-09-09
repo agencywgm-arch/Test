@@ -7559,6 +7559,8 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pe
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
   const piIdRef = useRef(null); // extracted from the client_secret as soon as we have one
+  const clientSecretRef = useRef(null);
+  const handledRef = useRef(false); // guards against onSuccess firing twice (the stuck confirmPayment() call AND the recheck below both resolving)
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
@@ -7614,6 +7616,7 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pe
         // lets the server-side safety net below be written before any redirect
         // can happen, instead of only after a successful inline confirmation.
         piIdRef.current = client_secret.split("_secret_")[0];
+        clientSecretRef.current = client_secret;
         // Best-effort safety net for redirect-based methods (MB WAY...): if the
         // browser never comes back after payment (app closed, tab killed), a
         // server-side webhook can still build the order from this — keyed by
@@ -7677,8 +7680,21 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pe
       } catch {}
     }
     const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
-    if (err) { setError(err.message); setPaying(false); return; }
+    // This await can come back long after it was called — a phone switched
+    // to the banking app for MB WAY approval can suspend the browser tab for
+    // a while, and by the time it resumes, the recheck effect below may have
+    // already found success on its own and finished the order. Never act
+    // twice on the same payment.
+    if (handledRef.current) return;
+    if (err) {
+      // A failure from confirmPayment itself is only trustworthy if nothing
+      // else already resolved it (see handledRef check above) — otherwise a
+      // late "canceled" from an abandoned confirmPayment call could stomp on
+      // a genuinely successful payment the recheck effect already handled.
+      setError(err.message); setPaying(false); return;
+    }
     if (paymentIntent?.status === "succeeded") {
+      handledRef.current = true;
       // Completed inline (card, no redirect needed) — the normal onSuccess
       // path below creates the order right now, so the redirect-recovery
       // data would only be stale leftovers if left behind.
@@ -7686,6 +7702,47 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pe
       await onSuccess("card", paymentIntent.id);
     }
   }
+
+  // MB WAY (and similar app-confirmation methods) can leave confirmPayment()
+  // hanging indefinitely: switching to the banking app to approve can
+  // suspend the browser tab's JS long enough that the promise above never
+  // resolves, or resolves into a component that iOS has since discarded —
+  // "Check your MB WAY app" spins forever even though the payment actually
+  // went through. Whenever the tab becomes visible/focused again while a
+  // payment is in flight, ask Stripe directly instead of trusting that the
+  // original call will ever come back.
+  useEffect(() => {
+    async function recheck() {
+      if (document.visibilityState !== "visible") return;
+      if (handledRef.current || !paying || !stripeRef.current || !clientSecretRef.current) return;
+      try {
+        const { paymentIntent } = await stripeRef.current.retrievePaymentIntent(clientSecretRef.current);
+        if (handledRef.current) return;
+        if (paymentIntent?.status === "succeeded") {
+          handledRef.current = true;
+          if (prepayKey) { try { localStorage.removeItem(prepayKey); } catch {} }
+          await onSuccess("card", paymentIntent.id);
+        } else if (paymentIntent?.status === "canceled") {
+          setPaying(false);
+          setError("Le paiement a été annulé. Réessayez.");
+        }
+        // Any other status (still processing/requires_action) — leave the
+        // spinner as-is, this fires again on the next tab-visible/focus event.
+      } catch { /* transient network hiccup on an unfocused tab — ignore, will retry */ }
+    }
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+    window.addEventListener("pageshow", recheck); // iOS bfcache restore doesn't always fire visibilitychange
+    // Also poll every few seconds while visible and waiting — covers browsers
+    // that never fire a visibility/focus event at all for this transition.
+    const poll = setInterval(recheck, 4000);
+    return () => {
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+      window.removeEventListener("pageshow", recheck);
+      clearInterval(poll);
+    };
+  }, [paying, prepayKey, onSuccess]);
 
   if (!ready) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
