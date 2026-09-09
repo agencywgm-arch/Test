@@ -7554,10 +7554,11 @@ function CuisineView({ restaurant, onBack, onLogout }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE CARD FORM
 // ─────────────────────────────────────────────────────────────────────────────
-function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
+function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pendingPayload, tableNum }) {
   const containerRef = useRef(null);
   const stripeRef = useRef(null);
   const elementsRef = useRef(null);
+  const piIdRef = useRef(null); // extracted from the client_secret as soon as we have one
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
@@ -7608,6 +7609,31 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
         stripeRef.current = stripe;
         const elements = stripe.elements({ clientSecret: client_secret, appearance: { theme: "flat", variables: { borderRadius: "12px", fontFamily: "'Figtree', sans-serif" } } });
         elementsRef.current = elements;
+        // A Stripe client_secret is always "<payment_intent_id>_secret_<...>" —
+        // knowing the id this early (before the customer even taps Pay) is what
+        // lets the server-side safety net below be written before any redirect
+        // can happen, instead of only after a successful inline confirmation.
+        piIdRef.current = client_secret.split("_secret_")[0];
+        // Best-effort safety net for redirect-based methods (MB WAY...): if the
+        // browser never comes back after payment (app closed, tab killed), a
+        // server-side webhook can still build the order from this — keyed by
+        // the payment intent id, so it can never collide with the real order
+        // if the customer's browser DOES come back and completes normally.
+        if (prepayKey && pendingPayload && restaurant?.id && restaurant.id !== "demo") {
+          supabase.from("stripe_pending_orders").upsert({
+            id: piIdRef.current,
+            restaurant_id: restaurant.id,
+            table_number: tableNum ?? null,
+            cart: pendingPayload.cart ?? [],
+            customer_name: pendingPayload.customerName || null,
+            customer_email: pendingPayload.customerEmail || null,
+            customer_phone: pendingPayload.customerPhone || null,
+            customer_nif: pendingPayload.customerNif || null,
+            note: pendingPayload.note || null,
+            order_type: pendingPayload.orderType || "dine_in",
+            total,
+          }).then(({ error: perr }) => { if (perr) console.error("[stripe_pending_orders] upsert failed:", perr.message); });
+        }
         setReady(true); // mounting happens in the effect below, once the container is rendered
       } catch (e) {
         if (cancelled) return;
@@ -7636,9 +7662,29 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant }) {
   async function pay() {
     if (!stripeRef.current || !elementsRef.current || paying) return;
     setPaying(true); setError("");
+    // Some payment methods (MB WAY, Multibanco...) send the browser away
+    // entirely to confirm — "if_required" only skips the redirect for
+    // methods that don't need one (cards), so this save has to happen BEFORE
+    // calling confirmPayment, not after: for a redirect method, execution
+    // never reaches the line after this call in the tab that started it.
+    if (prepayKey && pendingPayload && piIdRef.current) {
+      try {
+        localStorage.setItem(prepayKey, JSON.stringify({
+          paymentIntentId: piIdRef.current,
+          ...pendingPayload,
+          savedAt: Date.now(),
+        }));
+      } catch {}
+    }
     const { error: err, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
     if (err) { setError(err.message); setPaying(false); return; }
-    if (paymentIntent?.status === "succeeded") await onSuccess("card", paymentIntent.id);
+    if (paymentIntent?.status === "succeeded") {
+      // Completed inline (card, no redirect needed) — the normal onSuccess
+      // path below creates the order right now, so the redirect-recovery
+      // data would only be stale leftovers if left behind.
+      if (prepayKey) { try { localStorage.removeItem(prepayKey); } catch {} }
+      await onSuccess("card", paymentIntent.id);
+    }
   }
 
   if (!ready) return (
@@ -9381,6 +9427,13 @@ function CustomerPage({ slug, tableNum }) {
   const [, setNowTick] = useState(0);
 
   const PENDING_STORAGE_KEY = `vg_pending_${slug}_t${tableNum}`;
+  // Redirect-based payment methods (MB WAY, Multibanco...) send the browser
+  // away from the page entirely before the order can be created — unlike a
+  // card payment, which resolves inline. Everything needed to recreate the
+  // order is saved here right before the redirect, so it can be rebuilt when
+  // Stripe sends the browser back with the payment already confirmed.
+  const PREPAY_STORAGE_KEY = `vg_prepay_${slug}_t${tableNum}`;
+  const [resumePayment, setResumePayment] = useState(null); // { paymentIntentId, pendingOrderId } | null
 
   function clearPendingOrder() {
     try { localStorage.removeItem(PENDING_STORAGE_KEY); } catch {}
@@ -9536,6 +9589,66 @@ function CustomerPage({ slug, tableNum }) {
       const { data: tk } = await supabase.from("restaurant_settings").select("ticket_address,ticket_phone,ticket_tax_id,ticket_footer").eq("restaurant_id", resto.id).maybeSingle();
       if (tk) setTicketInfo(tk);
     } catch {}
+    // Stripe sent the browser back after a redirect-based payment method
+    // (MB WAY, Multibanco...) — it appends these params to the return URL.
+    // "if_required" in CardPaymentForm.pay() only forces a full redirect (not
+    // an inline confirmation) for methods that need one, which is exactly
+    // when the order never got created: confirm() only ran after a
+    // confirmPayment() call that, for these methods, never returns because
+    // the page navigates away entirely. Rebuild the order from what was
+    // saved right before the redirect, instead of losing it.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const returnedPI = params.get("payment_intent");
+      const redirectStatus = params.get("redirect_status");
+      if (returnedPI) {
+        // Always strip these from the URL, success or not — otherwise a
+        // manual refresh of this exact page re-triggers this whole branch.
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        if (redirectStatus === "succeeded") {
+          const rawPrepay = localStorage.getItem(PREPAY_STORAGE_KEY);
+          if (rawPrepay) {
+            const saved = JSON.parse(rawPrepay);
+            if (saved.paymentIntentId === returnedPI) {
+              // Defense in depth: if an order already exists for this exact
+              // payment (e.g. the customer double-tapped back/refresh before
+              // the URL was cleaned above), don't create a second one — just
+              // wasn't loaded here.
+              const { data: existingOrder } = await supabase.from("orders")
+                .select("id, status, estimated_ready_at, created_at")
+                .eq("stripe_payment_intent_id", returnedPI).maybeSingle();
+              localStorage.removeItem(PREPAY_STORAGE_KEY);
+              if (existingOrder) {
+                setOrderId(existingOrder.id);
+                setOrderStatus(existingOrder.status || "PENDING");
+                setEstimatedReadyAt(existingOrder.estimated_ready_at || null);
+                setOrderCreatedAt(existingOrder.created_at || null);
+                setStep("done");
+                return;
+              }
+              setCart(Array.isArray(saved.cart) ? saved.cart : []);
+              setCustomerName(saved.customerName || "");
+              setCustomerEmail(saved.customerEmail || "");
+              setCustomerPhone(saved.customerPhone || "");
+              if (saved.customerNif) setCustomerNif(saved.customerNif);
+              if (saved.note) setNote(saved.note);
+              if (saved.orderType) setOrderType(saved.orderType);
+              if (saved.appliedPromo) setAppliedPromo(saved.appliedPromo);
+              // Triggers the effect below once this render commits, so
+              // confirm() runs against the just-restored state above instead
+              // of a stale closure.
+              setResumePayment({ paymentIntentId: returnedPI });
+              setStep("payment");
+              return;
+            }
+          }
+          // Payment succeeded but nothing to rebuild from (different device,
+          // cleared storage, expired) — the server-side webhook safety net
+          // still creates the order from what was saved at payment-start, so
+          // the sale itself isn't lost even though this browser can't show it.
+        }
+      }
+    } catch {}
     // If the customer had a live order in progress (just refreshed the page),
     // restore them straight onto the tracking screen instead of the menu.
     try {
@@ -9579,6 +9692,17 @@ function CustomerPage({ slug, tableNum }) {
     setStep("loading");
     try { await finishLoad(resto); } catch { setStep("error"); }
   }
+
+  // Finishes a payment resumed after a redirect-based method (MB WAY...) sent
+  // the browser away and back. Runs as its own effect (rather than being
+  // called directly where resumePayment is set) specifically so it reads
+  // `cart`/`customerName`/etc. from THIS render — the one right after they
+  // were restored — instead of a stale closure from before the restore.
+  useEffect(() => {
+    if (!resumePayment) return;
+    setResumePayment(null);
+    confirm("card", resumePayment.paymentIntentId);
+  }, [resumePayment]);
 
   useEffect(() => {
     async function load() {
@@ -10444,7 +10568,10 @@ function CustomerPage({ slug, tableNum }) {
                   </div>
                 </>
               ) : (
-                <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} restaurant={restaurant} />
+                <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} restaurant={restaurant}
+                  tableNum={tableNum}
+                  prepayKey={PREPAY_STORAGE_KEY}
+                  pendingPayload={{ cart, customerName, customerEmail, customerPhone, customerNif, note, orderType, appliedPromo }} />
               )}
             </>
           )}
