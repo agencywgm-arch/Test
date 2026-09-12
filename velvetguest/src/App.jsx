@@ -5203,7 +5203,31 @@ function MenuTabDash({ restaurant }) {
         gtranslate(item.name, translateLang),
         item.description ? gtranslate(item.description, translateLang) : Promise.resolve(""),
       ]);
-      result[item.id] = { name: existing.name || name, description: existing.description || description };
+      // Composition data (supplement group names, their option names, extras
+      // names) used to only ever get translated live, on the customer's own
+      // device, via an unofficial Google Translate call made on every visit —
+      // unreliable in production (network hiccups, rate limits, the call not
+      // finishing before the customer opens the compose sheet). Translating
+      // and storing it here, the same way name/description already work,
+      // makes it just as instant and reliable for customers.
+      const existingGroups = Array.isArray(existing.supplements) ? existing.supplements : [];
+      const groups = Array.isArray(item.supplements) ? item.supplements : [];
+      const supplements = await Promise.all(groups.map(async (g, gi) => {
+        const ex = existingGroups[gi];
+        const [tGroupName, tOptions] = await Promise.all([
+          ex?.groupName || gtranslate(g.groupName, translateLang),
+          Promise.all((g.options || []).map(async (o, oi) => ({
+            ...o, name: ex?.options?.[oi]?.name || await gtranslate(o.name, translateLang),
+          }))),
+        ]);
+        return { ...g, groupName: tGroupName || g.groupName, options: tOptions };
+      }));
+      const existingExtras = Array.isArray(existing.extras) ? existing.extras : [];
+      const itemExtras = Array.isArray(item.extras) ? item.extras : [];
+      const extras = await Promise.all(itemExtras.map(async (e, ei) => ({
+        ...e, name: existingExtras[ei]?.name || await gtranslate(e.name, translateLang),
+      })));
+      result[item.id] = { name: existing.name || name, description: existing.description || description, supplements, extras };
     }));
     setTranslations(result);
     setTranslating(false);
