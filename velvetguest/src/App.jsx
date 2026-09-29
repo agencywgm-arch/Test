@@ -5582,6 +5582,43 @@ function MenuTabDash({ restaurant }) {
                         placeholder="Description traduite" rows={2}
                         style={{ padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 12, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
                     )}
+                    {/* Supplement groups and extras — editable so a bad machine
+                        translation (proper nouns, food-specific words) can be
+                        fixed by hand instead of only ever coming from the
+                        automatic pass. */}
+                    {Array.isArray(t.supplements) && t.supplements.length > 0 && t.supplements.map((g, gi) => (
+                      <div key={gi} style={{ paddingLeft: 10, borderLeft: `2px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <input value={g.groupName} placeholder="Nom du groupe traduit"
+                          onChange={e => setTranslations(p => {
+                            const supplements = p[item.id].supplements.map((gg, i) => i === gi ? { ...gg, groupName: e.target.value } : gg);
+                            return { ...p, [item.id]: { ...p[item.id], supplements } };
+                          })}
+                          style={{ padding: "6px 9px", borderRadius: 7, border: `1.5px solid ${C.border}`, fontSize: 12, fontWeight: 700, width: "100%", boxSizing: "border-box", fontFamily: "inherit" }} />
+                        {(g.options || []).map((o, oi) => (
+                          <input key={oi} value={o.name} placeholder="Option traduite"
+                            onChange={e => setTranslations(p => {
+                              const supplements = p[item.id].supplements.map((gg, i) => i === gi
+                                ? { ...gg, options: gg.options.map((oo, j) => j === oi ? { ...oo, name: e.target.value } : oo) }
+                                : gg);
+                              return { ...p, [item.id]: { ...p[item.id], supplements } };
+                            })}
+                            style={{ padding: "6px 9px", borderRadius: 7, border: `1.5px solid ${C.border}`, fontSize: 12, width: "100%", boxSizing: "border-box", fontFamily: "inherit" }} />
+                        ))}
+                      </div>
+                    ))}
+                    {Array.isArray(t.extras) && t.extras.length > 0 && (
+                      <div style={{ paddingLeft: 10, borderLeft: `2px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary }}>Extras</span>
+                        {t.extras.map((ex, ei) => (
+                          <input key={ei} value={ex.name} placeholder="Extra traduit"
+                            onChange={e => setTranslations(p => {
+                              const extras = p[item.id].extras.map((ee, i) => i === ei ? { ...ee, name: e.target.value } : ee);
+                              return { ...p, [item.id]: { ...p[item.id], extras } };
+                            })}
+                            style={{ padding: "6px 9px", borderRadius: 7, border: `1.5px solid ${C.border}`, fontSize: 12, width: "100%", boxSizing: "border-box", fontFamily: "inherit" }} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
