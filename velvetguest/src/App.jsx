@@ -350,6 +350,25 @@ function fmtStatus(s) {
   return s === "PENDING" ? "new" : s === "PREPARING" ? "cooking" : s === "READY" ? "ready" : "served";
 }
 
+// Google Translate's unofficial single-word/short-phrase endpoint translates
+// literally, word-by-word — fine for most menu text, but it mangles French
+// culinary terms it has no food context for: "pâtes" (pasta) read as
+// "pattes" (an animal's paws) becomes "Paws", and dish proper nouns like
+// "Cordon Bleu" get split and translated word-by-word into "Blue cord"
+// instead of being left as the recognized dish name. Rather than trying to
+// out-guess Google's translator, known-bad cases are corrected here, checked
+// against the ORIGINAL French text (case-insensitive) before ever showing a
+// translated result to a customer.
+const TRANSLATION_OVERRIDES = {
+  "pâtes": { en: "Pasta", es: "Pasta", pt: "Massa", de: "Pasta", it: "Pasta", ar: "معكرونة" },
+  "pates": { en: "Pasta", es: "Pasta", pt: "Massa", de: "Pasta", it: "Pasta", ar: "معكرونة" },
+  "cordon bleu": { en: "Cordon Bleu", es: "Cordon Bleu", pt: "Cordon Bleu", de: "Cordon Bleu", it: "Cordon Bleu", ar: "كوردون بلو" },
+};
+function applyTranslationOverride(original, translated, lang) {
+  const override = TRANSLATION_OVERRIDES[(original || "").trim().toLowerCase()];
+  return override?.[lang] || translated;
+}
+
 function fmtOrder(o) {
   return {
     id: o.id,
@@ -5190,7 +5209,8 @@ function MenuTabDash({ restaurant }) {
     try {
       const r = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`);
       const j = await r.json();
-      return j?.[0]?.map(s => s[0]).join("") || text;
+      const translated = j?.[0]?.map(s => s[0]).join("") || text;
+      return applyTranslationOverride(text, translated, tl);
     } catch { return text; }
   }
 
@@ -9550,7 +9570,8 @@ function CustomerPage({ slug, tableNum }) {
       const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`);
       if (!res.ok) return text;
       const json = await res.json();
-      return json?.[0]?.map(s => s[0]).join("") || text;
+      const translated = json?.[0]?.map(s => s[0]).join("") || text;
+      return applyTranslationOverride(text, translated, tl);
     } catch { return text; }
   };
 
