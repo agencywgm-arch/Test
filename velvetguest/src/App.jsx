@@ -6506,52 +6506,96 @@ function printOrderTicket(order, restaurant, withDetail = true) {
   const totalHT = order.total / 1.10;
   const totalTVA = order.total - totalHT;
 
-  const itemsHtml = withDetail ? (order.items || []).map(it => {
-    const detail = it.detail ? `<div style="font-size:11px;color:#FF9F0A;margin-top:1px;">${it.detail}</div>` : "";
-    return `<tr style="border-bottom:1px solid #f0f0f0;">
-      <td style="padding:8px 0;font-size:13px;">${it.emoji || ""} ${it.name} ${it.qty > 1 ? `×${it.qty}` : ""}${detail}</td>
-      <td style="padding:8px 0;text-align:right;font-weight:700;font-size:13px;white-space:nowrap;">${(it.price * it.qty).toFixed(2)} €</td>
+  const itemsRows = withDetail ? (order.items || []).map(it => {
+    const detail = it.detail ? `<div style="font-size:10.5px;color:#666;font-style:italic;margin-top:1px;">${it.detail}</div>` : "";
+    return `<tr>
+      <td style="padding:7px 0;font-size:13px;border-bottom:1px solid #e8e8e8;">${it.name}${detail}</td>
+      <td style="padding:7px 0;font-size:13px;text-align:center;border-bottom:1px solid #e8e8e8;">${it.qty}</td>
+      <td style="padding:7px 0;font-size:13px;text-align:right;border-bottom:1px solid #e8e8e8;">${it.price.toFixed(2)}</td>
+      <td style="padding:7px 0;font-size:13px;text-align:right;font-weight:600;border-bottom:1px solid #e8e8e8;white-space:nowrap;">${(it.price * it.qty).toFixed(2)} €</td>
     </tr>`;
   }).join("") : "";
 
+  // A plain, printable document — a real invoice layout (serif masthead,
+  // thin rules, right-aligned figures) rather than the app's own rounded,
+  // colored UI chrome, which read as "a screenshot of the app" rather than
+  // a paper receipt a business can file.
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Ticket #${order.id.slice(0, 8).toUpperCase()} — ${restaurant.name}</title>
+  <title>Facture #${order.id.slice(0, 8).toUpperCase()} — ${restaurant.name}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 32px; color: #1d1d1f; background: #fff; max-width: 480px; }
-    @media print { body { padding: 16px; } .no-print { display: none; } }
-    table { width: 100%; border-collapse: collapse; }
+    * { box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; margin: 0; padding: 48px; color: #222; background: #fff; max-width: 620px; }
+    @media print { body { padding: 0; } .no-print { display: none; } }
+    table { width: 100%; border-collapse: collapse; font-family: Arial, Helvetica, sans-serif; }
+    .label { font-family: Arial, Helvetica, sans-serif; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #888; }
   </style></head>
   <body>
-    <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px;">
-      <button onclick="window.print()" style="padding:10px 18px;border-radius:10px;border:none;background:#1d1d1f;color:#fff;font-weight:700;cursor:pointer;">🖨️ Imprimer / Enregistrer en PDF</button>
-      <button onclick="window.close()" style="padding:10px 18px;border-radius:10px;border:1.5px solid #ddd;background:#fff;cursor:pointer;">✕ Fermer</button>
+    <div class="no-print" style="margin-bottom: 28px; display: flex; gap: 10px; font-family: Arial, Helvetica, sans-serif;">
+      <button onclick="window.print()" style="padding:10px 18px;border-radius:8px;border:none;background:#1d1d1f;color:#fff;font-weight:700;cursor:pointer;">🖨️ Imprimer / Enregistrer en PDF</button>
+      <button onclick="window.close()" style="padding:10px 18px;border-radius:8px;border:1.5px solid #ccc;background:#fff;cursor:pointer;">✕ Fermer</button>
     </div>
-    <div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;">
-      <h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>
-      ${restaurant.nif ? `<p style="color:rgba(255,255,255,0.6);margin:6px 0 0;font-size:13px;">NIF ${restaurant.nif}</p>` : ""}
-      <p style="color:rgba(255,255,255,0.6);margin:4px 0 0;font-size:13px;">Table ${order.table} · ${dateStr} à ${heureStr}</p>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px double #1d1d1f;padding-bottom:18px;margin-bottom:22px;">
+      <div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:-0.01em;">${restaurant.name}</div>
+        ${restaurant.nif ? `<div style="font-family:Arial,sans-serif;font-size:12px;color:#555;margin-top:4px;">NIF ${restaurant.nif}</div>` : ""}
+      </div>
+      <div style="text-align:right;font-family:Arial,sans-serif;">
+        <div style="font-size:15px;font-weight:700;letter-spacing:0.04em;">FACTURE</div>
+        <div style="font-size:12px;color:#555;margin-top:4px;">Nº ${order.id.slice(0, 8).toUpperCase()}</div>
+      </div>
     </div>
-    <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;">
-      <p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p>
-      <p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 16px;">#${order.id.slice(0, 8).toUpperCase()}</p>
-      ${order.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 16px;">${order.customerName}</p>` : ""}
-      ${withDetail ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table>${itemsHtml}</table>` : ""}
-      <div style="margin-top:16px;padding-top: ${withDetail ? "16px" : "0"}; ${withDetail ? "border-top:1px solid #eee;" : ""}">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px;"><span>Total HT</span><span>${totalHT.toFixed(2)} €</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:10px;"><span>TVA (10%)</span><span>${totalTVA.toFixed(2)} €</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;">
-          <span style="font-size:16px;font-weight:700;">Total TTC</span><span style="font-size:20px;font-weight:900;">${order.total.toFixed(2)} €</span>
-        </div>
-      </div>
-      <p style="font-size:12px;color:#888;margin:12px 0 0;">Paiement : ${pmLabel(order.payment_method)}</p>
-      <div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;">
-        <span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span>
-      </div>
-      ${order.note ? `<p style="font-size:12px;color:#888;margin-top:14px;font-style:italic;">📝 ${order.note}</p>` : ""}
+
+    <table style="margin-bottom:24px;">
+      <tr>
+        <td style="width:50%;">
+          <div class="label">Date</div>
+          <div style="font-size:13px;font-family:Arial,sans-serif;margin-top:2px;">${dateStr} — ${heureStr}</div>
+        </td>
+        <td style="width:50%;">
+          <div class="label">${order.customerName ? "Client" : "Table"}</div>
+          <div style="font-size:13px;font-family:Arial,sans-serif;margin-top:2px;">${order.customerName || `Table ${order.table}`}</div>
+        </td>
+      </tr>
+    </table>
+
+    ${withDetail ? `
+    <table style="margin-bottom:8px;">
+      <thead>
+        <tr style="border-bottom:1.5px solid #1d1d1f;">
+          <th style="text-align:left;padding-bottom:6px;" class="label">Article</th>
+          <th style="text-align:center;padding-bottom:6px;width:36px;" class="label">Qté</th>
+          <th style="text-align:right;padding-bottom:6px;width:70px;" class="label">P.U.</th>
+          <th style="text-align:right;padding-bottom:6px;width:80px;" class="label">Total</th>
+        </tr>
+      </thead>
+      <tbody>${itemsRows}</tbody>
+    </table>
+    ` : ""}
+
+    <table style="margin-top:${withDetail ? "4" : "20"}px;font-family:Arial,sans-serif;">
+      <tr>
+        <td></td>
+        <td style="width:200px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;padding:3px 0;"><span>Total HT</span><span>${totalHT.toFixed(2)} €</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;padding:3px 0;border-bottom:1px solid #ddd;"><span>TVA (10%)</span><span>${totalTVA.toFixed(2)} €</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:17px;font-weight:700;padding:8px 0 0;"><span>Total TTC</span><span>${order.total.toFixed(2)} €</span></div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="margin-top:24px;padding-top:14px;border-top:1px solid #ddd;font-family:Arial,sans-serif;font-size:12px;color:#555;display:flex;justify-content:space-between;">
+      <span>Mode de paiement : ${pmLabel(order.payment_method)}</span>
+      <span style="font-weight:700;color:#1d1d1f;">PAYÉ</span>
+    </div>
+    ${order.note ? `<div style="margin-top:14px;font-family:Arial,sans-serif;font-size:11.5px;color:#777;font-style:italic;">Note : ${order.note}</div>` : ""}
+
+    <div style="margin-top:40px;text-align:center;font-family:Arial,sans-serif;font-size:11px;color:#999;">
+      Document généré le ${new Date().toLocaleDateString("fr-FR")} — ${restaurant.name}
     </div>
   </body></html>`;
 
-  const w = window.open("", "_blank", "width=600,height=800");
+  const w = window.open("", "_blank", "width=680,height=860");
   w.document.write(html);
   w.document.close();
 }
