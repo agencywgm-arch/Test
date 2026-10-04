@@ -6494,6 +6494,68 @@ function exportCSV(orders, restaurant, periodLabel) {
   URL.revokeObjectURL(url);
 }
 
+// Printable ticket/invoice for a SINGLE order — for a business customer who
+// needs their own receipt for expense reporting, separate from the day's
+// bulk CSV/Rapport Z exports. `withDetail` toggles the line-by-line article
+// breakdown; without it, only the total (and VAT split) is shown — some
+// companies ask for one or the other depending on their accounting policy.
+function printOrderTicket(order, restaurant, withDetail = true) {
+  const d = new Date(order.createdAt);
+  const dateStr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  const heureStr = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const totalHT = order.total / 1.10;
+  const totalTVA = order.total - totalHT;
+
+  const itemsHtml = withDetail ? (order.items || []).map(it => {
+    const detail = it.detail ? `<div style="font-size:11px;color:#FF9F0A;margin-top:1px;">${it.detail}</div>` : "";
+    return `<tr style="border-bottom:1px solid #f0f0f0;">
+      <td style="padding:8px 0;font-size:13px;">${it.emoji || ""} ${it.name} ${it.qty > 1 ? `×${it.qty}` : ""}${detail}</td>
+      <td style="padding:8px 0;text-align:right;font-weight:700;font-size:13px;white-space:nowrap;">${(it.price * it.qty).toFixed(2)} €</td>
+    </tr>`;
+  }).join("") : "";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Ticket #${order.id.slice(0, 8).toUpperCase()} — ${restaurant.name}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 32px; color: #1d1d1f; background: #fff; max-width: 480px; }
+    @media print { body { padding: 16px; } .no-print { display: none; } }
+    table { width: 100%; border-collapse: collapse; }
+  </style></head>
+  <body>
+    <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px;">
+      <button onclick="window.print()" style="padding:10px 18px;border-radius:10px;border:none;background:#1d1d1f;color:#fff;font-weight:700;cursor:pointer;">🖨️ Imprimer / Enregistrer en PDF</button>
+      <button onclick="window.close()" style="padding:10px 18px;border-radius:10px;border:1.5px solid #ddd;background:#fff;cursor:pointer;">✕ Fermer</button>
+    </div>
+    <div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;">
+      <h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>
+      ${restaurant.nif ? `<p style="color:rgba(255,255,255,0.6);margin:6px 0 0;font-size:13px;">NIF ${restaurant.nif}</p>` : ""}
+      <p style="color:rgba(255,255,255,0.6);margin:4px 0 0;font-size:13px;">Table ${order.table} · ${dateStr} à ${heureStr}</p>
+    </div>
+    <div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;">
+      <p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p>
+      <p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 16px;">#${order.id.slice(0, 8).toUpperCase()}</p>
+      ${order.customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 16px;">${order.customerName}</p>` : ""}
+      ${withDetail ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table>${itemsHtml}</table>` : ""}
+      <div style="margin-top:16px;padding-top: ${withDetail ? "16px" : "0"}; ${withDetail ? "border-top:1px solid #eee;" : ""}">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px;"><span>Total HT</span><span>${totalHT.toFixed(2)} €</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:10px;"><span>TVA (10%)</span><span>${totalTVA.toFixed(2)} €</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;">
+          <span style="font-size:16px;font-weight:700;">Total TTC</span><span style="font-size:20px;font-weight:900;">${order.total.toFixed(2)} €</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:#888;margin:12px 0 0;">Paiement : ${pmLabel(order.payment_method)}</p>
+      <div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;">
+        <span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span>
+      </div>
+      ${order.note ? `<p style="font-size:12px;color:#888;margin-top:14px;font-style:italic;">📝 ${order.note}</p>` : ""}
+    </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=600,height=800");
+  w.document.write(html);
+  w.document.close();
+}
+
 function exportRapportZ(orders, restaurant) {
   const now = new Date();
   const dateStr = now.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
@@ -7105,6 +7167,11 @@ function CaisseTab({ store, restaurant }) {
                       {refundingId === o.id ? "…" : "💸 Rembourser"}
                     </button>
                   )}
+                  <button onClick={() => printOrderTicket(o, restaurant, confirm("Inclure le détail des articles sur le ticket ?\n\nOK = avec détail · Annuler = total uniquement"))}
+                    style={{ background: "none", border: "none", color: C.accentBlue, fontSize: 11, cursor: "pointer", padding: "2px 0", ...FF }}
+                    title="Générer un ticket PDF pour cette commande (ex: pour une entreprise)">
+                    🧾 Ticket PDF
+                  </button>
                   <button onClick={() => deleteOrder(o)} disabled={deletingId === o.id}
                     style={{ background: "none", border: "none", color: C.textTertiary, fontSize: 11, cursor: deletingId === o.id ? "wait" : "pointer", padding: "2px 0", opacity: deletingId === o.id ? 0.5 : 1, ...FF }}
                     title="Supprimer cette commande de l'historique">
