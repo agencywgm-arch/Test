@@ -7284,6 +7284,12 @@ function useLiveOrders(restaurantId, pushNotif) {
     customerName: o.customer_name || "",
     note: o.note || "",
     order_type: o.order_type || "dine_in",
+    // Never carried over before — every order silently fell back to the
+    // "cash" default everywhere payment_method/paid were read (pmLabel(),
+    // the cash "à encaisser" badge...), so every order looked like an
+    // unpaid cash order regardless of how it was actually paid.
+    payment_method: o.payment_method || "cash",
+    paid: o.paid === true,
     status: o.status === "PENDING" ? "new" : o.status === "PREPARING" ? "cooking" : o.status === "READY" ? "ready" : "served",
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
     items: (o.order_items || []).map(oi => ({
