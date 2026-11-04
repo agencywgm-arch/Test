@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" font-family="Figtree, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="520" fill="#F5F5F7"/>
+
+  <text x="800" y="78" text-anchor="middle" font-size="38" font-weight="800" fill="#1D1D1F" letter-spacing="-1">Le parcours client, de bout en bout</text>
+  <text x="800" y="116" text-anchor="middle" font-size="19" font-weight="500" fill="#6E6E73">Aucune application à installer — un simple scan suffit</text>
+
+  <!-- connecting line -->
+  <line x1="248" y1="248" x2="1352" y2="248" stroke="#1D1D1F" stroke-opacity="0.12" stroke-width="3"/>
+
+  <!-- STEP 1 -->
+  <circle cx="248" cy="248" r="62" fill="#FF375F" filter="url(#soft)"/>
+  <text x="248" y="268" text-anchor="middle" font-size="52">📱</text>
+  <text x="248" y="366" text-anchor="middle" font-size="15" font-weight="800" fill="#FF375F" letter-spacing="1.6">ÉTAPE 1</text>
+  <text x="248" y="404" text-anchor="middle" font-size="25" font-weight="800" fill="#1D1D1F" letter-spacing="-0.5">Le client scanne</text>
+  <text x="248" y="438" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">Le QR code posé</text>
+  <text x="248" y="462" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">sur sa table</text>
+
+  <!-- STEP 2 -->
+  <circle cx="616" cy="248" r="62" fill="#0071E3" filter="url(#soft)"/>
+  <text x="616" y="268" text-anchor="middle" font-size="52">🛒</text>
+  <text x="616" y="366" text-anchor="middle" font-size="15" font-weight="800" fill="#0071E3" letter-spacing="1.6">ÉTAPE 2</text>
+  <text x="616" y="404" text-anchor="middle" font-size="25" font-weight="800" fill="#1D1D1F" letter-spacing="-0.5">Il commande</text>
+  <text x="616" y="438" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">Menu illustré, options</text>
+  <text x="616" y="462" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">et paiement intégré</text>
+
+  <!-- STEP 3 -->
+  <circle cx="984" cy="248" r="62" fill="#FF9F0A" filter="url(#soft)"/>
+  <text x="984" y="268" text-anchor="middle" font-size="52">🔔</text>
+  <text x="984" y="366" text-anchor="middle" font-size="15" font-weight="800" fill="#C77700" letter-spacing="1.6">ÉTAPE 3</text>
+  <text x="984" y="404" text-anchor="middle" font-size="25" font-weight="800" fill="#1D1D1F" letter-spacing="-0.5">La cuisine est alertée</text>
+  <text x="984" y="438" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">Alarme sonore jusqu'à</text>
+  <text x="984" y="462" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">acceptation du personnel</text>
+
+  <!-- STEP 4 -->
+  <circle cx="1352" cy="248" r="62" fill="#34C759" filter="url(#soft)"/>
+  <text x="1352" y="268" text-anchor="middle" font-size="52">✅</text>
+  <text x="1352" y="366" text-anchor="middle" font-size="15" font-weight="800" fill="#1E9E44" letter-spacing="1.6">ÉTAPE 4</text>
+  <text x="1352" y="404" text-anchor="middle" font-size="25" font-weight="800" fill="#1D1D1F" letter-spacing="-0.5">Il est prévenu</text>
+  <text x="1352" y="438" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">Notification même</text>
+  <text x="1352" y="462" text-anchor="middle" font-size="17" font-weight="500" fill="#6E6E73">écran verrouillé</text>
+</svg>
