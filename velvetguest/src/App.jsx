@@ -7633,10 +7633,25 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                         <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
                         <div>
                           <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
-                          {order.customerName
-                            ? <p style={{ fontSize: 13, color: C.white, fontWeight: 700, letterSpacing: "-0.01em" }}>{order.customerName}</p>
-                            : <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p>
-                          }
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {order.customerName
+                              ? <p style={{ fontSize: 13, color: C.white, fontWeight: 700, letterSpacing: "-0.01em" }}>{order.customerName}</p>
+                              : <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{order.id.slice(0, 6)}</p>
+                            }
+                            {/* Payment method, right next to the name — cash is
+                                the one that still needs collecting at the
+                                counter, so it's the loudest badge on the card;
+                                non-cash orders just get a quiet "payé" note. */}
+                            {order.payment_method === "cash" ? (
+                              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.02em", color: order.paid ? "#1B5E20" : "#fff", background: order.paid ? "#C8E6C9" : "#FF3B30", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                                {order.paid ? "✅ ESPÈCES ENCAISSÉES" : "💵 ESPÈCES — À ENCAISSER"}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.75)", background: "rgba(255,255,255,0.15)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                                {pmLabel(order.payment_method)}
+                              </span>
+                            )}
+                          </div>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: order.order_type === "takeaway" ? "rgba(255,160,0,0.25)" : "rgba(255,255,255,0.15)", borderRadius: 10, padding: "2px 8px", marginTop: 3 }}>
                             <span style={{ fontSize: 11 }}>{order.order_type === "takeaway" ? "🥡" : "🍽️"}</span>
                             <span style={{ fontSize: 10, fontWeight: 700, color: order.order_type === "takeaway" ? "#FFD600" : "rgba(255,255,255,0.85)" }}>{order.order_type === "takeaway" ? "Emporter" : "Sur place"}</span>
@@ -7648,14 +7663,6 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                         {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
                       </div>
                     </div>
-                    {order.payment_method === "cash" && (
-                      <div style={{ background: order.paid ? "#E8F5E9" : "#FFF3E0", borderBottom: `1px solid ${order.paid ? "#A5D6A7" : "#FFCC80"}`, padding: "6px 16px", display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 14 }}>{order.paid ? "✅" : "💵"}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: order.paid ? "#2E7D32" : "#E65100" }}>
-                          {order.paid ? "Espèces encaissées" : "Espèces — non encaissé"}
-                        </span>
-                      </div>
-                    )}
                     {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
                     <div style={{ padding: "10px 12px" }}>
                       {order.items.map(item => (
