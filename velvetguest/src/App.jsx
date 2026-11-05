@@ -9331,7 +9331,7 @@ function PromoCodesTab({ restaurant }) {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // null | "new" | "edit"
   const [editing, setEditing] = useState(null);
-  const EMPTY = { code: "", label: "", discount_percent: 10, max_uses: "", expires_at: "", active: true };
+  const EMPTY = { code: "", label: "", discount_percent: 10, max_uses: "", starts_at: "", expires_at: "", active: true };
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target?.value ?? e }));
@@ -9350,6 +9350,7 @@ function PromoCodesTab({ restaurant }) {
       label: form.label.trim(),
       discount_percent: parseInt(form.discount_percent) || 0,
       max_uses: form.max_uses ? parseInt(form.max_uses) : null,
+      starts_at: form.starts_at || null,
       expires_at: form.expires_at || null,
       active: form.active,
     };
@@ -9385,7 +9386,7 @@ function PromoCodesTab({ restaurant }) {
 
   function openNew() { setForm(EMPTY); setEditing(null); setModal("new"); }
   function openEdit(c) {
-    setForm({ code: c.code, label: c.label || "", discount_percent: c.discount_percent, max_uses: c.max_uses || "", expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "", active: c.active });
+    setForm({ code: c.code, label: c.label || "", discount_percent: c.discount_percent, max_uses: c.max_uses || "", starts_at: c.starts_at ? c.starts_at.slice(0, 10) : "", expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "", active: c.active });
     setEditing(c); setModal("edit");
   }
 
@@ -9431,8 +9432,9 @@ function PromoCodesTab({ restaurant }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
         {codes.map(c => {
           const expired = c.expires_at && new Date(c.expires_at) < new Date();
+          const notStarted = c.starts_at && new Date(c.starts_at) > new Date();
           const maxed = c.max_uses && c.use_count >= c.max_uses;
-          const statusOk = c.active && !expired && !maxed;
+          const statusOk = c.active && !expired && !notStarted && !maxed;
           return (
             <Surface key={c.id} style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${statusOk ? C.accentGreen : C.border}`, opacity: statusOk ? 1 : 0.75 }}>
               <div style={{ padding: "16px 18px" }}>
@@ -9452,10 +9454,12 @@ function PromoCodesTab({ restaurant }) {
                   <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>−{c.discount_percent}%</span>
                   {statusOk && <span style={{ background: C.accentGreen + "15", color: C.accentGreen, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ Actif</span>}
                   {expired && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Expiré</span>}
+                  {notStarted && <span style={{ background: C.accentBlue + "15", color: C.accentBlue, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Pas encore actif</span>}
                   {maxed && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Épuisé</span>}
                 </div>
-                <div style={{ display: "flex", gap: 12, fontSize: 12, color: C.textSecondary, marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 12, fontSize: 12, color: C.textSecondary, marginBottom: 14, flexWrap: "wrap" }}>
                   <span>🔢 {c.use_count || 0}{c.max_uses ? ` / ${c.max_uses}` : ""} utilisation{c.use_count !== 1 ? "s" : ""}</span>
+                  {c.starts_at && <span>🚀 {new Date(c.starts_at).toLocaleDateString("fr-FR")}</span>}
                   {c.expires_at && <span>📅 {new Date(c.expires_at).toLocaleDateString("fr-FR")}</span>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -9500,10 +9504,15 @@ function PromoCodesTab({ restaurant }) {
                   style={{ marginTop: 8, width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }}
                   placeholder="Ou entrez une valeur personnalisée…" />
               </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Nb. utilisations max</label>
+                <input type="number" value={form.max_uses} onChange={fv("max_uses")} placeholder="Illimité" min={1}
+                  style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Nb. utilisations max</label>
-                  <input type="number" value={form.max_uses} onChange={fv("max_uses")} placeholder="Illimité" min={1}
+                  <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>Date de début</label>
+                  <input type="date" value={form.starts_at} onChange={fv("starts_at")}
                     style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
                 </div>
                 <div>
@@ -10178,6 +10187,7 @@ function CustomerPage({ slug, tableNum }) {
     const { data, error } = await supabase.from("promo_codes")
       .select("*").eq("restaurant_id", restaurant.id).eq("code", code).eq("active", true).maybeSingle();
     if (error || !data) { setPromoError("Code invalide ou inactif"); setCheckingPromo(false); return; }
+    if (data.starts_at && new Date(data.starts_at) > new Date()) { setPromoError("Ce code n'est pas encore actif"); setCheckingPromo(false); return; }
     if (data.expires_at && new Date(data.expires_at) < new Date()) { setPromoError("Ce code a expiré"); setCheckingPromo(false); return; }
     if (data.max_uses && data.use_count >= data.max_uses) { setPromoError("Ce code a atteint son nombre maximum d'utilisations"); setCheckingPromo(false); return; }
     setAppliedPromo({ id: data.id, code: data.code, discount_percent: data.discount_percent, label: data.label });
