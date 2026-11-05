@@ -6030,7 +6030,7 @@ function MenuTabDash({ restaurant }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const PROMO_COLORS = ["#FF9F0A", "#FF375F", "#34C759", "#0071E3", "#BF5AF2", "#1D1D1F"];
 const PROMO_TYPES = [{ value: "happy_hour", label: "Happy Hour" }, { value: "seasonal", label: "Saisonnier" }, { value: "event", label: "Événement" }];
-const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji: "🎁", color: "#FF9F0A", type: "event", start_date: "", end_date: "", active: true };
+const EMPTY_PROMO_FORM = { name: "", description: "", discount_percent: 0, emoji: "🎁", color: "#FF9F0A", type: "event", start_date: "", end_date: "", active: true, visible_on_menu: false };
 
 function EventCalendar({ promos }) {
   const [cur, setCur] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
@@ -6214,7 +6214,7 @@ function PromosTab({ restaurant, store }) {
 
   function openNew() { setForm(EMPTY_PROMO_FORM); setEditing(null); setModal("new"); }
   function openEdit(promo) {
-    setForm({ name: promo.name, description: promo.description, discount_percent: promo.discount_percent, emoji: promo.emoji, color: promo.color, type: promo.type, start_date: promo.start_date || "", end_date: promo.end_date || "", active: promo.active });
+    setForm({ name: promo.name, description: promo.description, discount_percent: promo.discount_percent, emoji: promo.emoji, color: promo.color, type: promo.type, start_date: promo.start_date || "", end_date: promo.end_date || "", active: promo.active, visible_on_menu: promo.visible_on_menu ?? false });
     setEditing(promo); setModal("edit");
   }
 
@@ -6340,9 +6340,13 @@ function PromosTab({ restaurant, store }) {
                 <input type="date" value={form.end_date} onChange={fv("end_date")} style={{ width: "100%", background: C.bg, border: "none", borderRadius: 12, padding: "12px 14px", fontSize: 14, color: C.dark, outline: "none", ...FF }} />
               </div>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 24 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
               <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} style={{ width: 16, height: 16 }} />
-              <span style={{ fontSize: 14, color: C.dark }}>Active (visible sur la carte client)</span>
+              <span style={{ fontSize: 14, color: C.dark }}>Active (la réduction s'applique)</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 24 }}>
+              <input type="checkbox" checked={form.visible_on_menu} onChange={e => setForm(p => ({ ...p, visible_on_menu: e.target.checked }))} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 14, color: C.dark }}>Afficher sur la carte client (bannière visible par tous)</span>
             </label>
             <div style={{ display: "flex", gap: 10 }}>
               <Btn variant="ghost" full onClick={() => setModal(null)}>Annuler</Btn>
@@ -10575,9 +10579,9 @@ function CustomerPage({ slug, tableNum }) {
           <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: C.dark, scrollbarWidth: "none" }}>
             {cats.map(c => <button key={c} onClick={() => setActiveCat(c)} style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 20, border: "none", background: activeCat === c ? C.white : "rgba(255,255,255,0.1)", color: activeCat === c ? C.dark : "rgba(255,255,255,0.6)", fontWeight: 600, fontSize: 12, cursor: "pointer", ...FF }}>{c === "__ALL__" ? L.all : c}</button>)}
           </div>
-          {activePromos.length > 0 && (
+          {activePromos.filter(p => p.visible_on_menu).length > 0 && (
             <div style={{ padding: "8px 16px", display: "flex", gap: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-              {activePromos.map(p => (
+              {activePromos.filter(p => p.visible_on_menu).map(p => (
                 <div key={p.id} style={{
                   flexShrink: 0, background: p.color + "15", border: `1px solid ${p.color}30`,
                   borderRadius: 20, padding: "6px 14px", display: "flex", alignItems: "center", gap: 6
