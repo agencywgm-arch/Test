@@ -9690,6 +9690,12 @@ function CustomerPage({ slug, tableNum }) {
   const [googleReviewUrl, setGoogleReviewUrl] = useState(null);
   const [catOrderCustomer, setCatOrderCustomer] = useState([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  // Orders placed through the "Commander" button embedded on the restaurant's
+  // own website (embed.js) tag the iframe URL with ?channel=embed — used to
+  // hide cash-at-the-table, which makes no sense when the customer isn't
+  // physically on site. Dine-in QR scans never carry this param, so they're
+  // unaffected.
+  const [isEmbedChannel] = useState(() => new URLSearchParams(window.location.search).get("channel") === "embed");
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState(null); // { code, discount_percent, label, id }
   const [promoError, setPromoError] = useState("");
@@ -10838,13 +10844,18 @@ function CustomerPage({ slug, tableNum }) {
                       <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
                     </div>
                   ))}
-                  <div onClick={() => confirm("cash")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, cursor: "pointer", transition: "all 0.15s" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
-                    <div style={{ fontSize: 26 }}>💵</div>
-                    <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{L.cashBtn}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{L.table}</p></div>
-                    <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
-                  </div>
+                  {!isEmbedChannel && (
+                    <div onClick={() => confirm("cash")} style={{ display: "flex", alignItems: "center", gap: 16, padding: 16, border: `1.5px solid ${C.border}`, borderRadius: 16, cursor: "pointer", transition: "all 0.15s" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = C.dark; e.currentTarget.style.background = C.bg; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#fff"; }}>
+                      <div style={{ fontSize: 26 }}>💵</div>
+                      <div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 15, color: C.dark }}>{L.cashBtn}</p><p style={{ color: C.textSecondary, fontSize: 13 }}>{L.table}</p></div>
+                      <span style={{ color: C.textTertiary, fontSize: 20 }}>›</span>
+                    </div>
+                  )}
+                  {isEmbedChannel && !stripeEnabled && (
+                    <p style={{ color: C.textSecondary, fontSize: 13, textAlign: "center", padding: "12px 0" }}>Le paiement par carte n'est pas encore configuré pour ce restaurant.</p>
+                  )}
                 </>
               ) : (
                 <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} restaurant={restaurant}

@@ -66,7 +66,7 @@
       var color   = el.getAttribute("data-color") || "#1D1D1F";
       var txtColor= el.getAttribute("data-text-color") || "#ffffff";
       var name    = el.getAttribute("data-name") || "";
-      var src = ORIGIN + "/r/" + rid + "/t/" + table;
+      var src = ORIGIN + "/r/" + rid + "/t/" + table + "?channel=embed";
 
       var btn = document.createElement("button");
       btn.className = "__wegemo_btn";
