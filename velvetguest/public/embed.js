@@ -39,7 +39,7 @@
           '<span style="font-size:13px;font-weight:600;color:#888;">' + (restaurantName || "Commander") + "</span>",
           '<button class="__wegemo_close" aria-label="Fermer">✕</button>',
         "</div>",
-        '<iframe class="__wegemo_iframe" src="' + src + '" allow="payment" loading="lazy"></iframe>',
+        '<iframe class="__wegemo_iframe" src="' + src + '" allow="payment; clipboard-write; web-share" loading="lazy"></iframe>',
       "</div>",
     ].join("");
 

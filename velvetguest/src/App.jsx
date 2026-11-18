@@ -1374,11 +1374,12 @@ function DemoKitchenPage({ onBack, onSignup }) {
                 <div key={order.id} style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden" }}>
                   <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
+                      <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.order_type === "delivery" ? "🛵" : order.table}</span>
                       <div>
-                        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
+                        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{order.order_type === "delivery" ? "LIVRAISON" : "TABLE"}</p>
                         <p style={{ fontSize: 13, color: C.white, fontWeight: 700 }}>{order.customerName || order.id.slice(0,6)}</p>
                         {order.order_type === "takeaway" && <p style={{ fontSize: 10, fontWeight: 700, color: "#FF9F0A", margin: 0 }}>🥡 À emporter</p>}
+                        {order.order_type === "delivery" && <p style={{ fontSize: 10, fontWeight: 700, color: "#1565C0", margin: 0 }}>🛵 Livraison</p>}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -2311,6 +2312,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
   const [qrChoiceEnabled, setQrChoiceEnabled] = useState(!!restaurant.qr_choice_enabled);
   const [redirectOptions, setRedirectOptions] = useState(null); // null = loading, [] = none
   const [savingRedirect, setSavingRedirect] = useState(false);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(!!restaurant.delivery_enabled);
+  const [savingDelivery, setSavingDelivery] = useState(false);
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -2431,6 +2434,10 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
     })();
     supabase.from("restaurants").select("redirect_to_restaurant_id, qr_choice_enabled").eq("id", restaurant.id).maybeSingle()
       .then(({ data }) => { if (data) { setRedirectTargetId(data.redirect_to_restaurant_id || ""); setQrChoiceEnabled(!!data.qr_choice_enabled); } });
+    // Separate query: before migration_delivery.sql runs, this column doesn't
+    // exist and would make the routing query above fail too.
+    supabase.from("restaurants").select("delivery_enabled").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) setDeliveryEnabled(!!data.delivery_enabled); });
   }, [restaurant.id]);
 
   // The three QR routing modes are mutually exclusive — enabling one always
@@ -2466,6 +2473,22 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_qr_advanced_routing.sql" : ""), "warning");
     } finally {
       setSavingRedirect(false);
+    }
+  }
+
+  async function saveDeliveryEnabled(enabled) {
+    if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
+    setSavingDelivery(true);
+    setDeliveryEnabled(enabled); // optimistic
+    try {
+      const { error } = await supabase.from("restaurants").update({ delivery_enabled: enabled }).eq("id", restaurant.id);
+      if (error) throw error;
+      store.pushNotif(enabled ? "🛵 Livraison activée sur le bouton « Commander » de votre site" : "Livraison désactivée", "success");
+    } catch (err) {
+      setDeliveryEnabled(!enabled); // rollback
+      store.pushNotif("Erreur : " + (err.message || err) + (/column/i.test(err.message || "") ? " — exécutez migration_delivery.sql" : ""), "warning");
+    } finally {
+      setSavingDelivery(false);
     }
   }
 
@@ -2679,6 +2702,27 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
               Besoin de rediriger une seule table précise plutôt que tout le restaurant ? Ouvrez l'onglet <strong>QR codes</strong> → sélectionnez la table concernée → « Rediriger cette table vers ».
             </p>
           </>
+        )}
+      </Surface>
+
+      {/* Own delivery — website "Commander" button only, never the in-room QR codes */}
+      <Surface style={{ padding: 24 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🛵 Livraison</h3>
+        <p style={{ fontSize: 13, color: C.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
+          Vos clients commandent en livraison depuis le bouton « Commander » intégré à votre site : ils saisissent leur adresse et leur téléphone, paient par carte, et reçoivent un lien pour suivre leur commande. Les QR codes en salle ne sont pas concernés.
+        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.bg, borderRadius: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Activer la livraison</div>
+            <div style={{ fontSize: 12, color: C.textSecondary }}>{deliveryEnabled ? "Active sur le bouton de votre site" : "Désactivée"}</div>
+          </div>
+          <div onClick={() => { if (!savingDelivery) saveDeliveryEnabled(!deliveryEnabled); }}
+            style={{ width: 44, height: 26, borderRadius: 13, background: deliveryEnabled ? C.accentGreen : C.border, cursor: savingDelivery ? "wait" : "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+            <div style={{ position: "absolute", top: 3, left: deliveryEnabled ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
+          </div>
+        </div>
+        {deliveryEnabled && !stripeOk && (
+          <p style={{ fontSize: 12, color: C.accent, marginTop: 10, fontWeight: 600 }}>⚠️ Aucune clé Stripe sur ce restaurant : la livraison se paie uniquement par carte, vérifiez que le paiement en ligne fonctionne (ou qu'il est fourni par votre restaurant « maître paiement »).</p>
         )}
       </Surface>
 
@@ -3490,6 +3534,7 @@ function OrdersTab({ store, restaurant: restaurantProp }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, margin: 0 }}>#{o.id.slice ? o.id.slice(0, 6).toUpperCase() : o.id} · {o.total.toFixed(2)}€</p>
                   {o.order_type === "takeaway" && <span style={{ fontSize: 10, fontWeight: 700, background: "#FF9F0A22", color: "#FF9F0A", borderRadius: 6, padding: "2px 6px" }}>🥡 À emporter</span>}
+                  {o.order_type === "delivery" && <span style={{ fontSize: 10, fontWeight: 700, background: "#1565C022", color: "#1565C0", borderRadius: 6, padding: "2px 6px" }}>🛵 Livraison</span>}
                 </div>
                 <p style={{ fontSize: 11, color: C.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{o.items.map(i => i.name).join(", ")}</p>
               </div>
@@ -6408,6 +6453,38 @@ function pmLabel(pm) {
   return "Espèces";
 }
 
+// Printable slip handed to the delivery driver: address, phone, items, and
+// whether payment is still to be collected.
+function printDeliverySlip(order, restaurantName) {
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const shortId = order.id.slice(0, 8).toUpperCase();
+  const created = order.createdAt ? new Date(order.createdAt) : new Date();
+  const itemsHtml = order.items.map(i =>
+    `<tr><td style="padding:5px 0;border-bottom:1px dashed #ddd;font-size:13px;">${i.qty}× ${esc(i.name)}${i.detail ? `<br/><span style="font-size:11px;color:#666;">${esc(i.detail)}</span>` : ""}</td></tr>`).join("");
+  const paidHtml = order.paid || order.payment_method !== "cash"
+    ? `<div style="border:2px solid #34C759;border-radius:8px;padding:8px;text-align:center;margin:12px 0;"><b style="color:#34C759;font-size:15px;">✓ DÉJÀ PAYÉ — ${esc(order.payment_method === "free" ? "Gratuit" : pmLabel(order.payment_method))}</b></div>`
+    : `<div style="border:2px solid #FF3B30;border-radius:8px;padding:8px;text-align:center;margin:12px 0;"><b style="color:#FF3B30;font-size:15px;">💵 À ENCAISSER : ${order.total.toFixed(2)} €</b></div>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Livraison #${shortId}</title>
+<style>@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { margin: 8mm; size: 80mm auto; } }</style></head>
+<body style="font-family:'Courier New',monospace;max-width:300px;margin:0 auto;padding:16px;color:#1d1d1f;">
+<p style="text-align:center;font-weight:900;font-size:16px;margin:0;">${esc(restaurantName)}</p>
+<p style="text-align:center;font-weight:900;font-size:18px;margin:8px 0 2px;">🛵 BON DE LIVRAISON</p>
+<p style="text-align:center;font-size:11px;color:#666;margin:0 0 12px;">#${shortId} · ${created.toLocaleDateString("fr-FR")} ${created.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+<div style="border:2px solid #1d1d1f;border-radius:8px;padding:10px;margin-bottom:12px;">
+<p style="font-size:11px;color:#666;margin:0 0 4px;">CLIENT</p>
+<p style="font-size:15px;font-weight:900;margin:0 0 6px;">${esc(order.customerName || "—")}</p>
+<p style="font-size:14px;font-weight:700;margin:0 0 6px;white-space:pre-line;">${esc(order.delivery_address || "Adresse non renseignée")}</p>
+<p style="font-size:15px;font-weight:900;margin:0;">Tél : ${esc(order.customer_phone || "—")}</p>
+</div>
+${order.note ? `<p style="font-size:12px;margin:0 0 10px;"><b>Note :</b> ${esc(order.note)}</p>` : ""}
+<table style="width:100%;border-collapse:collapse;border-top:1px dashed #999;">${itemsHtml}</table>
+<table style="width:100%;margin-top:8px;"><tr><td style="font-weight:900;font-size:14px;">TOTAL</td><td style="text-align:right;font-weight:900;font-size:16px;">${order.total.toFixed(2)} €</td></tr></table>
+${paidHtml}
+<script>window.onload = function(){ window.print(); };</script></body></html>`;
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 // Export the QR scan log (with the order each scan converted into) as CSV.
 function exportScansCSV(scanRows, restaurant) {
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -7294,6 +7371,10 @@ function useLiveOrders(restaurantId, pushNotif) {
     // unpaid cash order regardless of how it was actually paid.
     payment_method: o.payment_method || "cash",
     paid: o.paid === true,
+    total: Number(o.total) || 0,
+    delivery_address: o.delivery_address || "",
+    customer_phone: o.customer_phone || "",
+    out_for_delivery_at: o.out_for_delivery_at || null,
     status: o.status === "PENDING" ? "new" : o.status === "PREPARING" ? "cooking" : o.status === "READY" ? "ready" : "served",
     elapsed: Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000)),
     items: (o.order_items || []).map(oi => ({
@@ -7344,7 +7425,7 @@ function useLiveOrders(restaurantId, pushNotif) {
           if (!data) return;
           const order = fmt(data);
           setOrders(prev => [order, ...prev]);
-          pushNotif(`Commande #${order.id.slice(0,6).toUpperCase()} — Table ${order.table}${order.customerName ? ` · ${order.customerName}` : ""}`, "new");
+          pushNotif(`Commande #${order.id.slice(0,6).toUpperCase()} — ${order.order_type === "delivery" ? "🛵 Livraison" : `Table ${order.table}`}${order.customerName ? ` · ${order.customerName}` : ""}`, "new");
         }
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
@@ -7450,8 +7531,9 @@ function useLiveOrders(restaurantId, pushNotif) {
       supabase.from("orders").update({ status: newDbStatus }).eq("id", id).then(() => {});
       // Fire the customer's "order ready" push notification — silently
       // does nothing if they never subscribed (no edge function deployed
-      // yet, or they declined notification permission).
-      if (newDbStatus === "READY") {
+      // yet, or they declined notification permission). Skipped for
+      // delivery: its "come pick it up" wording doesn't apply.
+      if (newDbStatus === "READY" && o.order_type !== "delivery") {
         supabase.functions.invoke("send-ready-push", { body: { order_id: id } }).catch(() => {});
       }
       return prev; // realtime update will handle the state change
@@ -7464,12 +7546,23 @@ function useLiveOrders(restaurantId, pushNotif) {
     ));
   }, []);
 
-  return { orders, served, loading, advanceOrder, toggleItem };
+  const markOutForDelivery = useCallback(async (id) => {
+    const at = new Date().toISOString();
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, out_for_delivery_at: at } : o));
+    if (restaurantId === "demo") return;
+    const { error } = await supabase.from("orders").update({ out_for_delivery_at: at }).eq("id", id);
+    if (error) {
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, out_for_delivery_at: null } : o));
+      pushNotif("Erreur : " + error.message + (/column/i.test(error.message || "") ? " — exécutez migration_delivery.sql" : ""), "warning");
+    }
+  }, [restaurantId, pushNotif]);
+
+  return { orders, served, loading, advanceOrder, toggleItem, markOutForDelivery };
 }
 
 function CuisineView({ restaurant, onBack, onLogout }) {
   const store = useContext(StoreCtx);
-  const { orders, served, loading, advanceOrder, toggleItem } = useLiveOrders(restaurant.id, store.pushNotif);
+  const { orders, served, loading, advanceOrder, toggleItem, markOutForDelivery } = useLiveOrders(restaurant.id, store.pushNotif);
   const [clock, setClock] = useState(new Date());
   const [etaMap, setEtaMap] = useState({});
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, table, order_type, items }
@@ -7567,11 +7660,18 @@ function CuisineView({ restaurant, onBack, onLogout }) {
           <div onClick={e => e.stopPropagation()} style={{ background: C.white, borderRadius: 28, padding: "36px 48px", textAlign: "center", maxWidth: 380, width: "90%", boxShadow: "0 32px 80px rgba(0,0,0,0.4)", animation: "popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
             <div style={{ fontSize: 64, marginBottom: 12, animation: "bellShake 0.6s ease infinite" }}>🔔</div>
             <p style={{ fontSize: 13, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>NOUVELLE COMMANDE</p>
-            <p style={{ fontSize: 48, fontWeight: 900, color: C.dark, lineHeight: 1, marginBottom: 8 }}>Table {newOrderAlert.table}</p>
+            <p style={{ fontSize: newOrderAlert.order_type === "delivery" ? 34 : 48, fontWeight: 900, color: C.dark, lineHeight: 1, marginBottom: 8 }}>{newOrderAlert.order_type === "delivery" ? (newOrderAlert.customerName || "Client") : `Table ${newOrderAlert.table}`}</p>
+            {newOrderAlert.order_type === "delivery" ? (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#E3F2FD", borderRadius: 20, padding: "8px 18px", marginBottom: 20 }}>
+                <span style={{ fontSize: 20 }}>🛵</span>
+                <span style={{ fontWeight: 700, fontSize: 15, color: "#0D47A1" }}>Livraison</span>
+              </div>
+            ) : (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: newOrderAlert.order_type === "takeaway" ? "#FFF3E0" : "#E8F5E9", borderRadius: 20, padding: "8px 18px", marginBottom: 20 }}>
               <span style={{ fontSize: 20 }}>{newOrderAlert.order_type === "takeaway" ? "🥡" : "🍽️"}</span>
               <span style={{ fontWeight: 700, fontSize: 15, color: newOrderAlert.order_type === "takeaway" ? "#E65100" : "#2E7D32" }}>{newOrderAlert.order_type === "takeaway" ? "À emporter" : "Sur place"}</span>
             </div>
+            )}
             <div style={{ background: C.bg, borderRadius: 14, padding: "12px 16px", marginBottom: 24, textAlign: "left" }}>
               {newOrderAlert.items?.slice(0, 4).map((item, i) => (
                 <p key={i} style={{ fontSize: 14, color: C.dark, fontWeight: 600, padding: "3px 0" }}>×{item.qty} {item.emoji} {item.name}</p>
@@ -7640,9 +7740,9 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                   <div key={order.id} className="slide-up" style={{ background: C.white, border: `1.5px solid ${isLate ? C.accent : order.status === "ready" ? C.accentGreen : C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: order.status === "ready" ? `0 0 0 3px ${C.accentGreen}20` : "none" }}>
                     <div style={{ background: order.status === "ready" ? C.accentGreen : isLate ? C.accent : C.dark, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.table}</span>
+                        <span style={{ fontSize: 30, fontWeight: 900, color: C.white, lineHeight: 1 }}>{order.order_type === "delivery" ? "🛵" : order.table}</span>
                         <div>
-                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>TABLE</p>
+                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{order.order_type === "delivery" ? "LIVRAISON" : "TABLE"}</p>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                             {order.customerName
                               ? <p style={{ fontSize: 13, color: C.white, fontWeight: 700, letterSpacing: "-0.01em" }}>{order.customerName}</p>
@@ -7662,10 +7762,17 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                               </span>
                             )}
                           </div>
+                          {order.order_type === "delivery" ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(100,181,246,0.3)", borderRadius: 10, padding: "2px 8px", marginTop: 3 }}>
+                              <span style={{ fontSize: 11 }}>🛵</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "#BBDEFB" }}>{order.out_for_delivery_at ? "En route" : "Livraison"}</span>
+                            </span>
+                          ) : (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: order.order_type === "takeaway" ? "rgba(255,160,0,0.25)" : "rgba(255,255,255,0.15)", borderRadius: 10, padding: "2px 8px", marginTop: 3 }}>
                             <span style={{ fontSize: 11 }}>{order.order_type === "takeaway" ? "🥡" : "🍽️"}</span>
                             <span style={{ fontSize: 10, fontWeight: 700, color: order.order_type === "takeaway" ? "#FFD600" : "rgba(255,255,255,0.85)" }}>{order.order_type === "takeaway" ? "Emporter" : "Sur place"}</span>
                           </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
@@ -7673,6 +7780,15 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                         {isLate && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: 700 }}>⚠ RETARD</p>}
                       </div>
                     </div>
+                    {order.order_type === "delivery" && (
+                      <div style={{ background: "#E3F2FD", borderBottom: "1px solid #BBDEFB", padding: "8px 16px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "#0D47A1", whiteSpace: "pre-line", lineHeight: 1.35 }}>📍 {order.delivery_address || "Adresse non renseignée"}</p>
+                          {order.customer_phone && <a href={`tel:${order.customer_phone.replace(/[^\d+]/g, "")}`} style={{ fontSize: 13, fontWeight: 700, color: "#0D47A1", textDecoration: "none" }}>📞 {order.customer_phone}</a>}
+                        </div>
+                        <button onClick={() => printDeliverySlip(order, restaurant.name)} style={{ flexShrink: 0, background: "#fff", border: "1px solid #90CAF9", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, color: "#0D47A1", cursor: "pointer", ...FF }}>🖨 Bon</button>
+                      </div>
+                    )}
                     {order.note && <div style={{ background: "#FFF8E1", borderBottom: "1px solid #FFE082", padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#7A5C00" }}>⚠ {order.note}</div>}
                     <div style={{ padding: "10px 12px" }}>
                       {order.items.map(item => (
@@ -7736,9 +7852,21 @@ function CuisineView({ restaurant, onBack, onLogout }) {
                       );
                     })()}
                     <div style={{ padding: "6px 12px 12px" }}>
+                      {order.order_type === "delivery" && order.status === "ready" ? (
+                        order.out_for_delivery_at ? (
+                          <button onClick={() => { advanceOrder(order.id); silenceOrder(order.id); }} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: C.accentGreen, color: C.white, fontSize: 14, fontWeight: 700, cursor: "pointer", ...FF }}>
+                            Livrée ✓
+                          </button>
+                        ) : (
+                          <button onClick={() => { markOutForDelivery(order.id); silenceOrder(order.id); }} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1565C0", color: C.white, fontSize: 14, fontWeight: 700, cursor: "pointer", ...FF }}>
+                            🛵 Partie en livraison
+                          </button>
+                        )
+                      ) : (
                       <button onClick={() => { if (canAdvance) { advanceOrder(order.id); silenceOrder(order.id); } }} className="btn-press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !canAdvance ? C.bg : order.status === "ready" ? C.accentGreen : C.dark, color: !canAdvance ? C.textTertiary : C.white, fontSize: 14, fontWeight: 700, cursor: canAdvance ? "pointer" : "not-allowed", transition: "all 0.15s", ...FF }}>
                         {!canAdvance ? `${order.items.length - doneCount} élément${order.items.length - doneCount > 1 ? "s" : ""} restant${order.items.length - doneCount > 1 ? "s" : ""}` : btn[order.status]}
                       </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -7843,7 +7971,9 @@ function CardPaymentForm({ total, onSuccess, onCancel, restaurant, prepayKey, pe
             customer_email: pendingPayload.customerEmail || null,
             customer_phone: pendingPayload.customerPhone || null,
             customer_nif: pendingPayload.customerNif || null,
-            note: pendingPayload.note || null,
+            // The webhook safety net only knows the existing columns, so the
+            // delivery address travels in the note to never be lost.
+            note: [pendingPayload.deliveryAddress ? `🛵 LIVRAISON : ${pendingPayload.deliveryAddress.replace(/\n/g, ", ")} · Tél ${pendingPayload.customerPhone || ""}` : null, pendingPayload.note].filter(Boolean).join(" — ") || null,
             order_type: pendingPayload.orderType || "dine_in",
             total,
           }).then(({ error: perr }) => { if (perr) console.error("[stripe_pending_orders] upsert failed:", perr.message); });
@@ -9571,7 +9701,7 @@ const CT = {
     orderTypeTitle: "Comment souhaitez-vous consommer ?",
     dineIn: "Sur place", dineInSub: "Je mange ici",
     takeaway: "À emporter", takeawaySub: "Je repars avec ma commande",
-    delivery: "Livraison", deliverySub: "Commander via Uber Eats",
+    delivery: "Livraison", deliverySub: "Commander via Uber Eats", deliveryOwnSub: "Livré chez vous",
     orderTypeConfirm: "Continuer →",
   },
   en: {
@@ -9592,7 +9722,7 @@ const CT = {
     orderTypeTitle: "How would you like your order?",
     dineIn: "Dine in", dineInSub: "I'm eating here",
     takeaway: "Takeaway", takeawaySub: "I'll take it with me",
-    delivery: "Delivery", deliverySub: "Order via Uber Eats",
+    delivery: "Delivery", deliverySub: "Order via Uber Eats", deliveryOwnSub: "Delivered to your door",
     orderTypeConfirm: "Continue →",
   },
   ar: {
@@ -9613,7 +9743,7 @@ const CT = {
     orderTypeTitle: "كيف تريد تناول طلبك؟",
     dineIn: "في المكان", dineInSub: "سآكل هنا",
     takeaway: "للأخذ", takeawaySub: "سآخذه معي",
-    delivery: "توصيل", deliverySub: "اطلب عبر Uber Eats",
+    delivery: "توصيل", deliverySub: "اطلب عبر Uber Eats", deliveryOwnSub: "التوصيل إلى منزلك",
     orderTypeConfirm: "متابعة ←",
   },
   es: {
@@ -9634,7 +9764,7 @@ const CT = {
     orderTypeTitle: "¿Cómo deseas consumir tu pedido?",
     dineIn: "Comer aquí", dineInSub: "Como aquí",
     takeaway: "Para llevar", takeawaySub: "Me lo llevo",
-    delivery: "Entrega a domicilio", deliverySub: "Pedir a través de Uber Eats",
+    delivery: "Entrega a domicilio", deliverySub: "Pedir a través de Uber Eats", deliveryOwnSub: "Entregado en tu casa",
     orderTypeConfirm: "Continuar →",
   },
   pt: {
@@ -9655,7 +9785,7 @@ const CT = {
     orderTypeTitle: "Como deseja consumir o seu pedido?",
     dineIn: "Comer no local", dineInSub: "Vou comer aqui",
     takeaway: "Para levar", takeawaySub: "Vou levar comigo",
-    delivery: "Entrega", deliverySub: "Encomendar via Uber Eats",
+    delivery: "Entrega", deliverySub: "Encomendar via Uber Eats", deliveryOwnSub: "Entregue em casa",
     orderTypeConfirm: "Continuar →",
   },
 };
@@ -9696,6 +9826,14 @@ function CustomerPage({ slug, tableNum }) {
   // physically on site. Dine-in QR scans never carry this param, so they're
   // unaffected.
   const [isEmbedChannel] = useState(() => new URLSearchParams(window.location.search).get("channel") === "embed");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryDetails, setDeliveryDetails] = useState(""); // floor, door code…
+  const [outForDeliveryAt, setOutForDeliveryAt] = useState(null);
+  const [trackedTotal, setTrackedTotal] = useState(null);
+  const [trackCopied, setTrackCopied] = useState(false);
+  const isDelivery = orderType === "delivery";
+  const fullDeliveryAddress = [deliveryAddress.trim(), deliveryDetails.trim()].filter(Boolean).join("\n");
+  const profileComplete = !!(customerName.trim() && customerEmail.trim() && (!isDelivery || (customerPhone.trim() && deliveryAddress.trim())));
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState(null); // { code, discount_percent, label, id }
   const [promoError, setPromoError] = useState("");
@@ -9917,6 +10055,7 @@ function CustomerPage({ slug, tableNum }) {
               if (saved.customerNif) setCustomerNif(saved.customerNif);
               if (saved.note) setNote(saved.note);
               if (saved.orderType) setOrderType(saved.orderType);
+              if (saved.deliveryAddress) setDeliveryAddress(saved.deliveryAddress);
               if (saved.appliedPromo) setAppliedPromo(saved.appliedPromo);
               // Triggers the effect below once this render commits, so
               // confirm() runs against the just-restored state above instead
@@ -9930,6 +10069,36 @@ function CustomerPage({ slug, tableNum }) {
           // cleared storage, expired) — the server-side webhook safety net
           // still creates the order from what was saved at payment-start, so
           // the sale itself isn't lost even though this browser can't show it.
+        }
+      }
+    } catch {}
+    // Tracking link (?track=<order id>) given to delivery customers — opens
+    // straight onto the tracking screen from any device, no localStorage needed.
+    try {
+      const trackId = new URLSearchParams(window.location.search).get("track");
+      if (trackId && /^[0-9a-f-]{36}$/i.test(trackId)) {
+        let { data: tr, error: trErr } = await supabase.from("orders")
+          .select("id,status,estimated_ready_at,created_at,total,payment_method,order_type,out_for_delivery_at")
+          .eq("id", trackId).eq("restaurant_id", resto.id).maybeSingle();
+        if (trErr && /out_for_delivery/i.test(trErr.message || "")) {
+          ({ data: tr } = await supabase.from("orders")
+            .select("id,status,estimated_ready_at,created_at,total,payment_method,order_type")
+            .eq("id", trackId).eq("restaurant_id", resto.id).maybeSingle());
+        }
+        if (tr) {
+          const { data: items } = await supabase.from("order_items")
+            .select("quantity, menu_items(name, emoji, price)").eq("order_id", tr.id);
+          setCart((items || []).map((it, i) => ({ id: `track-${i}`, name: it.menu_items?.name ?? "Plat", emoji: it.menu_items?.emoji ?? "🍽", price: Number(it.menu_items?.price) || 0, qty: it.quantity })));
+          setTrackedTotal(Number(tr.total) || 0);
+          setOrderId(tr.id);
+          setOrderType(tr.order_type || "dine_in");
+          setPayMode(tr.payment_method && tr.payment_method !== "cash" ? tr.payment_method : null);
+          setOrderStatus(tr.status || "PENDING");
+          setOutForDeliveryAt(tr.out_for_delivery_at || null);
+          setEstimatedReadyAt(tr.estimated_ready_at || null);
+          setOrderCreatedAt(tr.created_at || null);
+          setStep("done");
+          return;
         }
       }
     } catch {}
@@ -9956,6 +10125,7 @@ function CustomerPage({ slug, tableNum }) {
             if (saved.note) setNote(saved.note);
             if (saved.payMode) setPayMode(saved.payMode);
             if (saved.orderType) setOrderType(saved.orderType);
+            if (saved.deliveryAddress) setDeliveryAddress(saved.deliveryAddress);
             setOrderStatus(orderRow.status || "PENDING");
             setEstimatedReadyAt(orderRow.estimated_ready_at || saved.estimatedReadyAt || null);
             setOrderCreatedAt(orderRow.created_at || saved.createdAt || null);
@@ -10059,10 +10229,13 @@ function CustomerPage({ slug, tableNum }) {
     // run. Selecting a missing column makes PostgREST reject the whole query,
     // which would silently kill live order tracking — so fall back to the core
     // columns if the fiscal ones aren't there yet.
-    let selectCols = "status,estimated_ready_at,created_at,vendus_invoice_url,vendus_invoice_number";
+    // Same reasoning for out_for_delivery_at (migration_delivery.sql), only
+    // needed on delivery orders.
+    let selectCols = "status,estimated_ready_at,created_at,vendus_invoice_url,vendus_invoice_number" + (isDelivery ? ",out_for_delivery_at" : "");
     function apply(data) {
       if (cancelled || !data) return;
       setOrderStatus(data.status);
+      if (data.out_for_delivery_at) setOutForDeliveryAt(data.out_for_delivery_at);
       if (data.estimated_ready_at) setEstimatedReadyAt(data.estimated_ready_at);
       if (data.created_at && !orderCreatedAt) setOrderCreatedAt(data.created_at);
       if (data.vendus_invoice_url) setVendusInvoice({ url: data.vendus_invoice_url, number: data.vendus_invoice_number });
@@ -10072,8 +10245,9 @@ function CustomerPage({ slug, tableNum }) {
       supabase.from("orders").select(selectCols).eq("id", orderId).single()
         .then(({ data, error }) => {
           if (cancelled) return;
-          if (error && /vendus_invoice/i.test(error.message || "")) {
-            selectCols = "status,estimated_ready_at,created_at";
+          if (error && /vendus_invoice|out_for_delivery/i.test(error.message || "")) {
+            const bad = /vendus_invoice/i.test(error.message || "") ? /^vendus_invoice/ : /^out_for_delivery/;
+            selectCols = selectCols.split(",").filter(c => !bad.test(c)).join(",");
             supabase.from("orders").select(selectCols).eq("id", orderId).single()
               .then(({ data: d2 }) => apply(d2)).catch(() => {});
             return;
@@ -10092,6 +10266,7 @@ function CustomerPage({ slug, tableNum }) {
         ({ new: row }) => {
           if (!row) return;
           setOrderStatus(row.status);
+          if (row.out_for_delivery_at) setOutForDeliveryAt(row.out_for_delivery_at);
           if (row.estimated_ready_at) setEstimatedReadyAt(row.estimated_ready_at);
           if (["DONE", "CANCELED", "REFUNDED"].includes(row.status)) clearPendingOrder();
         })
@@ -10103,7 +10278,7 @@ function CustomerPage({ slug, tableNum }) {
       window.removeEventListener("focus", poll);
       supabase.removeChannel(channel);
     };
-  }, [step, orderId]);
+  }, [step, orderId, isDelivery]);
 
   // Ask for OS-level notification permission as soon as the customer lands
   // on the tracking screen — that way "Votre commande est prête" can reach
@@ -10133,7 +10308,9 @@ function CustomerPage({ slug, tableNum }) {
       if (orderId) silenceOrder(orderId);
       stopAllOrderAudio();
     }
-    if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY") {
+    // Delivery customers aren't coming to pick anything up — they're alerted
+    // when the order leaves with the driver instead (effect below).
+    if (orderStatus === "READY" && prevOrderStatusRef.current && prevOrderStatusRef.current !== "READY" && !isDelivery) {
       playCustomerReadyChime();
       // Vibration doesn't depend on the ringer/silent switch the way audio
       // does, so it fires regardless — the one channel guaranteed to work
@@ -10149,17 +10326,35 @@ function CustomerPage({ slug, tableNum }) {
       }
     }
     prevOrderStatusRef.current = orderStatus;
-  }, [orderStatus, orderId, restaurant]);
+  }, [orderStatus, orderId, restaurant, isDelivery]);
+  const prevOutForDeliveryRef = useRef(undefined);
   useEffect(() => {
-    if (orderStatus !== "READY" || !orderId || silencedCustomerOrders.has(orderId)) return;
+    // undefined = first observation (e.g. page reopened from the tracking
+    // link while already en route): don't ring for a past event.
+    if (prevOutForDeliveryRef.current === null && outForDeliveryAt) {
+      playCustomerReadyChime();
+      if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300, 150, 300]); } catch {} }
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          new Notification("🛵 Votre commande est en route !", {
+            body: `${restaurant?.name || "Le restaurant"} — le livreur vient de partir.`,
+            tag: (orderId || "order") + "-delivery",
+          });
+        } catch {}
+      }
+    }
+    if (step === "done") prevOutForDeliveryRef.current = outForDeliveryAt || null;
+  }, [outForDeliveryAt, step, orderId, restaurant]);
+  useEffect(() => {
+    if (orderStatus !== "READY" || isDelivery || !orderId || silencedCustomerOrders.has(orderId)) return;
     const id = setInterval(() => {
       playCustomerReadyChime();
       if (navigator.vibrate) { try { navigator.vibrate([300, 150, 300]); } catch {} }
     }, 5000);
     return () => clearInterval(id);
-  }, [orderStatus, orderId, silencedCustomerOrders]);
+  }, [orderStatus, orderId, silencedCustomerOrders, isDelivery]);
 
-  const tableDisplay = tableLabel || `${L.table} ${tableNum}`;
+  const tableDisplay = isDelivery ? `🛵 ${L.delivery}` : (tableLabel || `${L.table} ${tableNum}`);
   const rawCats = Array.from(new Set(menuItems.map(i => i.category)));
   const sortedCats = catOrderCustomer.length
     ? [...catOrderCustomer.filter(c => rawCats.includes(c)), ...rawCats.filter(c => !catOrderCustomer.includes(c))]
@@ -10182,7 +10377,9 @@ function CustomerPage({ slug, tableNum }) {
   });
   const rawTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const promoDiscount = appliedPromo ? +(rawTotal * appliedPromo.discount_percent / 100).toFixed(2) : 0;
-  const total = +(rawTotal - promoDiscount).toFixed(2);
+  // An order reopened from its tracking link shows the amount actually charged,
+  // not one recomputed from today's menu prices.
+  const total = trackedTotal ?? +(rawTotal - promoDiscount).toFixed(2);
   const count = cart.reduce((s, i) => s + i.qty, 0);
 
   async function applyPromoCode() {
@@ -10264,8 +10461,19 @@ function CustomerPage({ slug, tableNum }) {
       // every column named in RETURNING, so it silently failed the INSERT
       // itself, not just a later read. Requesting only "id" back keeps working
       // no matter how those columns' read privileges are configured.
-      const orderPayloadFull = { restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in", stripe_payment_intent_id: stripePaymentIntentId || null };
+      let orderPayloadFull = { restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod, customer_name: customerName.trim() || null, customer_email: customerEmail.trim() || null, customer_nif: nif, paid: paymentMethod !== "cash", order_type: orderType || "dine_in", stripe_payment_intent_id: stripePaymentIntentId || null };
+      if (isDelivery) orderPayloadFull = { ...orderPayloadFull, delivery_address: fullDeliveryAddress, customer_phone: customerPhone.trim() || null };
+      // Note carrying the delivery info, for every fallback below that has to drop the delivery columns.
+      const noteWithDelivery = isDelivery ? [`🛵 LIVRAISON : ${fullDeliveryAddress.replace(/\n/g, ", ")} · Tél ${customerPhone.trim()}`, note].filter(Boolean).join(" — ") : note;
       let { data: order, error } = await supabase.from("orders").insert(orderPayloadFull).select("id").single();
+
+      // Fallback -3: delivery columns not migrated yet — never lose where to
+      // deliver: fold address + phone into the kitchen note instead.
+      if (error && /delivery_address|customer_phone/i.test(error.message || "")) {
+        const { delivery_address, customer_phone, ...rest } = orderPayloadFull;
+        orderPayloadFull = { ...rest, note: noteWithDelivery };
+        ({ data: order, error } = await supabase.from("orders").insert(orderPayloadFull).select("id").single());
+      }
 
       // Fallback -2: without stripe_payment_intent_id column (not migrated yet)
       if (error && /stripe_payment_intent_id/i.test(error.message || "")) {
@@ -10285,13 +10493,13 @@ function CustomerPage({ slug, tableNum }) {
       // Fallback 1: without customer fields
       if (error) {
         ({ data: order, error } = await supabase.from("orders")
-          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING", payment_method: paymentMethod })
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note: noteWithDelivery, total, status: "PENDING", payment_method: paymentMethod })
           .select("id").single());
       }
       // Fallback 2: without payment_method either
       if (error) {
         ({ data: order, error } = await supabase.from("orders")
-          .insert({ restaurant_id: restaurant.id, table_id: tid, note, total, status: "PENDING" })
+          .insert({ restaurant_id: restaurant.id, table_id: tid, note: noteWithDelivery, total, status: "PENDING" })
           .select("id").single());
       }
 
@@ -10383,6 +10591,7 @@ function CustomerPage({ slug, tableNum }) {
           note, total,
           payMode: paymentMethod === "cash" ? null : paymentMethod,
           orderType,
+          deliveryAddress: isDelivery ? fullDeliveryAddress : undefined,
           createdAt: createdAtIso,
           estimatedReadyAt: etaIso,
           savedAt: Date.now(),
@@ -10423,7 +10632,10 @@ function CustomerPage({ slug, tableNum }) {
           const statusHtml = isPaid
             ? `<div style="border:2px solid #34C759;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#34C759;font-weight:900;font-size:16px;letter-spacing:.04em;">✓ PAYÉ</span></div>`
             : `<div style="border:2px solid #FF9F0A;background:#FF9F0A10;border-radius:10px;padding:10px;text-align:center;margin-top:12px;"><span style="color:#C77700;font-weight:900;font-size:16px;letter-spacing:.04em;">💵 À PAYER À LA CAISSE</span><br/><span style="color:#C77700;font-size:12px;font-weight:600;">Présentez ce ticket au comptoir</span></div>`;
-          const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">Table ${tableNum} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 ${nif ? 4 : 20}px;">${customerName}</p>` : ""}${nif ? `<p style="font-size:12px;color:#888;margin:0 0 20px;">NIF client : ${nif}</p>` : ""}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p>${statusHtml}<p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
+          const escH = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+          const trackUrl = `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}?track=${order.id}`;
+          const deliveryHtml = isDelivery ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">LIVRAISON</p><p style="font-size:14px;margin:0 0 4px;white-space:pre-line;">${escH(fullDeliveryAddress)}</p><p style="font-size:13px;color:#555;margin:0 0 12px;">Tél : ${escH(customerPhone.trim())}</p><a href="${trackUrl}" style="display:block;text-align:center;background:#1d1d1f;color:#fff;text-decoration:none;font-weight:700;padding:12px;border-radius:10px;margin:0 0 20px;">🛵 Suivre ma livraison</a>` : "";
+          const receiptHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#1d1d1f;"><div style="text-align:center;background:#1d1d1f;padding:24px;border-radius:16px 16px 0 0;"><h2 style="color:#fff;margin:0;font-size:22px;">${restaurant.name}</h2>${headerInfo}<p style="color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px;">${isDelivery ? "🛵 Livraison" : `Table ${tableNum}`} · ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})}</p></div><div style="background:#fff;border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 16px 16px;"><p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">N° COMMANDE</p><p style="font-family:monospace;font-size:15px;font-weight:700;margin:0 0 20px;">#${order.id.slice(0,8).toUpperCase()}</p>${customerName ? `<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 4px;">CLIENT</p><p style="font-size:15px;font-weight:600;margin:0 0 ${nif ? 4 : 20}px;">${customerName}</p>` : ""}${nif ? `<p style="font-size:12px;color:#888;margin:0 0 20px;">NIF client : ${nif}</p>` : ""}${deliveryHtml}<p style="font-size:11px;color:#888;letter-spacing:.06em;margin:0 0 8px;">ARTICLES</p><table style="width:100%;border-collapse:collapse;">${itemsHtml}</table><div style="display:flex;justify-content:space-between;align-items:center;background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-top:16px;"><span style="font-size:16px;font-weight:700;">Total</span><span style="font-size:20px;font-weight:900;">${total.toFixed(2)} €</span></div><p style="font-size:12px;color:#888;margin:8px 0 0;">Paiement : ${payLabelMap[paymentMethod] ?? "Espèces"}</p>${statusHtml}<p style="text-align:center;font-size:13px;color:#888;margin-top:24px;font-style:italic;">${ticketInfo?.ticket_footer || "Merci de votre visite ! 🙏"}</p></div></body></html>`;
           invokeWithRetry("send-receipt-email", { restaurant_id: restaurant.id, to_email: customerEmail.trim(), subject: `Votre reçu — ${restaurant.name}`, html_body: receiptHtml })
             .then(({ error }) => {
               if (error) { console.error("[receipt-email] failed for order", order.id, "after 3 attempts:", error.message); return; }
@@ -10527,7 +10739,12 @@ function CustomerPage({ slug, tableNum }) {
               // restaurant hands that off entirely to Uber Eats, so this
               // option only appears once a link is configured, and clicking
               // it leaves the app instead of continuing to our menu/cart.
-              ...(restaurant?.uber_eats_url ? [{ key: "delivery", icon: "🛵", label: L.delivery, sub: L.deliverySub, external: restaurant.uber_eats_url }] : []),
+              // Exception: the restaurant's own delivery (delivery_enabled),
+              // offered only through the website's embedded "Commander" button —
+              // never on the in-room QR codes — takes precedence there.
+              ...(restaurant?.delivery_enabled && isEmbedChannel
+                ? [{ key: "delivery", icon: "🛵", label: L.delivery, sub: L.deliveryOwnSub }]
+                : restaurant?.uber_eats_url ? [{ key: "delivery", icon: "🛵", label: L.delivery, sub: L.deliverySub, external: restaurant.uber_eats_url }] : []),
             ].map(opt => (
               <button key={opt.key} onClick={() => opt.external ? window.open(opt.external, "_blank", "noopener,noreferrer") : setOrderType(opt.key)}
                 style={{ display: "flex", alignItems: "center", gap: 16, padding: "20px 22px", background: orderType === opt.key ? C.dark : C.white, border: `2px solid ${orderType === opt.key ? C.dark : C.border}`, borderRadius: 18, cursor: "pointer", textAlign: "left", transition: "all 0.15s", ...FF }}>
@@ -10747,8 +10964,8 @@ function CustomerPage({ slug, tableNum }) {
               <span translate="no" style={{ fontWeight: 900, fontSize: 24, color: C.dark, letterSpacing: "-0.03em" }}>{total.toFixed(2)}€</span>
             </div>
           </div>
-          <button onClick={() => total === 0 ? confirm("free") : setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>
-            {total === 0 ? "✓ Commander gratuitement" : L.payment}
+          <button onClick={() => total === 0 && !isDelivery ? confirm("free") : setStep("profile")} style={{ width: "100%", padding: 16, background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer", ...FF }}>
+            {total === 0 && !isDelivery ? "✓ Commander gratuitement" : L.payment}
           </button>
         </div>
       )}
@@ -10769,10 +10986,23 @@ function CustomerPage({ slug, tableNum }) {
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Email *</label>
             <input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="votre@email.fr" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
           </div>
-          <div style={{ marginBottom: restaurant?.vendus_enabled ? 16 : 28 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Téléphone <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel)</span></label>
+          <div style={{ marginBottom: restaurant?.vendus_enabled || isDelivery ? 16 : 28 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Téléphone {isDelivery ? "*" : <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel)</span>}</label>
             <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="06 XX XX XX XX" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
           </div>
+          {isDelivery && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>🛵 Adresse de livraison *</label>
+                <textarea value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)} rows={2} autoComplete="street-address"
+                  placeholder="Numéro, rue, code postal, ville" style={{ width: "100%", boxSizing: "border-box", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", resize: "none", ...FF }} />
+              </div>
+              <div style={{ marginBottom: restaurant?.vendus_enabled ? 16 : 28 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>Complément <span style={{ fontWeight: 400, color: C.textTertiary }}>(étage, digicode, interphone…)</span></label>
+                <input value={deliveryDetails} onChange={e => setDeliveryDetails(e.target.value)} placeholder="Ex : 3e étage, code 1234B" style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, fontSize: 16, outline: "none", ...FF }} />
+              </div>
+            </>
+          )}
           {restaurant?.vendus_enabled && (
             <div style={{ marginBottom: 28 }}>
               <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.textSecondary, marginBottom: 6 }}>NIF <span style={{ fontWeight: 400, color: C.textTertiary }}>(optionnel — pour facture avec contribuinte)</span></label>
@@ -10784,9 +11014,9 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           )}
           <button
-            onClick={() => { if (!customerName.trim() || !customerEmail.trim()) return; total === 0 ? confirm("free") : setStep("payment"); }}
-            disabled={!customerName.trim() || !customerEmail.trim()}
-            style={{ width: "100%", padding: "16px", background: (customerName.trim() && customerEmail.trim()) ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: (customerName.trim() && customerEmail.trim()) ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
+            onClick={() => { if (!profileComplete) return; total === 0 ? confirm("free") : setStep("payment"); }}
+            disabled={!profileComplete}
+            style={{ width: "100%", padding: "16px", background: profileComplete ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: profileComplete ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
             {total === 0 ? "✓ Confirmer la commande gratuite" : "Continuer vers le paiement →"}
           </button>
           <p style={{ fontSize: 11, color: C.textTertiary, textAlign: "center", marginTop: 16, lineHeight: 1.6 }}>
@@ -10861,7 +11091,7 @@ function CustomerPage({ slug, tableNum }) {
                 <CardPaymentForm total={total} onSuccess={confirm} onCancel={() => setPayMode(null)} restaurant={restaurant}
                   tableNum={tableNum}
                   prepayKey={PREPAY_STORAGE_KEY}
-                  pendingPayload={{ cart, customerName, customerEmail, customerPhone, customerNif, note, orderType, appliedPromo }} />
+                  pendingPayload={{ cart, customerName, customerEmail, customerPhone, customerNif, note, orderType, appliedPromo, deliveryAddress: isDelivery ? fullDeliveryAddress : undefined }} />
               )}
             </>
           )}
@@ -10919,7 +11149,7 @@ ${statusHtml}
                   }
                 }}
                 style={{ background: "#FF3B30", color: "#fff", textAlign: "center", padding: "14px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", borderRadius: 14, marginBottom: 20 }}>
-                🔔 Cliquez ici pour être alerté(e) quand votre commande est prête
+                {isDelivery ? "🔔 Cliquez ici pour être alerté(e) quand votre commande part en livraison" : "🔔 Cliquez ici pour être alerté(e) quand votre commande est prête"}
               </div>
             )}
             {/* Success banner */}
@@ -10944,8 +11174,58 @@ ${statusHtml}
               </a>
             )}
 
+            {/* Tracking link — lets a delivery customer follow the order from any device */}
+            {isDelivery && orderId && !orderId.startsWith("demo-") && (() => {
+              const trackUrl = `${window.location.origin}${BASE_PATH}/r/${restaurant.id}/t/${tableNum}?track=${orderId}`;
+              return (
+                <div style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 16, padding: "14px 16px", marginBottom: 20 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: C.dark, marginBottom: 4 }}>🔗 Votre lien de suivi</p>
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginBottom: 10 }}>Gardez-le pour suivre votre livraison, même après avoir fermé cette page.</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <a href={trackUrl} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "10px 0", background: C.dark, color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>Ouvrir ↗</a>
+                    <button onClick={() => {
+                        const copy = () => navigator.clipboard?.writeText(trackUrl).then(() => setTrackCopied(true), () => {});
+                        if (navigator.share) { navigator.share({ title: `Suivi — ${restaurant.name}`, url: trackUrl }).catch(e => { if (e?.name !== "AbortError") copy(); }); return; }
+                        copy();
+                      }}
+                      style={{ flex: 1, padding: "10px 0", background: C.bg, color: C.dark, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", ...FF }}>
+                      {trackCopied ? "✓ Copié" : "Copier / partager"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ETA banner */}
             {(() => {
+              if (isDelivery && ["DONE", "done", "served"].includes(orderStatus)) {
+                return (
+                  <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>🏠</div>
+                    <p style={{ fontSize: 18, fontWeight: 800, color: C.accentGreen, marginBottom: 2 }}>Commande livrée !</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary }}>Bon appétit.</p>
+                  </div>
+                );
+              }
+              if (isDelivery && outForDeliveryAt && orderStatus === "READY") {
+                const left = new Date(outForDeliveryAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div style={{ background: "#E3F2FD", border: "1.5px solid #90CAF9", borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>🛵</div>
+                    <p style={{ fontSize: 18, fontWeight: 800, color: "#0D47A1", marginBottom: 2 }}>Votre commande est en route !</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary }}>Le livreur est parti à {left}.</p>
+                  </div>
+                );
+              }
+              if (isDelivery && orderStatus === "READY") {
+                return (
+                  <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📦</div>
+                    <p style={{ fontSize: 18, fontWeight: 800, color: C.accentGreen, marginBottom: 2 }}>Commande prête</p>
+                    <p style={{ fontSize: 13, color: C.textSecondary }}>Elle part très bientôt en livraison.</p>
+                  </div>
+                );
+              }
               if (["DONE", "done", "served", "CANCELED", "REFUNDED"].includes(orderStatus)) {
                 return (
                   <div style={{ background: C.accentGreen + "15", border: `1.5px solid ${C.accentGreen}40`, borderRadius: 16, padding: "16px 20px", marginBottom: 20, textAlign: "center" }}>
@@ -11033,6 +11313,13 @@ ${statusHtml}
                     {customerName && <p style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 3 }}>{customerName}</p>}
                     {customerEmail && <p style={{ fontSize: 13, color: C.textSecondary }}>{customerEmail}</p>}
                     {customerNif && isValidPortugueseNif(customerNif) && <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 3 }}>NIF {customerNif}</p>}
+                  </div>
+                )}
+                {isDelivery && fullDeliveryAddress && (
+                  <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: `1px dashed ${C.border}` }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.textTertiary, letterSpacing: "0.08em", marginBottom: 8 }}>LIVRAISON</p>
+                    <p style={{ fontSize: 13, color: C.dark, whiteSpace: "pre-line" }}>{fullDeliveryAddress}</p>
+                    {customerPhone && <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 3 }}>Tél : {customerPhone}</p>}
                   </div>
                 )}
 
@@ -11125,7 +11412,7 @@ ${statusHtml}
               </div>
             )}
 
-            <button onClick={() => { clearPendingOrder(); setOrderId(null); setOrderCreatedAt(null); setEstimatedReadyAt(null); setOrderStatus("PENDING"); setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
+            <button onClick={() => { clearPendingOrder(); setOrderId(null); setOrderCreatedAt(null); setEstimatedReadyAt(null); setOrderStatus("PENDING"); setStep("menu"); setCart([]); setNote(""); setRating(0); setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setProfileSkipped(false); setPayMode(null); setTrackedTotal(null); setOutForDeliveryAt(null); }} style={{ width: "100%", padding: 16, background: C.white, color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", ...FF }}>Commander autre chose</button>
           </div>
         );
       })()}
