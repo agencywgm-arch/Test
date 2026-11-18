@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="960" viewBox="0 0 1400 960" font-family="Figtree, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <filter id="card" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="960" fill="#F5F5F7"/>
+
+  <text x="700" y="76" text-anchor="middle" font-size="38" font-weight="800" fill="#1D1D1F" letter-spacing="-1">Architecture de la solution</text>
+  <text x="700" y="114" text-anchor="middle" font-size="19" font-weight="500" fill="#6E6E73">Trois interfaces, une synchronisation temps réel, une base sécurisée</text>
+
+  <!-- ── LAYER 1 : interfaces ─────────────────────────── -->
+  <text x="90" y="182" font-size="14" font-weight="800" fill="#AEAEB2" letter-spacing="2">INTERFACES</text>
+
+  <rect x="90" y="200" width="380" height="176" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <circle cx="150" cy="256" r="26" fill="#FF375F"/>
+  <text x="150" y="266" text-anchor="middle" font-size="24">📱</text>
+  <text x="192" y="252" font-size="23" font-weight="800" fill="#1D1D1F" letter-spacing="-0.4">Client</text>
+  <text x="192" y="278" font-size="15" font-weight="600" fill="#FF375F">Téléphone · sans installation</text>
+  <text x="122" y="318" font-size="16" font-weight="500" fill="#6E6E73">Menu, commande, paiement</text>
+  <text x="122" y="344" font-size="16" font-weight="500" fill="#6E6E73">et suivi en direct</text>
+
+  <rect x="510" y="200" width="380" height="176" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <circle cx="570" cy="256" r="26" fill="#FF9F0A"/>
+  <text x="570" y="266" text-anchor="middle" font-size="24">🍳</text>
+  <text x="612" y="252" font-size="23" font-weight="800" fill="#1D1D1F" letter-spacing="-0.4">Cuisine</text>
+  <text x="612" y="278" font-size="15" font-weight="600" fill="#C77700">Tablette · vue comptoir</text>
+  <text x="542" y="318" font-size="16" font-weight="500" fill="#6E6E73">Tableau kanban et alarme</text>
+  <text x="542" y="344" font-size="16" font-weight="500" fill="#6E6E73">sonore à chaque commande</text>
+
+  <rect x="930" y="200" width="380" height="176" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <circle cx="990" cy="256" r="26" fill="#0071E3"/>
+  <text x="990" y="266" text-anchor="middle" font-size="24">📊</text>
+  <text x="1032" y="252" font-size="23" font-weight="800" fill="#1D1D1F" letter-spacing="-0.4">Gestion</text>
+  <text x="1032" y="278" font-size="15" font-weight="600" fill="#0071E3">Ordinateur · 14 modules</text>
+  <text x="962" y="318" font-size="16" font-weight="500" fill="#6E6E73">Menu, caisse, CRM, QR,</text>
+  <text x="962" y="344" font-size="16" font-weight="500" fill="#6E6E73">promotions, analytique</text>
+
+  <!-- arrows down -->
+  <path d="M280 376 L280 442" stroke="#1D1D1F" stroke-opacity="0.18" stroke-width="3"/>
+  <path d="M700 376 L700 442" stroke="#1D1D1F" stroke-opacity="0.18" stroke-width="3"/>
+  <path d="M1120 376 L1120 442" stroke="#1D1D1F" stroke-opacity="0.18" stroke-width="3"/>
+
+  <!-- ── LAYER 2 : temps réel ─────────────────────────── -->
+  <text x="90" y="432" font-size="14" font-weight="800" fill="#AEAEB2" letter-spacing="2">SYNCHRONISATION</text>
+
+  <rect x="90" y="450" width="1220" height="150" rx="22" fill="#1D1D1F" filter="url(#card)"/>
+  <text x="700" y="500" text-anchor="middle" font-size="24" font-weight="800" fill="#FFFFFF" letter-spacing="-0.4">Moteur temps réel</text>
+
+  <circle cx="330" cy="552" r="7" fill="#34C759"/>
+  <text x="350" y="559" font-size="17" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">Diffusion instantanée</text>
+
+  <circle cx="620" cy="552" r="7" fill="#FF9F0A"/>
+  <text x="640" y="559" font-size="17" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">Repli automatique</text>
+
+  <circle cx="900" cy="552" r="7" fill="#FF375F"/>
+  <text x="920" y="559" font-size="17" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">Notifications push</text>
+
+  <path d="M700 600 L700 668" stroke="#1D1D1F" stroke-opacity="0.18" stroke-width="3"/>
+
+  <!-- ── LAYER 3 : socle ─────────────────────────── -->
+  <text x="90" y="658" font-size="14" font-weight="800" fill="#AEAEB2" letter-spacing="2">SOCLE SÉCURISÉ</text>
+
+  <rect x="90" y="676" width="286" height="150" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <text x="233" y="736" text-anchor="middle" font-size="34">🗄️</text>
+  <text x="233" y="778" text-anchor="middle" font-size="19" font-weight="800" fill="#1D1D1F">Base de données</text>
+  <text x="233" y="804" text-anchor="middle" font-size="15" font-weight="500" fill="#6E6E73">Cloisonnée par établissement</text>
+
+  <rect x="402" y="676" width="286" height="150" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <text x="545" y="736" text-anchor="middle" font-size="34">🔐</text>
+  <text x="545" y="778" text-anchor="middle" font-size="19" font-weight="800" fill="#1D1D1F">Authentification</text>
+  <text x="545" y="804" text-anchor="middle" font-size="15" font-weight="500" fill="#6E6E73">Accès par propriétaire</text>
+
+  <rect x="714" y="676" width="286" height="150" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <text x="857" y="736" text-anchor="middle" font-size="34">🖼️</text>
+  <text x="857" y="778" text-anchor="middle" font-size="19" font-weight="800" fill="#1D1D1F">Stockage</text>
+  <text x="857" y="804" text-anchor="middle" font-size="15" font-weight="500" fill="#6E6E73">Photos et visuels du menu</text>
+
+  <rect x="1026" y="676" width="284" height="150" rx="22" fill="#FFFFFF" filter="url(#card)"/>
+  <text x="1168" y="736" text-anchor="middle" font-size="34">💳</text>
+  <text x="1168" y="778" text-anchor="middle" font-size="19" font-weight="800" fill="#1D1D1F">Paiement</text>
+  <text x="1168" y="804" text-anchor="middle" font-size="15" font-weight="500" fill="#6E6E73">Carte, Apple Pay, espèces</text>
+
+  <text x="700" y="892" text-anchor="middle" font-size="16" font-weight="600" fill="#AEAEB2">Hébergement cloud · mises à jour continues · aucun matériel propriétaire requis</text>
+</svg>
