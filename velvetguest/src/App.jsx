@@ -9454,6 +9454,38 @@ function GmailOAuthCallback() {
 // ─────────────────────────────────────────────────────────────────────────────
 // PROMO CODES TAB (inside dashboard PromoTab)
 // ─────────────────────────────────────────────────────────────────────────────
+// Recurrence: a code can be limited to a repeating window — every day, certain
+// weekdays, or certain dates of the month — optionally within a time-of-day
+// range. Weekdays use JS getDay() numbering (0 = Sunday).
+const PROMO_WEEKDAY_CHIPS = [{ v: 1, l: "Lun" }, { v: 2, l: "Mar" }, { v: 3, l: "Mer" }, { v: 4, l: "Jeu" }, { v: 5, l: "Ven" }, { v: 6, l: "Sam" }, { v: 0, l: "Dim" }];
+const PROMO_WEEKDAY_LONG = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+
+function describePromoRecurrence(c) {
+  const type = c?.recurrence_type || "none";
+  if (type === "none") return "";
+  const days = (c.recurrence_days || []).map(Number);
+  let txt = "tous les jours";
+  if (type === "weekly" && days.length) txt = "chaque " + [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => PROMO_WEEKDAY_LONG[d]).join(", ");
+  if (type === "monthly" && days.length) txt = "le " + [...days].sort((a, b) => a - b).join(", ") + " de chaque mois";
+  const s = (c.recurrence_start_time || "").slice(0, 5), e = (c.recurrence_end_time || "").slice(0, 5);
+  if (s && e) txt += ` de ${s} à ${e}`;
+  return txt;
+}
+
+function isPromoInSchedule(c, now = new Date()) {
+  const type = c?.recurrence_type || "none";
+  if (type === "none") return true;
+  const days = (c.recurrence_days || []).map(Number);
+  if (type === "weekly" && days.length && !days.includes(now.getDay())) return false;
+  if (type === "monthly" && days.length && !days.includes(now.getDate())) return false;
+  const toMin = t => { const [h, m] = String(t).split(":"); return Number(h) * 60 + Number(m || 0); };
+  if (c.recurrence_start_time && c.recurrence_end_time) {
+    const s = toMin(c.recurrence_start_time), e = toMin(c.recurrence_end_time), cur = now.getHours() * 60 + now.getMinutes();
+    if (s <= e ? !(cur >= s && cur < e) : !(cur >= s || cur < e)) return false;
+  }
+  return true;
+}
+
 function PromoCodesTab({ restaurant }) {
   const isDemo = restaurant.id === "demo";
   const store = useContext(StoreCtx);
@@ -9461,7 +9493,7 @@ function PromoCodesTab({ restaurant }) {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // null | "new" | "edit"
   const [editing, setEditing] = useState(null);
-  const EMPTY = { code: "", label: "", discount_percent: 10, max_uses: "", starts_at: "", expires_at: "", active: true };
+  const EMPTY = { code: "", label: "", discount_percent: 10, max_uses: "", starts_at: "", expires_at: "", active: true, recurrence_type: "none", recurrence_days: [], recurrence_start_time: "", recurrence_end_time: "" };
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const fv = k => e => setForm(p => ({ ...p, [k]: e.target?.value ?? e }));
@@ -9484,20 +9516,42 @@ function PromoCodesTab({ restaurant }) {
       expires_at: form.expires_at || null,
       active: form.active,
     };
+    const recurring = form.recurrence_type !== "none";
+    if ((form.recurrence_type === "weekly" || form.recurrence_type === "monthly") && form.recurrence_days.length === 0) {
+      store.pushNotif(form.recurrence_type === "weekly" ? "Choisissez au moins un jour de la semaine" : "Choisissez au moins une date du mois", "warning");
+      setSaving(false); return;
+    }
+    if (recurring && !!form.recurrence_start_time !== !!form.recurrence_end_time) {
+      store.pushNotif("Renseignez l'heure de début ET l'heure de fin du créneau (ou aucune des deux)", "warning");
+      setSaving(false); return;
+    }
+    const recur = {
+      recurrence_type: form.recurrence_type,
+      recurrence_days: form.recurrence_type === "weekly" || form.recurrence_type === "monthly" ? form.recurrence_days : [],
+      recurrence_start_time: recurring && form.recurrence_start_time ? form.recurrence_start_time : null,
+      recurrence_end_time: recurring && form.recurrence_end_time ? form.recurrence_end_time : null,
+    };
     if (isDemo) {
-      if (modal === "new") setCodes(p => [{ ...payload, id: "demo_" + Date.now(), restaurant_id: "demo", use_count: 0, created_at: new Date().toISOString() }, ...p]);
-      else setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+      if (modal === "new") setCodes(p => [{ ...payload, ...recur, id: "demo_" + Date.now(), restaurant_id: "demo", use_count: 0, created_at: new Date().toISOString() }, ...p]);
+      else setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...payload, ...recur } : x));
       setSaving(false); setModal(null); return;
     }
-    if (modal === "new") {
-      const { data, error } = await supabase.from("promo_codes").insert({ ...payload, restaurant_id: restaurant.id }).select().single();
-      if (error) { store.pushNotif("Erreur : " + error.message, "warning"); setSaving(false); return; }
-      if (data) setCodes(p => [data, ...p]);
-    } else {
-      const { error } = await supabase.from("promo_codes").update(payload).eq("id", editing.id);
-      if (error) { store.pushNotif("Erreur : " + error.message, "warning"); setSaving(false); return; }
-      setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...payload } : x));
+    const run = p => modal === "new"
+      ? supabase.from("promo_codes").insert({ ...p, restaurant_id: restaurant.id }).select().single()
+      : supabase.from("promo_codes").update(p).eq("id", editing.id);
+    let fullPayload = { ...payload, ...recur };
+    let { data, error } = await run(fullPayload);
+    // Columns not migrated yet: a code with no recurrence must still save.
+    if (error && /recurrence/i.test(error.message || "") && !recurring) {
+      fullPayload = payload;
+      ({ data, error } = await run(fullPayload));
     }
+    if (error) {
+      store.pushNotif("Erreur : " + error.message + (/recurrence/i.test(error.message || "") ? " — exécutez migration_promo_recurrence.sql" : ""), "warning");
+      setSaving(false); return;
+    }
+    if (modal === "new") { if (data) setCodes(p => [data, ...p]); }
+    else setCodes(p => p.map(x => x.id === editing.id ? { ...x, ...fullPayload } : x));
     setSaving(false); setModal(null);
     store.pushNotif("✅ Code promo enregistré", "success");
   }
@@ -9516,7 +9570,7 @@ function PromoCodesTab({ restaurant }) {
 
   function openNew() { setForm(EMPTY); setEditing(null); setModal("new"); }
   function openEdit(c) {
-    setForm({ code: c.code, label: c.label || "", discount_percent: c.discount_percent, max_uses: c.max_uses || "", starts_at: c.starts_at ? c.starts_at.slice(0, 10) : "", expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "", active: c.active });
+    setForm({ code: c.code, label: c.label || "", discount_percent: c.discount_percent, max_uses: c.max_uses || "", starts_at: c.starts_at ? c.starts_at.slice(0, 10) : "", expires_at: c.expires_at ? c.expires_at.slice(0, 10) : "", active: c.active, recurrence_type: c.recurrence_type || "none", recurrence_days: (c.recurrence_days || []).map(Number), recurrence_start_time: (c.recurrence_start_time || "").slice(0, 5), recurrence_end_time: (c.recurrence_end_time || "").slice(0, 5) });
     setEditing(c); setModal("edit");
   }
 
@@ -9582,7 +9636,8 @@ function PromoCodesTab({ restaurant }) {
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                   <span style={{ background: "#0071E315", color: "#0071E3", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>−{c.discount_percent}%</span>
-                  {statusOk && <span style={{ background: C.accentGreen + "15", color: C.accentGreen, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ Actif</span>}
+                  {statusOk && isPromoInSchedule(c) && <span style={{ background: C.accentGreen + "15", color: C.accentGreen, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ Actif</span>}
+                  {statusOk && !isPromoInSchedule(c) && <span style={{ background: "#FF9F0A15", color: "#C77700", fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>⏸ Hors créneau</span>}
                   {expired && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Expiré</span>}
                   {notStarted && <span style={{ background: C.accentBlue + "15", color: C.accentBlue, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Pas encore actif</span>}
                   {maxed && <span style={{ background: C.accent + "15", color: C.accent, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>Épuisé</span>}
@@ -9591,6 +9646,7 @@ function PromoCodesTab({ restaurant }) {
                   <span>🔢 {c.use_count || 0}{c.max_uses ? ` / ${c.max_uses}` : ""} utilisation{c.use_count !== 1 ? "s" : ""}</span>
                   {c.starts_at && <span>🚀 {new Date(c.starts_at).toLocaleDateString("fr-FR")}</span>}
                   {c.expires_at && <span>📅 {new Date(c.expires_at).toLocaleDateString("fr-FR")}</span>}
+                  {describePromoRecurrence(c) && <span>🔁 {describePromoRecurrence(c)}</span>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn variant="ghost" size="xs" full onClick={() => openEdit(c)}>Modifier</Btn>
@@ -9650,6 +9706,57 @@ function PromoCodesTab({ restaurant }) {
                   <input type="date" value={form.expires_at} onChange={fv("expires_at")}
                     style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
                 </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 6 }}>🔁 Récurrence</label>
+                <select value={form.recurrence_type} onChange={e => setForm(p => ({ ...p, recurrence_type: e.target.value, recurrence_days: [] }))}
+                  style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", background: C.white, ...FF }}>
+                  <option value="none">Aucune — valable en continu</option>
+                  <option value="daily">Tous les jours</option>
+                  <option value="weekly">Chaque semaine (jours au choix)</option>
+                  <option value="monthly">Chaque mois (dates au choix)</option>
+                </select>
+                {form.recurrence_type === "weekly" && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    {PROMO_WEEKDAY_CHIPS.map(d => {
+                      const on = form.recurrence_days.includes(d.v);
+                      return (
+                        <button key={d.v} type="button" onClick={() => setForm(p => ({ ...p, recurrence_days: on ? p.recurrence_days.filter(x => x !== d.v) : [...p.recurrence_days, d.v] }))}
+                          style={{ flex: 1, minWidth: 40, padding: "9px 0", borderRadius: 10, border: `1.5px solid ${on ? C.dark : C.border}`, background: on ? C.dark : C.white, color: on ? C.white : C.dark, fontWeight: 700, fontSize: 12, cursor: "pointer", ...FF }}>{d.l}</button>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.recurrence_type === "monthly" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 5, marginTop: 10 }}>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
+                      const on = form.recurrence_days.includes(n);
+                      return (
+                        <button key={n} type="button" onClick={() => setForm(p => ({ ...p, recurrence_days: on ? p.recurrence_days.filter(x => x !== n) : [...p.recurrence_days, n] }))}
+                          style={{ padding: "8px 0", borderRadius: 8, border: `1.5px solid ${on ? C.dark : C.border}`, background: on ? C.dark : C.white, color: on ? C.white : C.dark, fontWeight: 700, fontSize: 12, cursor: "pointer", ...FF }}>{n}</button>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.recurrence_type !== "none" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 4 }}>De (heure) <span style={{ fontWeight: 400 }}>— optionnel</span></label>
+                      <input type="time" value={form.recurrence_start_time} onChange={fv("recurrence_start_time")}
+                        style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary, display: "block", marginBottom: 4 }}>À (heure)</label>
+                      <input type="time" value={form.recurrence_end_time} onChange={fv("recurrence_end_time")}
+                        style={{ width: "100%", padding: "10px 14px", border: `1.5px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", ...FF }} />
+                    </div>
+                  </div>
+                )}
+                {form.recurrence_type !== "none" && (
+                  <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 8, lineHeight: 1.4 }}>
+                    Le code ne fonctionnera que {describePromoRecurrence({ ...form }) || "…"}.
+                  </p>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.bg, borderRadius: 12 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Code actif</span>
@@ -10391,6 +10498,7 @@ function CustomerPage({ slug, tableNum }) {
       .select("*").eq("restaurant_id", restaurant.id).eq("code", code).eq("active", true).maybeSingle();
     if (error || !data) { setPromoError("Code invalide ou inactif"); setCheckingPromo(false); return; }
     if (data.starts_at && new Date(data.starts_at) > new Date()) { setPromoError("Ce code n'est pas encore actif"); setCheckingPromo(false); return; }
+    if (!isPromoInSchedule(data)) { setPromoError(`Ce code n'est valable que ${describePromoRecurrence(data)}`); setCheckingPromo(false); return; }
     if (data.expires_at && new Date(data.expires_at) < new Date()) { setPromoError("Ce code a expiré"); setCheckingPromo(false); return; }
     if (data.max_uses && data.use_count >= data.max_uses) { setPromoError("Ce code a atteint son nombre maximum d'utilisations"); setCheckingPromo(false); return; }
     setAppliedPromo({ id: data.id, code: data.code, discount_percent: data.discount_percent, label: data.label });
