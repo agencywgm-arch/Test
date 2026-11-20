@@ -2398,6 +2398,22 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
       .then(({ data }) => { if (data) setIsPaymentMaster(!!data.is_payment_master); });
   }, [restaurant.id]);
 
+  // Whether card payment really works for this restaurant: its own Stripe keys
+  // OR the owner's payment-master restaurant (same rule the customer page and
+  // the payment functions use). null = not known yet, so no warning flashes.
+  const [cardPaymentWorks, setCardPaymentWorks] = useState(null);
+  const ownStripeKeys = !!(settings.stripe_publishable_key && settings.stripe_secret_key);
+  useEffect(() => {
+    if (restaurant.id === "demo") { setCardPaymentWorks(ownStripeKeys); return; }
+    if (ownStripeKeys) { setCardPaymentWorks(true); return; }
+    let cancelled = false;
+    supabase.from("restaurants").select("owner_id,is_payment_master").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => resolveCardEnabled(data ? { id: restaurant.id, ...data } : restaurant, false))
+      .then(ok => { if (!cancelled) setCardPaymentWorks(ok); })
+      .catch(() => { if (!cancelled) setCardPaymentWorks(null); });
+    return () => { cancelled = true; };
+  }, [restaurant.id, ownStripeKeys, isPaymentMaster]);
+
   async function togglePaymentMaster() {
     if (restaurant.id === "demo") { store.pushNotif("Indisponible en mode démo", "warning"); return; }
     const next = !isPaymentMaster;
@@ -2721,8 +2737,8 @@ function SettingsTab({ restaurant, onRestaurantUpdate }) {
             <div style={{ position: "absolute", top: 3, left: deliveryEnabled ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
           </div>
         </div>
-        {deliveryEnabled && !stripeOk && (
-          <p style={{ fontSize: 12, color: C.accent, marginTop: 10, fontWeight: 600 }}>⚠️ Aucune clé Stripe sur ce restaurant : la livraison se paie uniquement par carte, vérifiez que le paiement en ligne fonctionne (ou qu'il est fourni par votre restaurant « maître paiement »).</p>
+        {deliveryEnabled && cardPaymentWorks === false && (
+          <p style={{ fontSize: 12, color: C.accent, marginTop: 10, fontWeight: 600 }}>⚠️ Le paiement par carte n'est pas disponible pour ce restaurant (ni clé Stripe propre, ni restaurant « maître paiement » sur votre compte) : la livraison se paie uniquement par carte.</p>
         )}
       </Surface>
 
