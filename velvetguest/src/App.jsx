@@ -25,6 +25,17 @@ async function resolveCardEnabled(restaurant, ownHasKey) {
     return !!(data && data.length);
   } catch { return false; }
 }
+// The owner "clôture la caisse": customer ordering (QR codes and the website
+// button) is suspended until the register is reopened. Fails open — if the
+// column isn't migrated yet or the lookup fails, ordering is never blocked.
+async function fetchRegisterOpen(restaurantId) {
+  if (!restaurantId || restaurantId === "demo") return true;
+  try {
+    const { data, error } = await supabase.from("restaurants").select("register_open").eq("id", restaurantId).maybeSingle();
+    if (error || !data) return true;
+    return data.register_open !== false;
+  } catch { return true; }
+}
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 // Public VAPID key for Web Push ("order ready" notifications that reach the
 // customer even with their screen locked). Safe to keep in client code —
@@ -6826,6 +6837,34 @@ function CaisseTab({ store, restaurant }) {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [histOrders, setHistOrders] = useState(null);
   const [histLoading, setHistLoading] = useState(false);
+  // Register open/closed: while closed, QR codes and the website button refuse
+  // new orders. Unknown (column not migrated) is treated as open.
+  const [registerOpen, setRegisterOpen] = useState(true);
+  const [registerChangedAt, setRegisterChangedAt] = useState(null);
+  const [registerSaving, setRegisterSaving] = useState(false);
+  useEffect(() => {
+    if (restaurant.id === "demo") return;
+    supabase.from("restaurants").select("register_open,register_changed_at").eq("id", restaurant.id).maybeSingle()
+      .then(({ data }) => { if (data) { setRegisterOpen(data.register_open !== false); setRegisterChangedAt(data.register_changed_at || null); } });
+  }, [restaurant.id]);
+  async function setRegister(open) {
+    if (!open && !window.confirm("Clôturer la caisse ?\n\nLes QR codes et le bouton de commande du site n'accepteront plus de nouvelles commandes. Les commandes déjà passées continuent d'être traitées.")) return;
+    const at = new Date().toISOString();
+    if (restaurant.id !== "demo") {
+      setRegisterSaving(true);
+      const { error } = await supabase.from("restaurants").update({ register_open: open, register_changed_at: at }).eq("id", restaurant.id);
+      setRegisterSaving(false);
+      if (error) { store.pushNotif?.("Erreur : " + error.message + (/column/i.test(error.message || "") ? " — exécutez migration_register.sql" : ""), "warning"); return; }
+    }
+    setRegisterOpen(open); setRegisterChangedAt(at);
+    store.pushNotif?.(open ? "🔓 Caisse ouverte — les QR codes reprennent les commandes" : "🔒 Caisse clôturée — QR codes désactivés. Pensez au Rapport Z ci-dessous.", "success");
+  }
+  const registerSince = registerChangedAt ? (() => {
+    const d = new Date(registerChangedAt);
+    return d.toDateString() === new Date().toDateString()
+      ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  })() : null;
   const isToday = selectedDate === todayStr;
   const orders = isToday ? (store.doneOrders || []) : (histOrders || []);
 
@@ -7118,6 +7157,20 @@ function CaisseTab({ store, restaurant }) {
 
   return (
     <div className="fade-in">
+      {/* Register open / closed — closing suspends QR code and website ordering */}
+      <Surface style={{ padding: "16px 20px", marginBottom: isMobile ? 12 : 20, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", border: `1.5px solid ${registerOpen ? C.accentGreen + "50" : C.accent + "50"}`, background: registerOpen ? C.accentGreen + "10" : C.accent + "10" }}>
+        <div style={{ fontSize: 28 }}>{registerOpen ? "🟢" : "🔒"}</div>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <p style={{ fontSize: 15, fontWeight: 800, color: C.dark, margin: 0 }}>{registerOpen ? "Caisse ouverte" : "Caisse clôturée"}{registerSince ? ` · depuis ${registerSince}` : ""}</p>
+          <p style={{ fontSize: 12, color: C.textSecondary, margin: "2px 0 0", lineHeight: 1.4 }}>
+            {registerOpen ? "Vos clients peuvent commander (QR codes et bouton de votre site)." : "Les QR codes et le bouton de votre site refusent les nouvelles commandes."}
+          </p>
+        </div>
+        <Btn variant={registerOpen ? "ghost" : "primary"} onClick={() => setRegister(!registerOpen)} disabled={registerSaving}>
+          {registerSaving ? "…" : registerOpen ? "🔒 Clôturer la caisse" : "🔓 Ouvrir la caisse"}
+        </Btn>
+      </Surface>
+
       {/* Date navigation */}
       <Surface style={{ padding: "14px 20px", marginBottom: isMobile ? 12 : 20, display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => { const d = new Date(selectedDate + "T12:00:00"); d.setDate(d.getDate() - 1); setSelectedDate(localDateStr(d)); }} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, ...FF }}>‹</button>
@@ -9824,7 +9877,7 @@ const CT = {
     orderTypeTitle: "Comment souhaitez-vous consommer ?",
     dineIn: "Sur place", dineInSub: "Je mange ici",
     takeaway: "À emporter", takeawaySub: "Je repars avec ma commande",
-    delivery: "Livraison", deliverySub: "Commander via Uber Eats", deliveryOwnSub: "Livré chez vous",
+    delivery: "Livraison", deliverySub: "Commander via Uber Eats", deliveryOwnSub: "Livré chez vous", closedTitle: "Nous sommes fermés pour le moment", closedMsg: "Les commandes sont suspendues. Revenez un peu plus tard !", closedRefresh: "Actualiser",
     orderTypeConfirm: "Continuer →",
   },
   en: {
@@ -9845,7 +9898,7 @@ const CT = {
     orderTypeTitle: "How would you like your order?",
     dineIn: "Dine in", dineInSub: "I'm eating here",
     takeaway: "Takeaway", takeawaySub: "I'll take it with me",
-    delivery: "Delivery", deliverySub: "Order via Uber Eats", deliveryOwnSub: "Delivered to your door",
+    delivery: "Delivery", deliverySub: "Order via Uber Eats", deliveryOwnSub: "Delivered to your door", closedTitle: "We're closed right now", closedMsg: "Ordering is paused. Please come back a little later!", closedRefresh: "Refresh",
     orderTypeConfirm: "Continue →",
   },
   ar: {
@@ -9866,7 +9919,7 @@ const CT = {
     orderTypeTitle: "كيف تريد تناول طلبك؟",
     dineIn: "في المكان", dineInSub: "سآكل هنا",
     takeaway: "للأخذ", takeawaySub: "سآخذه معي",
-    delivery: "توصيل", deliverySub: "اطلب عبر Uber Eats", deliveryOwnSub: "التوصيل إلى منزلك",
+    delivery: "توصيل", deliverySub: "اطلب عبر Uber Eats", deliveryOwnSub: "التوصيل إلى منزلك", closedTitle: "نحن مغلقون حاليًا", closedMsg: "تم إيقاف الطلبات مؤقتًا. يرجى العودة لاحقًا!", closedRefresh: "تحديث",
     orderTypeConfirm: "متابعة ←",
   },
   es: {
@@ -9887,7 +9940,7 @@ const CT = {
     orderTypeTitle: "¿Cómo deseas consumir tu pedido?",
     dineIn: "Comer aquí", dineInSub: "Como aquí",
     takeaway: "Para llevar", takeawaySub: "Me lo llevo",
-    delivery: "Entrega a domicilio", deliverySub: "Pedir a través de Uber Eats", deliveryOwnSub: "Entregado en tu casa",
+    delivery: "Entrega a domicilio", deliverySub: "Pedir a través de Uber Eats", deliveryOwnSub: "Entregado en tu casa", closedTitle: "Estamos cerrados en este momento", closedMsg: "Los pedidos están suspendidos. ¡Vuelve un poco más tarde!", closedRefresh: "Actualizar",
     orderTypeConfirm: "Continuar →",
   },
   pt: {
@@ -9908,7 +9961,7 @@ const CT = {
     orderTypeTitle: "Como deseja consumir o seu pedido?",
     dineIn: "Comer no local", dineInSub: "Vou comer aqui",
     takeaway: "Para levar", takeawaySub: "Vou levar comigo",
-    delivery: "Entrega", deliverySub: "Encomendar via Uber Eats", deliveryOwnSub: "Entregue em casa",
+    delivery: "Entrega", deliverySub: "Encomendar via Uber Eats", deliveryOwnSub: "Entregue em casa", closedTitle: "Estamos fechados neste momento", closedMsg: "Os pedidos estão suspensos. Volte um pouco mais tarde!", closedRefresh: "Atualizar",
     orderTypeConfirm: "Continuar →",
   },
 };
@@ -9954,6 +10007,19 @@ function CustomerPage({ slug, tableNum }) {
   const [outForDeliveryAt, setOutForDeliveryAt] = useState(null);
   const [trackedTotal, setTrackedTotal] = useState(null);
   const [trackCopied, setTrackCopied] = useState(false);
+  const [checkingOpen, setCheckingOpen] = useState(false);
+  // Re-checks the register right before the customer commits to paying.
+  // Card payments that already went through are never refused here (see confirm()).
+  async function ensureOpen() {
+    if (restaurant?.id && !(await fetchRegisterOpen(restaurant.id))) { setStep("closed"); return false; }
+    return true;
+  }
+  async function refreshOpen() {
+    setCheckingOpen(true);
+    const ok = await fetchRegisterOpen(restaurant?.id);
+    setCheckingOpen(false);
+    if (ok) setStep(orderType ? "menu" : "ordertype");
+  }
   const isDelivery = orderType === "delivery";
   const fullDeliveryAddress = [deliveryAddress.trim(), deliveryDetails.trim()].filter(Boolean).join("\n");
   const profileComplete = !!(customerName.trim() && customerEmail.trim() && (!isDelivery || (customerPhone.trim() && deliveryAddress.trim())));
@@ -10261,6 +10327,8 @@ function CustomerPage({ slug, tableNum }) {
         }
       }
     } catch {}
+    // Register closed by the owner: no new orders (existing orders above stay trackable).
+    if (!(await fetchRegisterOpen(resto.id))) { setStep("closed"); return; }
     setStep("ordertype");
   }
 
@@ -10539,6 +10607,11 @@ function CustomerPage({ slug, tableNum }) {
     if (confirmingRef.current) return;
     confirmingRef.current = true;
     setConfirming(true); setConfirmError("");
+    // Cash/free orders are refused if the register just closed. A card payment
+    // has already been charged by the time we get here, so it always goes through.
+    if ((paymentMethod === "cash" || paymentMethod === "free") && !(await ensureOpen())) {
+      confirmingRef.current = false; setConfirming(false); return;
+    }
     // Demo mode: simulate order without Supabase
     if (restaurant.id === "demo") {
       await new Promise(r => setTimeout(r, 1200));
@@ -10888,6 +10961,20 @@ function CustomerPage({ slug, tableNum }) {
         </div>
       )}
 
+      {step === "closed" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 32, textAlign: "center", gap: 10 }}>
+          {restaurant?.logo_url && <img src={restaurant.logo_url} alt="logo" style={{ width: 80, height: 80, borderRadius: 20, objectFit: "cover", marginBottom: 8 }} />}
+          <div style={{ fontSize: 48 }}>🔒</div>
+          <p style={{ fontSize: 22, fontWeight: 800, color: C.dark }}>{restaurant?.name}</p>
+          <p style={{ fontSize: 18, fontWeight: 700, color: C.dark }}>{L.closedTitle}</p>
+          <p style={{ color: C.textSecondary, fontSize: 14, maxWidth: 300, lineHeight: 1.5 }}>{L.closedMsg}</p>
+          <button onClick={refreshOpen} disabled={checkingOpen}
+            style={{ marginTop: 14, padding: "14px 28px", background: C.dark, color: C.white, border: "none", borderRadius: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", opacity: checkingOpen ? 0.6 : 1, ...FF }}>
+            {checkingOpen ? "…" : L.closedRefresh}
+          </button>
+        </div>
+      )}
+
       {step === "error" && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", padding: 32, textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>😕</div>
@@ -11138,7 +11225,7 @@ function CustomerPage({ slug, tableNum }) {
             </div>
           )}
           <button
-            onClick={() => { if (!profileComplete) return; total === 0 ? confirm("free") : setStep("payment"); }}
+            onClick={async () => { if (!profileComplete) return; if (!(await ensureOpen())) return; total === 0 ? confirm("free") : setStep("payment"); }}
             disabled={!profileComplete}
             style={{ width: "100%", padding: "16px", background: profileComplete ? C.dark : C.textTertiary, color: "#fff", border: "none", borderRadius: 16, fontSize: 16, fontWeight: 700, cursor: profileComplete ? "pointer" : "not-allowed", marginBottom: 12, ...FF }}>
             {total === 0 ? "✓ Confirmer la commande gratuite" : "Continuer vers le paiement →"}
